@@ -344,7 +344,7 @@ class Engine:
                 # Re-estimate with the plan's own size and bin count: a wider range spreads thinner per bin.
                 pct = fee_for_position_pct_day(
                     expected_fee_pct_day(pool["fee_tvl_pct"]), pool["tvl"] or 0.0, plan["size_usd"], plan["bins"],
-                    pool_per_bin_usd,
+                    pool_per_bin_usd, window, (pool["volume"].get("24h") or 0.0) / 24 or None,
                 )
                 scored["fee_for_position_pct_day"] = pct
                 plan["expected_fee_usd_day"] = round(plan["size_usd"] * pct / 100, 2)

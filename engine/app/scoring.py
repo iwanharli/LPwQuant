@@ -182,7 +182,10 @@ def score_pool(
     fee_1h_x24 = (fees.get("1h") or 0.0) * 24
     fee_expected = expected_fee_pct_day(fees)
     if pool_per_bin_usd is not None and fee_bins:
-        fee_for_position = depth_fee_pct(fee_expected, tvl, position_usd, fee_bins, pool_per_bin_usd)
+        fee_for_position = depth_fee_pct(
+            fee_expected, tvl, position_usd, fee_bins, pool_per_bin_usd, (fee_bins - 1) // 2,
+            (pool.get("volume") or {}).get("24h", 0.0) / 24 or None,
+        )
     else:
         fee_for_position = diluted_fee_pct(fee_expected, tvl, position_usd)
     volume_tvl = pool["volume"]["24h"] / tvl if tvl > 0 else 0.0

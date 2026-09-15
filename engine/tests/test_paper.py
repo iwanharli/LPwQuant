@@ -167,16 +167,18 @@ def test_stale_tight_breakout_levels_are_dropped_on_load():
     assert exit_reason(pos, MINUTE) is None
 
 
-def test_accrue_uses_bin_depth_when_available():
+def test_accrue_uses_bin_depth_when_available_but_capped():
     base = dict(COST_POOL, fees={"1h": 1_000.0})  # 1% of TVL per hour = 1000 USD = 6.67 Y per hour
     tvl_pos = position(capital_y=1.0, value_y=1.0)
     depth_pos = position(capital_y=1.0, value_y=1.0, last_depth_y=0.0)
     accrue(tvl_pos, base, HOUR)
     accrue(depth_pos, base, HOUR)
     assert tvl_pos.fees_y > 0
-    # With no other liquidity in the traded bins the position takes all of the pool's fees.
-    assert math.isclose(depth_pos.fees_y, 1_000.0 / 150.0)
-    assert depth_pos.fees_y > tvl_pos.fees_y
+    # With no other liquidity near the price the raw per-bin share is 100% of the pool's fees; the cap holds it
+    # to 10x the TVL share (1 Y of 666.67 Y TVL).
+    tvl_y = 100_000.0 / 150.0
+    assert math.isclose(depth_pos.fees_y, 1_000.0 / 150.0 * 10 * 1.0 / (tvl_y + 1.0))
+    assert tvl_pos.fees_y < depth_pos.fees_y <= 10.5 * tvl_pos.fees_y
 
 
 def test_entry_costs_charge_known_new_bin_arrays():

@@ -24,7 +24,7 @@ import asyncpg
 
 from .backtest import LpPosition, summarize
 from .costs import BINS_PER_BIN_ARRAY, CostModel, entry_costs, exit_cost, round_trip_cost_pct, swap_cost_fraction  # noqa: F401
-from .depth import fee_share
+from .depth import guarded_fee_share
 from .recommend import DEFAULT_MIN_HOLD_HOURS, FEE_RATE_AVG_HOURS, MIN_BREAKOUT_DISTANCE_PCT, cost_gate_ok
 from .validation import bootstrap_mean_ci
 
@@ -120,6 +120,7 @@ class Position:
     # Pool liquidity per bin (token Y) around the active bin at the last update; None = no on-chain depth, fall
     # back to the TVL share. Not persisted: after a restart the first interval uses the TVL share.
     last_depth_y: float | None = None
+    last_window_bins: int = 1  # trading window (bins either side of the active bin) at the last update
     # Fee rate (fraction of TVL per hour) smoothed over ~FEE_RATE_AVG_HOURS, so one quiet snapshot does not
     # trigger fee_decay. Not persisted: starts from the last rate after a restart.
     rate_avg: float | None = None
@@ -194,6 +195,7 @@ def accrue(
     model: CostModel | None = None,
     sol_usd: float | None = None,
     pool_per_bin_y: float | None = None,
+    window_bins: int = 1,
 ) -> None:
     """Advance a position to `now_ms`: fees earned since the last update (at the previous price, fee rate and
     bin depth, like the backtest), then revalue at the current price and re-estimate the exit cost.
@@ -205,11 +207,17 @@ def accrue(
     dt_h = max(0.0, (now_ms - pos.last_ts) / HOUR_MS)
     if dt_h > 0 and pos.last_rate > 0 and tvl > 0 and pos.lp.in_range(pos.last_price):
         if pos.last_depth_y is not None and y_usd > 0:
-            pool_fees_y_per_h = pos.last_rate * tvl / y_usd
-            pos.fees_y += pool_fees_y_per_h * fee_share(pos.lp.v, pos.last_depth_y) * dt_h
+            tvl_y = tvl / y_usd
+            pool_fees_y_per_h = pos.last_rate * tvl_y
+            volume_y_per_h = ((pool.get("volume") or {}).get("1h") or 0.0) / y_usd
+            share = guarded_fee_share(
+                pos.lp.v, pos.last_depth_y, pos.last_window_bins, pos.value_y, tvl_y, volume_y_per_h or None
+            )
+            pos.fees_y += pool_fees_y_per_h * share * dt_h
         else:
             pos.fees_y += pos.value_y * pos.last_rate * dt_h * tvl / (tvl + pos.capital_usd)
     pos.last_depth_y = pool_per_bin_y
+    pos.last_window_bins = window_bins
     price = pool["price"]
     pos.value_y = pos.lp.value(price)
     pos.out_of_range_since = None if pos.lp.in_range(price) else (pos.out_of_range_since or now_ms)
@@ -388,7 +396,11 @@ class PaperTrader:
             if pool is None or not pool.get("price"):
                 await self._close(pos, "delisted", now_ms)
                 continue
-            accrue(pos, pool, now_ms, self.cfg.costs, self.sol_usd, (rows.get(pos.address) or {}).get("depth_per_bin_y"))
+            row = rows.get(pos.address) or {}
+            accrue(
+                pos, pool, now_ms, self.cfg.costs, self.sol_usd, row.get("depth_per_bin_y"),
+                int((row.get("depth") or {}).get("window_bins") or 1),
+            )
             reason = exit_reason(pos, now_ms)
             if reason:
                 await self._close(pos, reason, now_ms)
@@ -447,6 +459,7 @@ class PaperTrader:
         )
         sol_to_y = (self.sol_usd or 0.0) / y_usd
         pos.last_depth_y = row.get("depth_per_bin_y")
+        pos.last_window_bins = int((row.get("depth") or {}).get("window_bins") or 1)
         pos.cost_entry_y, pos.rent_sol = entry_costs(
             pos.lp, pos.positions, pool, y_usd, sol_to_y, self.cfg.costs, plan.get("new_bin_arrays")
         )
