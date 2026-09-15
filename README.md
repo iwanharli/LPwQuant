@@ -172,7 +172,9 @@ uv run python -m app.backtest --source candles --hours 48 --every 60     # langs
 uv run python -m app.backtest --source snapshots --hours 24 --every 60   # dari rekaman sendiri, lebih halus
 # atau: curl 'localhost:8000/api/backtest?source=candles&hours=48&every=60'
 ```
-- `candles`: harga = close candle 30m, fee = volume candle × base fee / TVL terbaru (fee dinamis diabaikan, jadi fee cenderung terlalu rendah). Skor keamanan memakai nilai hari ini; flag pasar dan rezim dihitung ulang per entry. Jalankan backfill untuk riwayat lebih panjang.
+- `candles`: harga = close candle 30m. Fee = volume candle × fee LP efektif ÷ TVL, dengan fee LP efektif = fee 1 jam ÷ volume 1 jam dari snapshot terdekat (maks. 90 menit). Angka ini sudah mencakup dynamic fee yang berubah dari waktu ke waktu. Kalau tidak ada snapshot: fee 24 jam ÷ volume 24 jam pool, lalu base fee × 90%. Skor keamanan memakai nilai hari ini; flag pasar dan rezim dihitung ulang per entry. Jalankan backfill untuk riwayat lebih panjang.
+
+> **Catatan fee:** `fees` di API Meteora sudah **bagian LP**. Protocol fee dilaporkan terpisah dan terukur ±10% dari total fee swap (termasuk pool yang konfigurasinya menulis 5%). Fee/TVL di screener dan akrual paper trading karena itu sudah bersih. Biaya swap di paper trading memakai base fee + dynamic fee penuh, karena itulah yang dibayar pihak yang melakukan swap.
 - `snapshots`: harga dari `price_ticks`/`pool_snapshots`, fee dari snapshot, skor sesuai saat entry. Hanya sepanjang rekaman sistem ini.
 
 Hasil dikelompokkan per rezim, per aksi, per strategi (dan per skor untuk `snapshots`): win rate, rata-rata/median/p10 return, fee, IL vs HODL, dan alasan exit. Kalau suatu rezim atau strategi konsisten merugi, aturannya perlu diubah.

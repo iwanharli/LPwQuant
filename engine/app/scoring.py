@@ -71,6 +71,10 @@ INSIGHT_PENALTIES = {
     "serial_dev": 3.0,
 }
 
+# Dynamic fee at least this share of the base fee: price is crossing bins fast, so each swap pays more.
+# An opportunity for fees and a warning for IL at the same time, hence informational only.
+FEE_SPIKE_RATIO = 0.5
+
 HOUR_MS = 3_600_000
 
 
@@ -252,6 +256,11 @@ def score_pool(
         flags.append("thin_liquidity")
     if fee_24h > 0 and momentum < 0.25:
         flags.append("fading_volume")
+    base_fee_pct = pool.get("base_fee_pct") or 0.0
+    dynamic_fee_pct = pool.get("dynamic_fee_pct") or 0.0
+    fee_multiple_now = (base_fee_pct + dynamic_fee_pct) / base_fee_pct if base_fee_pct > 0 else None
+    if base_fee_pct > 0 and dynamic_fee_pct >= base_fee_pct * FEE_SPIKE_RATIO:
+        flags.append("fee_spike")
 
     safety = 0.0 if rugged else max(safety, 0.0)
     score = fee_score + momentum_score + liquidity_score + turnover_score + regime_score + safety
@@ -272,5 +281,6 @@ def score_pool(
         "fee_tvl_pct_1h_x24": fee_1h_x24,
         "fee_expected_pct_day": fee_expected,
         "fee_for_position_pct_day": fee_for_position,
+        "fee_multiple_now": fee_multiple_now,
         "volume_tvl_24h": volume_tvl,
     }

@@ -2,9 +2,10 @@
 
 Sources:
 - candles (default): 30m OHLCV from the Meteora API (extend history with `npm run backfill` in ingestor).
-  Prices are candle closes. Fee rate = candle volume x base fee x (observed 24h fees / base-fee-only fees,
-  a per-pool dynamic-fee correction clamped to 1-5x) / latest TVL. Token security score/flags are today's
-  values; market flags and regime are recomputed per entry.
+  Prices are candle closes. Fee rate = candle volume x effective LP fee fraction / TVL, where the fraction is
+  the recorded 1h fees/volume nearest in time (captures dynamic fees as they changed; Meteora `fees` already
+  exclude the protocol cut), falling back to the pool's 24h fees/volume, then base fee x 90%. Token security
+  score/flags are today's values; market flags and regime are recomputed per entry.
 - snapshots: prices from price_ticks/pool_snapshots, fee rate from snapshot fees_1h/TVL and the score stored
   at entry time. Finer, but only as old as this system's own recording.
 
@@ -222,12 +223,41 @@ def _downsample(points: list[tuple[int, float]]) -> list[tuple[int, float]]:
     return out
 
 
-def fee_multiplier(fees_24h: float | None, volume_24h: float | None, base_fee_pct: float | None) -> float:
-    """Observed 24h fees vs what the base fee alone would earn: a per-pool correction for dynamic fees."""
-    base_only = (volume_24h or 0.0) * (base_fee_pct or 0.0) / 100
-    if base_only <= 0 or not fees_24h:
-        return 1.0
-    return max(1.0, min(5.0, fees_24h / base_only))
+# Meteora's `fees` are already the LP share: protocol fees are reported separately and observed at ~10% of
+# total swap fees (even where pool_config says 5%). Used only when no observed fee/volume ratio exists.
+LP_SHARE_FALLBACK = 0.90
+MAX_LP_FEE_FRACTION = 0.10  # guard against noisy windows (fees on near-zero volume)
+MIN_WINDOW_VOLUME_USD = 1_000.0
+FEE_SNAPSHOT_MAX_GAP_MS = 90 * 60_000
+
+
+def lp_fee_fraction(fees: float | None, volume: float | None, base_fee_pct: float | None) -> float:
+    """LP fee earned per unit of swap volume. Observed fees/volume already include dynamic fees and exclude
+    the protocol cut; without observations fall back to the base fee times the typical LP share."""
+    if fees and volume and volume >= MIN_WINDOW_VOLUME_USD and fees > 0:
+        return min(fees / volume, MAX_LP_FEE_FRACTION)
+    return (base_fee_pct or 0.0) / 100 * LP_SHARE_FALLBACK
+
+
+@dataclass
+class FeeSeries:
+    """Effective LP fee fraction over time for one pool, from recorded 1h fee/volume snapshots."""
+
+    ts: list[int]
+    fractions: list[float]
+    fallback: float
+
+    def at(self, ts: int) -> float:
+        """Nearest snapshot within FEE_SNAPSHOT_MAX_GAP_MS, else the pool's 24h fallback. Dynamic fees change
+        with volatility, so a fixed per-pool multiplier from today would misprice older candles."""
+        i = bisect.bisect_left(self.ts, ts)
+        best: int | None = None
+        for j in (i - 1, i):
+            if 0 <= j < len(self.ts) and (best is None or abs(self.ts[j] - ts) < abs(self.ts[best] - ts)):
+                best = j
+        if best is not None and abs(self.ts[best] - ts) <= FEE_SNAPSHOT_MAX_GAP_MS:
+            return self.fractions[best]
+        return self.fallback
 
 
 def entry_flags_and_safety(
@@ -418,7 +448,7 @@ class CandleData:
     loaded_at_ms: int
     pools: dict[str, Any]
     tvls: dict[str, float]
-    fee_mults: dict[str, float]
+    fee_series: dict[str, FeeSeries]
     latest: dict[str, Any]
     history: MarketHistory
     market_cache: dict[tuple[str, int], dict[str, Any] | None]
@@ -445,18 +475,41 @@ async def load_candle_data(pool: asyncpg.Pool, hours: float) -> CandleData:
             )
         }
         history = await _load_market_history(conn, secs)
-    fee_mults = {
-        r["address"]: fee_multiplier(
+        fee_rows = await conn.fetch(
+            """select address, (extract(epoch from ts) * 1000)::bigint as ts_ms, fees_1h, volume_1h
+               from pool_snapshots
+               where ts > now() - make_interval(secs => $1) and volume_1h >= $2 and fees_1h > 0
+               order by address, ts""",
+            secs + CANDLE_HISTORY_SECS,
+            MIN_WINDOW_VOLUME_USD,
+        )
+    fallbacks = {
+        r["address"]: lp_fee_fraction(
             r["fees_24h"], r["volume_24h"], pools[r["address"]]["base_fee_pct"] if r["address"] in pools else None
         )
         for r in snapshots
+    }
+    series_points: defaultdict[str, tuple[list[int], list[float]]] = defaultdict(lambda: ([], []))
+    for r in fee_rows:
+        ts_list, fractions = series_points[r["address"]]
+        ts_list.append(r["ts_ms"])
+        fractions.append(lp_fee_fraction(r["fees_1h"], r["volume_1h"], None))
+    fee_series = {
+        address: FeeSeries(
+            ts=series_points[address][0],
+            fractions=series_points[address][1],
+            fallback=fallbacks.get(
+                address, lp_fee_fraction(None, None, pools[address]["base_fee_pct"] if address in pools else None)
+            ),
+        )
+        for address in set(fallbacks) | set(series_points) | set(history.candles)
     }
     return CandleData(
         hours=hours,
         loaded_at_ms=int(time.time() * 1000),
         pools=pools,
         tvls={r["address"]: r["tvl"] or 0.0 for r in snapshots},
-        fee_mults=fee_mults,
+        fee_series=fee_series,
         latest=latest,
         history=history,
         market_cache={},
@@ -489,7 +542,7 @@ def simulate_candle_trades(
         volume_prefix = [0.0]
         for c in candles:
             volume_prefix.append(volume_prefix[-1] + c.volume)
-        fee_fraction = (info["base_fee_pct"] or 0.0) / 100 * data.fee_mults.get(address, 1.0)
+        fees = data.fee_series.get(address) or FeeSeries([], [], lp_fee_fraction(None, None, info["base_fee_pct"]))
         tvl_now = data.tvls.get(address, 0.0)
 
         def tvl_at(i: int) -> float:
@@ -497,10 +550,12 @@ def simulate_candle_trades(
             trailing = volume_prefix[i + 1] - volume_prefix[max(0, i + 1 - day_candles)]
             return max(tvl_now, trailing / MAX_DAILY_TURNOVER)
 
-        def fee_rate_at(ts: int, candles=candles, close_times=close_times, fee_fraction=fee_fraction, tvl_at=tvl_at):
+        def fee_rate_at(ts: int, candles=candles, close_times=close_times, fees=fees, tvl_at=tvl_at):
             i = min(bisect.bisect_right(close_times, ts), len(candles) - 1)  # candle in progress at ts
             tvl = tvl_at(i)
-            return (candles[i].volume * fee_fraction * (HOUR_MS / CANDLE_MS) / tvl if tvl > 0 else 0.0), tvl
+            if tvl <= 0:
+                return 0.0, tvl
+            return candles[i].volume * fees.at(ts) * (HOUR_MS / CANDLE_MS) / tvl, tvl
 
         first = max(MIN_WARMUP_CANDLES, bisect.bisect_left(close_times, data.window_start_ms))
         for start in range(first, len(series) - 2, step):

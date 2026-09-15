@@ -78,6 +78,11 @@ const FLAG_META: Record<string, FlagMeta> = {
   high_volatility: { label: "Volatil", title: "Realized volatility 1 jam ≥20%", severity: "info" },
   thin_liquidity: { label: "TVL tipis", title: "TVL di bawah $25K: slippage besar & mudah ditinggal", severity: "info" },
   fading_volume: { label: "Mulai sepi", title: "Laju fee 1 jam < 25% dari rata-rata 24 jam", severity: "info" },
+  fee_spike: {
+    label: "Fee spike",
+    title: "Dynamic fee ≥50% dari base fee: harga melintasi banyak bin, fee per swap naik (peluang fee sekaligus risiko IL)",
+    severity: "info",
+  },
   sideways: { label: "Sideways", title: "ADX rendah / Choppiness tinggi: kondisi ideal untuk LP dua sisi", severity: "good" },
   uptrend: { label: "Tren naik", title: "ADX ≥25 dengan +DI dominan: token terjual bertahap saat naik", severity: "info" },
   bb_squeeze: {

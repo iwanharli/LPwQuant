@@ -160,6 +160,16 @@ def test_gmgn_flags_skipped_for_large_issuer_tokens():
     assert not {"serial_dev", "dev_holds", "bundler_heavy"} & set(scored["flags"])
 
 
+def test_fee_spike_flag_and_multiple():
+    now = 48 * HOUR
+    calm = score_pool(_pool(base_fee_pct=1.0, dynamic_fee_pct=0.1), 1.0, 3.0, now, CLEAN_SECURITY, 50)
+    assert "fee_spike" not in calm["flags"] and math.isclose(calm["fee_multiple_now"], 1.1)
+    spike = score_pool(_pool(base_fee_pct=1.0, dynamic_fee_pct=0.8), 1.0, 3.0, now, CLEAN_SECURITY, 50)
+    assert "fee_spike" in spike["flags"] and math.isclose(spike["fee_multiple_now"], 1.8)
+    assert spike["safety"] == calm["safety"]  # informational, no penalty
+    assert score_pool(_pool(), 1.0, 3.0, now, CLEAN_SECURITY, 50)["fee_multiple_now"] is None
+
+
 def test_rugged_caps_score_and_small_tvl_scores_lower():
     now = 48 * HOUR
     rugged = score_pool(_pool(), 2.0, 5.0, now, dict(CLEAN_SECURITY, rugged=True), position_usd=50)

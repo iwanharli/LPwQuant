@@ -6,6 +6,7 @@ from app.paper import (
     PaperConfig,
     Position,
     accrue,
+    entries_paused,
     entry_costs,
     exit_cost,
     exit_reason,
@@ -90,6 +91,16 @@ def test_pick_entries_caps_per_tier_dedupes_tokens_and_respects_cooldown():
     already_open = [position(address="A", tier="high", base_mint="A")]
     picked = pick_entries(rows, already_open, {}, CFG, 10 * HOUR)
     assert [r["address"] for r in picked if r["plan"]["tier"] == "high"] == ["B"]
+
+
+def test_min_position_size_and_drawdown_pause():
+    small = dict(row("SMALL", "high", 99), plan={"action": "enter", "tier": "high", "size_usd": 10.0})
+    picked = pick_entries([small, row("OK", "high", 50)], [], {}, CFG, 10 * HOUR)
+    assert [r["address"] for r in picked] == ["OK"]  # $10 plan is below the $25 minimum
+
+    assert entries_paused(900.0, 1000.0, 10.0) is True  # exactly 10% below peak
+    assert entries_paused(950.0, 1000.0, 10.0) is False
+    assert entries_paused(500.0, 1000.0, None) is False
 
 
 def test_cooldown_applies_to_the_token_across_pools():

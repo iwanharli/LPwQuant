@@ -78,6 +78,16 @@ class PaperConfig:
     tiers: tuple[str, ...]
     cooldown_hours: float
     costs: CostModel = CostModel()
+    # Below this, fixed tx costs dominate: a $10 position paid ~4% in costs on entry.
+    min_position_usd: float = 25.0
+    # Stop opening positions once equity falls this far below its peak (None = never pause).
+    max_drawdown_pct: float | None = 10.0
+
+
+def entries_paused(equity_usd: float, peak_equity_usd: float, max_drawdown_pct: float | None) -> bool:
+    if max_drawdown_pct is None or peak_equity_usd <= 0:
+        return False
+    return equity_usd <= peak_equity_usd * (1 - max_drawdown_pct / 100)
 
 
 @dataclass
@@ -273,7 +283,7 @@ def pick_entries(
         closed_at = max(last_closed.get(row["address"], -1), closed_mints.get(row.get("base_mint") or "", -1))
         if closed_at >= 0 and now_ms - closed_at < cooldown_ms:
             continue
-        if (plan.get("size_usd") or 0) < 1 or not row.get("price"):
+        if (plan.get("size_usd") or 0) < max(1.0, cfg.min_position_usd) or not row.get("price"):
             continue
         picked.append(row)
         per_tier[tier] += 1
@@ -301,6 +311,8 @@ class PaperTrader:
         self.last_closed: dict[str, int] = {}
         self.last_closed_mints: dict[str, int] = {}
         self.sol_usd: float | None = None
+        self.peak_equity_usd = cfg.start_equity_usd
+        self.entries_paused = False
         self.realized_usd = 0.0
         self.started_at: int | None = None
 
@@ -334,6 +346,10 @@ class PaperTrader:
                 "select coalesce(sum(capital_usd * pnl_pct / 100), 0) from paper_positions where status = 'closed'"
             ))
             self.started_at = _ms(await conn.fetchval("select min(entry_ts) from paper_positions"))
+            self.peak_equity_usd = max(
+                self.cfg.start_equity_usd,
+                float(await conn.fetchval("select coalesce(max(equity_usd), 0) from paper_equity")),
+            )
         log.info("paper trading: %d open positions, realized %.2f USD", len(self.open), self.realized_usd)
 
     async def on_refresh(self, pools: dict[str, dict[str, Any]], rows: dict[str, dict[str, Any]], now_ms: int) -> None:
@@ -350,11 +366,22 @@ class PaperTrader:
             if reason:
                 await self._close(pos, reason, now_ms)
         await self._save_open(now_ms)
-        for row in pick_entries(
-            rows.values(), self.open.values(), self.last_closed, self.cfg, now_ms, self.last_closed_mints
-        ):
-            await self._open(row, pools[row["address"]], now_ms)
+        equity = self.cfg.start_equity_usd + self.realized_usd + self._unrealized_usd()
+        self.peak_equity_usd = max(self.peak_equity_usd, equity)
+        paused = entries_paused(equity, self.peak_equity_usd, self.cfg.max_drawdown_pct)
+        if paused and not self.entries_paused:
+            log.warning("paper trading: equity %.2f is %.1f%%+ below peak %.2f, pausing new entries",
+                        equity, self.cfg.max_drawdown_pct, self.peak_equity_usd)
+        self.entries_paused = paused
+        if not paused:
+            for row in pick_entries(
+                rows.values(), self.open.values(), self.last_closed, self.cfg, now_ms, self.last_closed_mints
+            ):
+                await self._open(row, pools[row["address"]], now_ms)
         await self._record_equity(now_ms)
+
+    def open_addresses(self) -> list[str]:
+        return sorted({p.address for p in self.open.values()})
 
     async def _open(self, row: dict[str, Any], pool: dict[str, Any], now_ms: int) -> None:
         plan = row["plan"]
@@ -475,6 +502,14 @@ class PaperTrader:
                 "max_open_per_tier": self.cfg.max_open_per_tier,
                 "tiers": list(self.cfg.tiers),
                 "cooldown_hours": self.cfg.cooldown_hours,
+            },
+            "risk": {
+                "min_position_usd": self.cfg.min_position_usd,
+                "max_drawdown_pct": self.cfg.max_drawdown_pct,
+                "peak_equity_usd": self.peak_equity_usd,
+                "drawdown_pct": (1 - (self.cfg.start_equity_usd + self.realized_usd + unrealized)
+                                 / self.peak_equity_usd) * 100 if self.peak_equity_usd > 0 else 0.0,
+                "entries_paused": self.entries_paused,
             },
             "costs": {
                 "enabled": costs.enabled,

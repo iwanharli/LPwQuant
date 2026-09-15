@@ -33,6 +33,13 @@ export type PaperSummary = {
   enabled: boolean;
   config: { max_open_per_tier: number; tiers: Tier[]; cooldown_hours: number };
   costs: PaperCosts;
+  risk: {
+    min_position_usd: number;
+    max_drawdown_pct: number | null;
+    peak_equity_usd: number;
+    drawdown_pct: number;
+    entries_paused: boolean;
+  };
   started_at: number | null;
   start_equity_usd: number;
   equity_usd: number;

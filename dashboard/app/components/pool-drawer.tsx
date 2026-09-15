@@ -497,7 +497,12 @@ function DrawerContent({ row, onClose }: { row: PoolRow; onClose: () => void }) 
             {row.bin_step} <span className="text-xs font-normal text-ink-3">{binStepPct(row.bin_step)}/bin</span>
           </Stat>
           <Stat label="Base fee">{fmtPct(row.base_fee_pct, 2)}</Stat>
-          <Stat label="Fee dinamis">{fmtPct(row.dynamic_fee_pct, 4)}</Stat>
+          <Stat label="Fee dinamis">
+            {fmtPct(row.dynamic_fee_pct, 4)}
+            {row.fee_multiple_now != null && (
+              <span className="ml-1 text-xs font-normal text-ink-3">{row.fee_multiple_now.toFixed(2)}× base</span>
+            )}
+          </Stat>
           <Stat label="Umur pool">{fmtAge(row.pool_age_hours)}</Stat>
           <Stat label="Market cap">{usdCompact.format(row.market_cap)}</Stat>
           <Stat label="Holder">{compact.format(row.holders)}</Stat>

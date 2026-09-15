@@ -160,6 +160,20 @@ function PnlCell({ net, gross }: { net: number; gross: number | null }) {
   );
 }
 
+/** Realized PnL of a closed position: USD amount with the percentage of capital underneath. */
+function PnlUsdCell({ usd: amount, pct }: { usd: number; pct: number }) {
+  const tone = amount > 0 ? "text-up" : amount < 0 ? "text-down" : "text-ink-2";
+  return (
+    <div className={`flex flex-col items-end tabular-nums ${tone}`}>
+      <span className="font-semibold">
+        {amount > 0 ? "+" : amount < 0 ? "−" : ""}
+        {usd.format(Math.abs(amount))}
+      </span>
+      <span className="text-[11px]">{fmtSignedPct(pct, 2)}</span>
+    </div>
+  );
+}
+
 function ciText(s: TradeStats): string {
   if (s.ci_low == null || s.ci_high == null) return "–";
   return `[${fmtSignedPct(s.ci_low, 2)}, ${fmtSignedPct(s.ci_high, 2)}]`;
@@ -325,7 +339,9 @@ function ClosedTable({ positions }: { positions: PaperPosition[] }) {
             <th className="px-3 py-2.5 text-right font-medium" title="Transaksi, swap, dan price impact">
               Biaya
             </th>
-            <th className="px-4 py-2.5 text-right font-medium">Return bersih</th>
+            <th className="px-4 py-2.5 text-right font-medium" title="Setelah biaya, dalam USD dan persen modal">
+              PnL
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -346,8 +362,8 @@ function ClosedTable({ positions }: { positions: PaperPosition[] }) {
               <td className="px-3 py-2.5 text-right text-ink-2">{fmtPct(p.fee_pct, 2)}</td>
               <td className="px-3 py-2.5 text-right text-ink-2">{fmtSignedPct(p.il_pct, 2)}</td>
               <td className="px-3 py-2.5 text-right text-ink-2">{fmtCost(p.cost_pct)}</td>
-              <td className="px-4 py-2.5 text-right font-semibold">
-                <PnlCell net={p.pnl_pct} gross={p.gross_pnl_pct} />
+              <td className="px-4 py-2.5 text-right">
+                <PnlUsdCell usd={(p.capital_usd * p.pnl_pct) / 100} pct={p.pnl_pct} />
               </td>
             </tr>
           ))}
@@ -467,8 +483,9 @@ export default function PaperPage() {
           <h1 className="text-2xl font-semibold tracking-tight text-ink sm:text-3xl">Paper trading</h1>
           <p className="mt-1 max-w-3xl text-sm leading-6 text-ink-3">
             Posisi LP virtual dibuka otomatis dari rencana posisi live, maksimal{" "}
-            {s ? s.config.max_open_per_tier : "–"} posisi per tier, lalu ditutup dengan aturan exit yang sama seperti
-            backtest. Tidak ada transaksi on-chain. PnL dihitung dalam token quote pool, jadi pergerakan harga SOL
+            {s ? s.config.max_open_per_tier : "–"} posisi per tier dan minimal{" "}
+            {s ? usd.format(s.risk.min_position_usd) : "–"} per posisi, lalu ditutup dengan aturan exit yang sama seperti
+            backtest. Posisi baru berhenti dibuka kalau equity turun {s?.risk.max_drawdown_pct ?? "–"}% dari puncaknya. Tidak ada transaksi on-chain. PnL dihitung dalam token quote pool, jadi pergerakan harga SOL
             sendiri tidak ikut.
           </p>
           </div>
@@ -481,6 +498,12 @@ export default function PaperPage() {
         {error && (
           <p className="flex items-center gap-2 rounded-xl border border-critical/30 bg-critical/10 px-4 py-3 text-sm text-ink-2 shadow-sm shadow-black/20">
             <StatusDot severity="critical" /> {error}. Pastikan engine berjalan di {ENGINE_URL}.
+          </p>
+        )}
+        {s?.risk.entries_paused && (
+          <p className="flex items-center gap-2 rounded-xl border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-ink-2 shadow-sm shadow-black/20">
+            <StatusDot severity="warning" /> Posisi baru dihentikan: equity {fmtPct(s.risk.drawdown_pct, 1)} di bawah puncak{" "}
+            {usd.format(s.risk.peak_equity_usd)} (batas {s.risk.max_drawdown_pct}%). Posisi terbuka tetap dikelola.
           </p>
         )}
         {s && !s.enabled && (

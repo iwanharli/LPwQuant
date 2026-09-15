@@ -101,6 +101,8 @@ class Engine:
                     impact_multiplier=config.PAPER_IMPACT_MULTIPLIER,
                     new_bin_array_share=config.PAPER_NEW_BIN_ARRAY_SHARE,
                 ),
+                min_position_usd=config.PAPER_MIN_POSITION_USD,
+                max_drawdown_pct=config.PAPER_MAX_DRAWDOWN_PCT or None,
             ),
         )
         await self.paper.load()
@@ -270,6 +272,13 @@ class Engine:
         if self.paper:
             try:
                 await self.paper.on_refresh(self.pools, self.rows, now_ms)
+                # Tell the ingestor which pools must stay tracked while positions are open in them.
+                open_addresses = self.paper.open_addresses()
+                async with self.redis.pipeline(transaction=True) as pipe:
+                    pipe.delete(config.KEY_PAPER_OPEN_POOLS)
+                    if open_addresses:
+                        pipe.sadd(config.KEY_PAPER_OPEN_POOLS, *open_addresses)
+                    await pipe.execute()
             except Exception:
                 log.exception("paper trading update failed")
         self._broadcast(self.snapshot_message())

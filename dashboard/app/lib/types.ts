@@ -92,6 +92,8 @@ export type PoolRow = {
   fee_tvl_pct_1h_x24: number;
   fee_expected_pct_day: number;
   fee_for_position_pct_day: number;
+  /** (base + dynamic fee) / base fee right now; null when base fee is 0. */
+  fee_multiple_now: number | null;
   volume_tvl_24h: number;
   change_pct_1h: number | null;
   realized_vol_pct_1h: number | null;

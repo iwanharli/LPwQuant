@@ -3,7 +3,7 @@ import random
 
 from dataclasses import replace
 
-from app.backtest import LpPosition, entry_flags_and_safety, fee_multiplier, simulate, summarize
+from app.backtest import FeeSeries, LpPosition, entry_flags_and_safety, lp_fee_fraction, simulate, summarize
 from app.recommend import PlanParams, bins_below, bins_for_width, plan_position
 
 HOUR = 3_600_000
@@ -165,11 +165,24 @@ def test_breakout_side_dropped_when_price_already_outside_channel():
     assert trade["exit_reason"] != "breakout"
 
 
-def test_fee_multiplier_and_entry_flags():
-    assert fee_multiplier(300, 100_000, 0.1) == 3.0  # observed 300 vs 100 from base fee
-    assert fee_multiplier(50, 100_000, 0.1) == 1.0  # never below base fee
-    assert fee_multiplier(10_000, 100_000, 0.1) == 5.0  # clamped
-    assert fee_multiplier(None, 0, 0.1) == 1.0
+def test_lp_fee_fraction_uses_observed_net_fees():
+    # SOL-USDC style: base 0.04%, LP received 0.0387% of volume (protocol cut > tiny dynamic fee).
+    assert math.isclose(lp_fee_fraction(38.7, 100_000, 0.04), 0.000387)  # below base fee is allowed now
+    assert math.isclose(lp_fee_fraction(3_000, 100_000, 0.1), 0.03)  # dynamic fee spike
+    assert lp_fee_fraction(50_000, 100_000, 0.1) == 0.10  # capped
+    assert math.isclose(lp_fee_fraction(None, 0, 1.0), 0.009)  # no data: base fee x 90% LP share
+    assert math.isclose(lp_fee_fraction(5, 500, 1.0), 0.009)  # too little volume to trust
+
+
+def test_fee_series_uses_nearest_snapshot_within_gap():
+    series = FeeSeries(ts=[0, 60 * 60_000, 120 * 60_000], fractions=[0.001, 0.02, 0.003], fallback=0.005)
+    assert series.at(55 * 60_000) == 0.02  # nearest is the 60-minute snapshot
+    assert series.at(125 * 60_000) == 0.003
+    assert series.at(10 * 60 * 60_000) == 0.005  # far from any snapshot: pool fallback
+    assert FeeSeries([], [], 0.004).at(0) == 0.004
+
+
+def test_entry_flags_rebuild_market_part():
 
     # Stored flags came from a later moment; market flags are replaced by those at entry.
     flags, safety = entry_flags_and_safety(

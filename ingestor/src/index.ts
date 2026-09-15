@@ -1,6 +1,6 @@
 import { config } from "./config";
 import { applySchema, pg, pruneOld, savePools, saveTicks, saveUsage } from "./db";
-import { fetchPools } from "./meteora";
+import { fetchPool, fetchPools, type PoolSnapshot } from "./meteora";
 import { publishPools, publishTicks, redis } from "./redis";
 import { usage } from "./rpc";
 import { GmgnFetcher } from "./gmgn";
@@ -13,6 +13,27 @@ const wib = new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Jakarta", dateSty
 for (const level of ["log", "warn", "error"] as const) {
   const original = console[level].bind(console);
   console[level] = (...args: unknown[]) => original(`${wib.format(new Date())} WIB`, ...args);
+}
+
+/** Pools the engine's paper trader holds positions in (engine/app/service.py keeps this set current). */
+const PAPER_OPEN_POOLS_KEY = "paper:open_pools";
+
+/** Keep tracking pools with open paper positions even after they drop out of the top-volume screen, so a
+ * position is closed by its own exit rules rather than because the screener stopped watching the pool. */
+async function withPinnedPools(pools: PoolSnapshot[]): Promise<PoolSnapshot[]> {
+  const pinned = await redis.smembers(PAPER_OPEN_POOLS_KEY);
+  const tracked = new Set(pools.map((p) => p.address));
+  const extra: PoolSnapshot[] = [];
+  for (const address of pinned) {
+    if (tracked.has(address)) continue;
+    try {
+      const pool = await fetchPool(address);
+      if (pool) extra.push(pool);
+    } catch (err) {
+      console.error(`[poller] pinned pool ${address}: ${err instanceof Error ? err.message : err}`);
+    }
+  }
+  return extra.length > 0 ? [...pools, ...extra] : pools;
 }
 
 async function onTicks(ticks: PriceTick[]): Promise<void> {
@@ -63,7 +84,7 @@ async function main(): Promise<void> {
   const poll = async () => {
     const started = Date.now();
     try {
-      const pools = await fetchPools();
+      const pools = await withPinnedPools(await fetchPools());
       await savePools(pools);
       await publishPools(pools);
       security.enqueue(pools);
