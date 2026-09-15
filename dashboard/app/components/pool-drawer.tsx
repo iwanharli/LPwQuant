@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState, type ReactNode } from "react";
 import { STRATEGY_LABEL, flagMeta, sortFlags } from "../lib/flags";
 import { REGIME_META, TIER_META } from "../lib/flags";
@@ -455,6 +456,12 @@ function DrawerContent({ row, onClose }: { row: PoolRow; onClose: () => void }) 
               {copied ? <CheckIcon width={12} height={12} /> : <CopyIcon width={12} height={12} />}
             </button>
           </div>
+          <Link
+            href={`/pool/${row.address}`}
+            className="rounded-md border border-line px-2.5 py-1 text-xs font-medium text-ink-2 transition-colors hover:border-line-strong hover:bg-raised hover:text-ink"
+          >
+            Buka grafik
+          </Link>
           <button
             onClick={onClose}
             aria-label="Tutup detail"

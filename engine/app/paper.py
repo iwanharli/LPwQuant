@@ -23,8 +23,9 @@ from typing import Any, Iterable
 import asyncpg
 
 from .backtest import LpPosition, summarize
+from .costs import BINS_PER_BIN_ARRAY, CostModel, entry_costs, exit_cost, round_trip_cost_pct, swap_cost_fraction  # noqa: F401
 from .depth import fee_share
-from .recommend import MIN_BREAKOUT_DISTANCE_PCT
+from .recommend import DEFAULT_MIN_HOLD_HOURS, FEE_RATE_AVG_HOURS, MIN_BREAKOUT_DISTANCE_PCT, cost_gate_ok
 from .validation import bootstrap_mean_ci
 
 log = logging.getLogger("paper")
@@ -33,7 +34,6 @@ HOUR_MS = 3_600_000
 TIER_ORDER = ("low", "medium", "high")
 MAX_EQUITY_POINTS = 600
 SOL_MINT = "So11111111111111111111111111111111111111112"
-BINS_PER_BIN_ARRAY = 70  # SDK MAX_BIN_ARRAY_SIZE
 
 
 def _dt(ms: int) -> datetime:
@@ -59,19 +59,6 @@ def _clean(value: Any) -> Any:
 
 
 @dataclass(frozen=True)
-class CostModel:
-    enabled: bool = True
-    tx_cost_sol: float = 0.00015  # base fee (5,000 lamports) + priority fee, per transaction
-    txs_open_per_position: int = 2  # initialize position + add liquidity
-    txs_close_per_position: int = 2  # remove liquidity & claim + close position
-    position_rent_sol: float = 0.05740608  # SDK POSITION_FEE, refunded on close
-    bin_array_rent_sol: float = 0.07143744  # SDK BIN_ARRAY_FEE, not refunded
-    new_bin_array_share: float = 0.0  # share of the range's bin arrays assumed uninitialized
-    impact_multiplier: float = 1.0  # price impact = swap value / pool TVL * multiplier
-    max_impact: float = 0.05
-
-
-@dataclass(frozen=True)
 class PaperConfig:
     enabled: bool
     start_equity_usd: float
@@ -83,6 +70,18 @@ class PaperConfig:
     min_position_usd: float = 25.0
     # Stop opening positions once equity falls this far below its peak (None = never pause).
     max_drawdown_pct: float | None = 10.0
+    # Risk profile (app.profiles). Positions and equity are stored per profile; several traders run side by side
+    # on the same live plans. A profile re-gates the engine's un-gated plan with its own cost rule when
+    # min_fee_cost_ratio is set; None follows the live plan as gated by the engine.
+    profile: str = "moderat"
+    label: str = "Moderat"
+    description: str = ""
+    size_mult: float = 1.0
+    min_fee_cost_ratio: float | None = None
+    fee_gate_hours: float | None = None
+    min_hold_hours: float | None = None
+    stop_loss_mult: float = 1.0
+    max_tvl_share: float = 0.02
 
 
 def entries_paused(equity_usd: float, peak_equity_usd: float, max_drawdown_pct: float | None) -> bool:
@@ -121,6 +120,9 @@ class Position:
     # Pool liquidity per bin (token Y) around the active bin at the last update; None = no on-chain depth, fall
     # back to the TVL share. Not persisted: after a restart the first interval uses the TVL share.
     last_depth_y: float | None = None
+    # Fee rate (fraction of TVL per hour) smoothed over ~FEE_RATE_AVG_HOURS, so one quiet snapshot does not
+    # trigger fee_decay. Not persisted: starts from the last rate after a restart.
+    rate_avg: float | None = None
     lp: LpPosition = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
@@ -161,56 +163,13 @@ def sanitize_exit_rules(rules: dict[str, Any], atr_pct: float | None) -> dict[st
     opened before a rule change are not closed by a stale, too-tight level."""
     min_distance = max(MIN_BREAKOUT_DISTANCE_PCT, atr_pct or 0.0)
     out = dict(rules)
+    out.setdefault("min_hold_hours", DEFAULT_MIN_HOLD_HOURS)
     below, above = out.get("breakout_below_pct"), out.get("breakout_above_pct")
     if below is not None and below > -min_distance:
         out["breakout_below_pct"] = None
     if above is not None and above < min_distance:
         out["breakout_above_pct"] = None
     return out
-
-
-def swap_cost_fraction(pool: dict[str, Any], swap_usd: float, model: CostModel) -> float:
-    """Pool swap fee (base + dynamic) plus a price-impact estimate, as a fraction of the swapped value."""
-    fee = ((pool.get("base_fee_pct") or 0.0) + (pool.get("dynamic_fee_pct") or 0.0)) / 100
-    tvl = pool.get("tvl") or 0.0
-    impact = min(model.max_impact, swap_usd / tvl * model.impact_multiplier) if tvl > 0 else model.max_impact
-    return fee + impact
-
-
-def entry_costs(
-    lp: LpPosition,
-    positions: int,
-    pool: dict[str, Any],
-    y_usd: float,
-    sol_to_y: float,
-    model: CostModel,
-    new_bin_arrays: int | None = None,
-) -> tuple[float, float]:
-    """(cost in token Y, refundable rent in SOL) to open the position from token Y. `new_bin_arrays` is the
-    on-chain count of bin arrays the range must create; when unknown, `model.new_bin_array_share` is assumed."""
-    if not model.enabled:
-        return 0.0, 0.0
-    capital_y = lp.v * (lp.a + lp.b + 1)
-    swap_y = capital_y * (lp.b + 0.5) / (lp.a + lp.b + 1)  # base-token share: bins above + half the active bin
-    swap = swap_y * swap_cost_fraction(pool, swap_y * y_usd, model)
-    txs = positions * model.txs_open_per_position * model.tx_cost_sol * sol_to_y
-    if new_bin_arrays is None:
-        new_bin_arrays_est = model.new_bin_array_share * math.ceil((lp.a + lp.b + 1) / BINS_PER_BIN_ARRAY)
-    else:
-        new_bin_arrays_est = float(new_bin_arrays)
-    bin_array_rent = new_bin_arrays_est * model.bin_array_rent_sol * sol_to_y
-    return swap + txs + bin_array_rent, positions * model.position_rent_sol
-
-
-def exit_cost(
-    lp: LpPosition, price: float, positions: int, pool: dict[str, Any], y_usd: float, sol_to_y: float, model: CostModel
-) -> float:
-    """Cost in token Y to close all positions and swap the base tokens held at `price` back to token Y."""
-    if not model.enabled:
-        return 0.0
-    base_y = lp.base_value(price)
-    swap = base_y * swap_cost_fraction(pool, base_y * y_usd, model)
-    return swap + positions * model.txs_close_per_position * model.tx_cost_sol * sol_to_y
 
 
 def sol_usd_from_pools(pools: Iterable[dict[str, Any]]) -> float | None:
@@ -254,7 +213,12 @@ def accrue(
     price = pool["price"]
     pos.value_y = pos.lp.value(price)
     pos.out_of_range_since = None if pos.lp.in_range(price) else (pos.out_of_range_since or now_ms)
-    pos.last_ts, pos.last_price, pos.last_rate = now_ms, price, pool_fee_rate(pool)
+    rate = pool_fee_rate(pool)
+    if pos.rate_avg is None:
+        pos.rate_avg = pos.last_rate
+    alpha = 1 - math.exp(-dt_h / FEE_RATE_AVG_HOURS) if dt_h > 0 else 0.0
+    pos.rate_avg += alpha * (rate - pos.rate_avg)
+    pos.last_ts, pos.last_price, pos.last_rate = now_ms, price, rate
     if model is not None and y_usd > 0 and sol_usd:
         pos.cost_exit_y = exit_cost(pos.lp, price, pos.positions, pool, y_usd, sol_usd / y_usd, model)
 
@@ -262,21 +226,53 @@ def accrue(
 def exit_reason(pos: Position, now_ms: int) -> str | None:
     """Same exit rules, in the same order, as app.backtest.simulate."""
     rules = pos.exit_rules
+    held = pos.hold_hours(now_ms)
     if pos.pnl_pct() <= -rules["stop_loss_pct"]:
         return "stop_loss"
     if pos.out_of_range_since is not None and (now_ms - pos.out_of_range_since) / 60_000 >= rules["out_of_range_minutes"]:
         return "out_of_range"
+    # Before the minimum hold only the protective exits above apply: fees need time to pay back entry costs.
+    if held < (rules.get("min_hold_hours") or 0.0):
+        return None
     below, above = rules.get("breakout_below_pct"), rules.get("breakout_above_pct")
     if below is not None and pos.last_price < pos.entry_price * (1 + below / 100):
         return "breakout"
     if above is not None and pos.last_price > pos.entry_price * (1 + above / 100):
         return "breakout"
-    held = pos.hold_hours(now_ms)
-    if held >= 1 and pos.entry_fee_rate > 0 and pos.last_rate < pos.entry_fee_rate * rules["fee_decay_ratio"]:
+    rate = pos.rate_avg if pos.rate_avg is not None else pos.last_rate
+    if held >= 1 and pos.entry_fee_rate > 0 and rate < pos.entry_fee_rate * rules["fee_decay_ratio"]:
         return "fee_decay"
     if held >= rules["max_hold_hours"]:
         return "max_hold"
     return None
+
+
+def profile_plan(row: dict[str, Any], cfg: PaperConfig) -> dict[str, Any] | None:
+    """The row's entry plan as this profile would trade it, or None when the profile skips it: tier not allowed,
+    or fees over the profile's gate window below its multiple of the round-trip cost. Size, stop-loss and
+    minimum hold are scaled or overridden by the profile."""
+    base = row.get("plan_base")
+    if cfg.min_fee_cost_ratio is None or base is None:
+        plan = row.get("plan") or {}
+    else:
+        plan = base
+        cost, fee_day = plan.get("round_trip_cost_pct"), row.get("fee_for_position_pct_day")
+        hours = cfg.fee_gate_hours if cfg.fee_gate_hours is not None else 1.0
+        if cost is not None and fee_day is not None and not cost_gate_ok(cost, fee_day, hours, cfg.min_fee_cost_ratio):
+            return None
+    if plan.get("action") != "enter" or plan.get("tier") not in cfg.tiers:
+        return None
+    rules = dict(plan.get("exit") or {})
+    if cfg.stop_loss_mult != 1.0 and rules.get("stop_loss_pct") is not None:
+        rules["stop_loss_pct"] = round(max(2.0, rules["stop_loss_pct"] * cfg.stop_loss_mult), 1)
+    if cfg.min_hold_hours is not None:
+        rules["min_hold_hours"] = cfg.min_hold_hours
+        rules["max_hold_hours"] = max(rules.get("max_hold_hours") or 0.0, cfg.min_hold_hours)
+    size = (plan.get("size_usd") or 0.0) * cfg.size_mult
+    tvl = row.get("tvl") or 0.0
+    if tvl > 0:
+        size = min(size, tvl * cfg.max_tvl_share)
+    return dict(plan, size_usd=round(size, 2), exit=rules, profile=cfg.profile)
 
 
 def pick_entries(
@@ -297,9 +293,11 @@ def pick_entries(
     cooldown_ms = cfg.cooldown_hours * HOUR_MS
     picked = []
     for row in sorted(rows, key=lambda r: r.get("score") or 0.0, reverse=True):
-        plan = row.get("plan") or {}
-        tier = plan.get("tier")
-        if plan.get("action") != "enter" or tier not in cfg.tiers or per_tier[tier] >= cfg.max_open_per_tier:
+        plan = profile_plan(row, cfg)
+        if plan is None:
+            continue
+        tier = plan["tier"]
+        if per_tier[tier] >= cfg.max_open_per_tier:
             continue
         if row["address"] in addresses or (row.get("base_mint") and row["base_mint"] in mints):
             continue
@@ -308,7 +306,7 @@ def pick_entries(
             continue
         if (plan.get("size_usd") or 0) < max(1.0, cfg.min_position_usd) or not row.get("price"):
             continue
-        picked.append(row)
+        picked.append(dict(row, plan=plan))
         per_tier[tier] += 1
         addresses.add(row["address"])
         if row.get("base_mint"):
@@ -341,7 +339,7 @@ class PaperTrader:
 
     async def load(self) -> None:
         async with self.db.acquire() as conn:
-            for r in await conn.fetch("select * from paper_positions where status = 'open'"):
+            for r in await conn.fetch("select * from paper_positions where status = 'open' and profile = $1", self.cfg.profile):
                 snapshot = _json(r["entry_snapshot"]) or {}
                 rules = sanitize_exit_rules(_json(r["exit_rules"]), (snapshot.get("market") or {}).get("atr_pct"))
                 pos = Position(
@@ -357,23 +355,29 @@ class PaperTrader:
                 )
                 self.open[pos.id] = pos
             closed = await conn.fetch(
-                "select address, max(exit_ts) as last_exit from paper_positions where status = 'closed' group by address"
+                "select address, max(exit_ts) as last_exit from paper_positions where status = 'closed' and profile = $1 "
+                "group by address",
+                self.cfg.profile,
             )
             self.last_closed = {r["address"]: _ms(r["last_exit"]) for r in closed}
             closed_mints = await conn.fetch(
                 """select base_mint, max(exit_ts) as last_exit from paper_positions
-                   where status = 'closed' and base_mint is not null group by base_mint"""
+                   where status = 'closed' and profile = $1 and base_mint is not null group by base_mint""",
+                self.cfg.profile,
             )
             self.last_closed_mints = {r["base_mint"]: _ms(r["last_exit"]) for r in closed_mints}
             self.realized_usd = float(await conn.fetchval(
-                "select coalesce(sum(capital_usd * pnl_pct / 100), 0) from paper_positions where status = 'closed'"
+                "select coalesce(sum(capital_usd * pnl_pct / 100), 0) from paper_positions where status = 'closed' and profile = $1",
+                self.cfg.profile,
             ))
-            self.started_at = _ms(await conn.fetchval("select min(entry_ts) from paper_positions"))
+            self.started_at = _ms(await conn.fetchval("select min(entry_ts) from paper_positions where profile = $1", self.cfg.profile))
             self.peak_equity_usd = max(
                 self.cfg.start_equity_usd,
-                float(await conn.fetchval("select coalesce(max(equity_usd), 0) from paper_equity")),
+                float(await conn.fetchval(
+                    "select coalesce(max(equity_usd), 0) from paper_equity where profile = $1", self.cfg.profile
+                )),
             )
-        log.info("paper trading: %d open positions, realized %.2f USD", len(self.open), self.realized_usd)
+        log.info("paper[%s]: %d open positions, realized %.2f USD", self.cfg.profile, len(self.open), self.realized_usd)
 
     async def on_refresh(self, pools: dict[str, dict[str, Any]], rows: dict[str, dict[str, Any]], now_ms: int) -> None:
         if not self.cfg.enabled:
@@ -393,8 +397,8 @@ class PaperTrader:
         self.peak_equity_usd = max(self.peak_equity_usd, equity)
         paused = entries_paused(equity, self.peak_equity_usd, self.cfg.max_drawdown_pct)
         if paused and not self.entries_paused:
-            log.warning("paper trading: equity %.2f is %.1f%%+ below peak %.2f, pausing new entries",
-                        equity, self.cfg.max_drawdown_pct, self.peak_equity_usd)
+            log.warning("paper[%s]: equity %.2f is %.1f%%+ below peak %.2f, pausing new entries",
+                        self.cfg.profile, equity, self.cfg.max_drawdown_pct, self.peak_equity_usd)
         self.entries_paused = paused
         if not paused:
             for row in pick_entries(
@@ -402,6 +406,25 @@ class PaperTrader:
             ):
                 await self._open(row, pools[row["address"]], now_ms)
         await self._record_equity(now_ms)
+
+    async def reset(self) -> int:
+        """Delete this profile's positions and equity history and start again from start_equity_usd."""
+        async with self.db.acquire() as conn, conn.transaction():
+            deleted = await conn.fetchval(
+                "with d as (delete from paper_positions where profile = $1 returning 1) select count(*) from d",
+                self.cfg.profile,
+            )
+            await conn.execute("delete from paper_equity where profile = $1", self.cfg.profile)
+        self.open.clear()
+        self.last_closed.clear()
+        self.last_closed_mints.clear()
+        self.realized_usd = 0.0
+        self.peak_equity_usd = self.cfg.start_equity_usd
+        self.entries_paused = False
+        self.started_at = None
+        log.warning("paper[%s]: reset, %d positions deleted, equity back to %.2f", self.cfg.profile, deleted,
+                    self.cfg.start_equity_usd)
+        return int(deleted)
 
     def open_addresses(self) -> list[str]:
         return sorted({p.address for p in self.open.values()})
@@ -436,9 +459,9 @@ class PaperTrader:
             insert into paper_positions (address, name, base_mint, quote_symbol, tier, strategy, regime, score, bin_step,
                 entry_ts, entry_price, range_low_pct, range_high_pct, min_price, max_price, capital_usd, capital_y,
                 entry_fee_rate, exit_rules, entry_snapshot, value_y, fees_y, last_price, last_update_ts,
-                positions, cost_entry_y, cost_exit_y, rent_sol, cost_pct, pnl_pct, gross_pnl_pct)
+                positions, cost_entry_y, cost_exit_y, rent_sol, cost_pct, pnl_pct, gross_pnl_pct, profile)
             values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18,
-                    $19::jsonb, $20::jsonb, $21, 0, $22, $10, $23, $24, $25, $26, $27, $28, 0)
+                    $19::jsonb, $20::jsonb, $21, 0, $22, $10, $23, $24, $25, $26, $27, $28, 0, $29)
             returning id
             """,
             pos.address, pos.name, pos.base_mint, row["name"].split("-")[-1], pos.tier, pos.strategy,
@@ -446,11 +469,13 @@ class PaperTrader:
             pos.range_high_pct, pos.min_price, pos.max_price, capital_usd, pos.capital_y, rate,
             json.dumps(_clean(plan["exit"])), json.dumps(_clean(snapshot)), pos.value_y, price,
             pos.positions, pos.cost_entry_y, pos.cost_exit_y, pos.rent_sol, pos.cost_pct(), pos.pnl_pct(),
+            self.cfg.profile,
         )
         self.open[pos.id] = pos
         self.started_at = self.started_at or now_ms
         log.info(
-            "paper open #%d %s tier=%s %s %.2f USD, cost %.2f%%", pos.id, pos.name, pos.tier, pos.strategy,
+            "paper[%s] open #%d %s tier=%s %s %.2f USD, cost %.2f%%", self.cfg.profile, pos.id, pos.name, pos.tier,
+            pos.strategy,
             capital_usd, pos.cost_pct(),
         )
 
@@ -489,7 +514,7 @@ class PaperTrader:
         if pos.base_mint:
             self.last_closed_mints[pos.base_mint] = now_ms
         del self.open[pos.id]
-        log.info("paper close #%d %s %s %+.2f%%", pos.id, pos.name, reason, pnl)
+        log.info("paper[%s] close #%d %s %s %+.2f%%", self.cfg.profile, pos.id, pos.name, reason, pnl)
 
     def _unrealized_usd(self) -> float:
         return sum(p.capital_usd * p.pnl_pct() / 100 for p in self.open.values())
@@ -497,18 +522,62 @@ class PaperTrader:
     async def _record_equity(self, now_ms: int) -> None:
         unrealized = self._unrealized_usd()
         await self.db.execute(
-            "insert into paper_equity (ts, equity_usd, realized_usd, unrealized_usd, open_count) values ($1, $2, $3, $4, $5)",
+            """insert into paper_equity (ts, equity_usd, realized_usd, unrealized_usd, open_count, profile)
+               values ($1, $2, $3, $4, $5, $6)""",
             _dt(now_ms), self.cfg.start_equity_usd + self.realized_usd + unrealized, self.realized_usd, unrealized,
-            len(self.open),
+            len(self.open), self.cfg.profile,
         )
 
     # read API
+
+    def profile_info(self) -> dict[str, Any]:
+        c = self.cfg
+        return {
+            "key": c.profile,
+            "label": c.label,
+            "description": c.description,
+            "settings": {
+                "tiers": list(c.tiers),
+                "max_open_per_tier": c.max_open_per_tier,
+                "size_mult": c.size_mult,
+                "min_fee_cost_ratio": c.min_fee_cost_ratio,
+                "fee_gate_hours": c.fee_gate_hours,
+                "min_hold_hours": c.min_hold_hours,
+                "stop_loss_mult": c.stop_loss_mult,
+                "max_drawdown_pct": c.max_drawdown_pct,
+            },
+        }
+
+    async def compare_summary(self) -> dict[str, Any]:
+        """Headline numbers for comparing profiles, including the worst peak-to-trough drawdown so far."""
+        s = await self.summary()
+        max_dd = await self.db.fetchval(
+            """select coalesce(max((peak - equity_usd) / nullif(peak, 0) * 100), 0) from (
+                   select equity_usd, max(equity_usd) over (order by ts) as peak
+                   from paper_equity where profile = $1) t""",
+            self.cfg.profile,
+        )
+        return _clean({
+            **self.profile_info(),
+            "start_equity_usd": s["start_equity_usd"],
+            "equity_usd": s["equity_usd"],
+            "realized_usd": s["realized_usd"],
+            "unrealized_usd": s["unrealized_usd"],
+            "open_count": s["open_count"],
+            "closed_count": s["closed_count"],
+            "costs_usd": s["costs"]["closed_cost_usd"] + s["costs"]["open_cost_usd"],
+            "max_drawdown_pct": float(max_dd or 0.0),
+            "entries_paused": s["risk"]["entries_paused"],
+            "started_at": s["started_at"],
+            "overall": s["overall"],
+        })
 
     async def summary(self) -> dict[str, Any]:
         rows = await self.db.fetch(
             """select tier, strategy, exit_reason, pnl_pct, fee_pct, il_pct, cost_pct,
                       coalesce(gross_pnl_pct, pnl_pct) as gross_pnl_pct, capital_usd, entry_ts, exit_ts
-               from paper_positions where status = 'closed'"""
+               from paper_positions where status = 'closed' and profile = $1""",
+            self.cfg.profile,
         )
         trades = [
             {
@@ -524,6 +593,7 @@ class PaperTrader:
         costs = self.cfg.costs
         return _clean({
             "enabled": self.cfg.enabled,
+            "profile": self.profile_info(),
             "config": {
                 "max_open_per_tier": self.cfg.max_open_per_tier,
                 "tiers": list(self.cfg.tiers),
@@ -565,8 +635,9 @@ class PaperTrader:
 
     async def positions(self, status: str, limit: int, now_ms: int) -> list[dict[str, Any]]:
         rows = await self.db.fetch(
-            "select * from paper_positions where status = $1 order by coalesce(exit_ts, entry_ts) desc limit $2",
-            status, limit,
+            """select * from paper_positions where status = $1 and profile = $3
+               order by coalesce(exit_ts, entry_ts) desc limit $2""",
+            status, limit, self.cfg.profile,
         )
         out = []
         for r in rows:
@@ -597,8 +668,8 @@ class PaperTrader:
     async def equity(self, hours: float) -> dict[str, Any]:
         rows = await self.db.fetch(
             """select (extract(epoch from ts) * 1000)::bigint as ts, equity_usd, open_count
-               from paper_equity where ts > now() - make_interval(secs => $1) order by ts""",
-            hours * 3600,
+               from paper_equity where profile = $2 and ts > now() - make_interval(secs => $1) order by ts""",
+            hours * 3600, self.cfg.profile,
         )
         step = max(1, math.ceil(len(rows) / MAX_EQUITY_POINTS))
         points = [dict(r) for r in rows[::step]]

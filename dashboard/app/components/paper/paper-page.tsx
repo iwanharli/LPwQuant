@@ -17,6 +17,8 @@ import {
   type EquityPoint,
   type PaperPosition,
   type PaperSummary,
+  type ProfileSummary,
+  PROFILE_COLORS,
   type TradeStats,
 } from "../../lib/paper-types";
 import type { Tier } from "../../lib/types";
@@ -33,6 +35,9 @@ type PaperData = {
   open: PaperPosition[];
   closed: PaperPosition[];
   equity: EquityPoint[];
+  profiles: ProfileSummary[];
+  /** Equity points per profile key, for the multi-line chart. */
+  equityByProfile: Record<string, EquityPoint[]>;
 };
 
 async function getJson<T>(path: string): Promise<T> {
@@ -41,21 +46,39 @@ async function getJson<T>(path: string): Promise<T> {
   return (await res.json()) as T;
 }
 
-function usePaperData() {
+function usePaperData(profile: string) {
   const [data, setData] = useState<PaperData | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
       try {
-        const [summary, open, closed, equity] = await Promise.all([
-          getJson<PaperSummary>("/api/paper/summary"),
-          getJson<{ positions: PaperPosition[] }>("/api/paper/positions?status=open"),
-          getJson<{ positions: PaperPosition[] }>("/api/paper/positions?status=closed&limit=100"),
-          getJson<{ points: EquityPoint[] }>("/api/paper/equity?hours=720"),
+        const q = `profile=${encodeURIComponent(profile)}`;
+        const [summary, open, closed, equity, profiles] = await Promise.all([
+          getJson<PaperSummary>(`/api/paper/summary?${q}`),
+          getJson<{ positions: PaperPosition[] }>(`/api/paper/positions?status=open&${q}`),
+          getJson<{ positions: PaperPosition[] }>(`/api/paper/positions?status=closed&limit=100&${q}`),
+          getJson<{ points: EquityPoint[] }>(`/api/paper/equity?hours=720&${q}`),
+          getJson<{ profiles: ProfileSummary[] }>("/api/paper/profiles"),
         ]);
+        const curves = await Promise.all(
+          profiles.profiles.map((p) =>
+            p.key === profile
+              ? Promise.resolve(equity.points)
+              : getJson<{ points: EquityPoint[] }>(`/api/paper/equity?hours=720&profile=${encodeURIComponent(p.key)}`).then(
+                  (r) => r.points,
+                ),
+          ),
+        );
         if (!cancelled) {
-          setData({ summary, open: open.positions, closed: closed.positions, equity: equity.points });
+          setData({
+            summary,
+            open: open.positions,
+            closed: closed.positions,
+            equity: equity.points,
+            profiles: profiles.profiles,
+            equityByProfile: Object.fromEntries(profiles.profiles.map((p, i) => [p.key, curves[i]])),
+          });
           setError(null);
         }
       } catch (err) {
@@ -68,7 +91,7 @@ function usePaperData() {
       cancelled = true;
       clearInterval(timer);
     };
-  }, []);
+  }, [profile]);
   return { data, error };
 }
 
@@ -373,7 +396,7 @@ function ClosedTable({ positions }: { positions: PaperPosition[] }) {
   );
 }
 
-function ResultsCard({ summary: s }: { summary: PaperSummary | undefined }) {
+function ResultsCard({ summary: s, profileLabel }: { summary: PaperSummary | undefined; profileLabel?: string }) {
   const [tab, setTab] = useState<"tier" | "strategy">("tier");
   const strategies = s ? Object.entries(s.by_strategy) : [];
   const tabs = [
@@ -384,7 +407,9 @@ function ResultsCard({ summary: s }: { summary: PaperSummary | undefined }) {
     <section className="overflow-hidden rounded-xl border border-line bg-panel/90 shadow-[0_14px_42px_rgba(0,0,0,0.20),inset_0_1px_0_rgba(255,255,255,0.04)]">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line bg-raised/20 px-4 py-3">
         <div className="flex items-center gap-3">
-          <h2 className="text-sm font-semibold text-ink">Hasil trading</h2>
+          <h2 className="text-sm font-semibold text-ink">
+            Hasil trading{profileLabel ? <span className="font-normal text-ink-3"> · {profileLabel}</span> : null}
+          </h2>
           <div role="tablist" className="flex rounded-lg border border-line bg-bg/80 p-1 shadow-inner shadow-black/20">
             {tabs.map((t) => (
               <button
@@ -408,7 +433,11 @@ function ResultsCard({ summary: s }: { summary: PaperSummary | undefined }) {
         <p className="px-4 py-8 text-sm text-ink-3">Memuat…</p>
       ) : tab === "tier" ? (
         <StatsTable
-          rows={TIERS.map((t) => ({ key: t, label: <TierBadge tier={t} />, stats: s.by_tier[t] ?? { trades: 0 } }))}
+          rows={TIERS.filter((t) => !s.profile || s.profile.settings.tiers.includes(t)).map((t) => ({
+            key: t,
+            label: <TierBadge tier={t} />,
+            stats: s.by_tier[t] ?? { trades: 0 },
+          }))}
         />
       ) : strategies.length > 0 ? (
         <StatsTable
@@ -431,7 +460,185 @@ function ResultsCard({ summary: s }: { summary: PaperSummary | undefined }) {
   );
 }
 
-function PositionsCard({ open, closed }: { open: PaperPosition[]; closed: PaperPosition[] }) {
+function fmtMult(value: number | null | undefined, suffix: string): string {
+  return value == null ? "–" : `${String(value).replace(".", ",")}${suffix}`;
+}
+
+function ProfileCompareCard({
+  profiles,
+  selected,
+  onSelect,
+}: {
+  profiles: ProfileSummary[] | undefined;
+  selected: string;
+  onSelect: (key: string) => void;
+}) {
+  return (
+    <section className="overflow-hidden rounded-xl border border-line bg-panel/90 shadow-[0_14px_42px_rgba(0,0,0,0.20),inset_0_1px_0_rgba(255,255,255,0.04)]">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line bg-raised/20 px-4 py-3">
+        <h2 className="text-sm font-semibold text-ink">Perbandingan profil risiko</h2>
+        <span className="text-xs text-ink-3">
+          Modal awal dan data live sama untuk semua profil. Klik baris untuk melihat detail profil.
+        </span>
+      </div>
+      {!profiles ? (
+        <p className="px-4 py-8 text-sm text-ink-3">Memuat…</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[1080px] text-sm tabular-nums">
+            <thead className="text-[11px] uppercase tracking-wider text-ink-3">
+              <tr className="border-b border-line">
+                <th className="px-4 py-2.5 text-left font-medium">Profil</th>
+                <th className="px-3 py-2.5 text-left font-medium">Aturan</th>
+                <th className="px-3 py-2.5 text-right font-medium">Equity</th>
+                <th className="px-3 py-2.5 text-right font-medium">PnL total</th>
+                <th className="px-3 py-2.5 text-right font-medium">Terealisasi</th>
+                <th className="px-3 py-2.5 text-right font-medium">Belum terealisasi</th>
+                <th className="px-3 py-2.5 text-right font-medium">Posisi buka / tutup</th>
+                <th className="px-3 py-2.5 text-right font-medium">Win rate</th>
+                <th className="px-3 py-2.5 text-right font-medium">Rata-rata / trade</th>
+                <th className="px-3 py-2.5 text-right font-medium">Biaya</th>
+                <th className="px-4 py-2.5 text-right font-medium">Drawdown maks</th>
+              </tr>
+            </thead>
+            <tbody>
+              {profiles.map((p) => {
+                const total = p.equity_usd - p.start_equity_usd;
+                const pct = p.start_equity_usd > 0 ? (total / p.start_equity_usd) * 100 : 0;
+                const active = p.key === selected;
+                const st = p.settings;
+                return (
+                  <tr
+                    key={p.key}
+                    tabIndex={0}
+                    aria-selected={active}
+                    onClick={() => onSelect(p.key)}
+                    onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && onSelect(p.key)}
+                    className={`cursor-pointer border-b border-line/70 align-top outline-none transition-colors last:border-b-0 ${
+                      active ? "bg-accent/10 shadow-[inset_3px_0_0_var(--color-accent)]" : "hover:bg-hover/70 focus-visible:bg-hover"
+                    }`}
+                  >
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2 font-semibold text-ink">
+                        <span
+                          className="h-0.5 w-4 rounded-full"
+                          style={{ background: PROFILE_COLORS[p.key] ?? "var(--color-accent)" }}
+                          aria-hidden
+                        />
+                        {p.label}
+                        {p.entries_paused && (
+                          <span className="inline-flex items-center gap-1 text-[11px] font-medium text-warning">
+                            <StatusDot severity="warning" /> dijeda
+                          </span>
+                        )}
+                      </div>
+                      <div className="mt-0.5 max-w-[16rem] text-xs leading-5 text-ink-3">{p.description}</div>
+                    </td>
+                    <td className="px-3 py-3">
+                      <div className="flex flex-wrap gap-1">
+                        {st.tiers.map((t) => (
+                          <TierBadge key={t} tier={t} />
+                        ))}
+                      </div>
+                      <div className="mt-1.5 text-xs leading-5 text-ink-3">
+                        Ukuran {fmtMult(st.size_mult, "×")} · maks {st.max_open_per_tier}/tier · fee ≥
+                        {fmtMult(st.min_fee_cost_ratio, "×")} biaya ({fmtMult(st.fee_gate_hours, " j")})
+                        <br />
+                        Tahan min {fmtMult(st.min_hold_hours, " j")} · stop-loss {fmtMult(st.stop_loss_mult, "×")} · jeda di
+                        drawdown {st.max_drawdown_pct == null ? "–" : `${st.max_drawdown_pct}%`}
+                      </div>
+                    </td>
+                    <td className="px-3 py-3 text-right font-medium text-ink">{usd.format(p.equity_usd)}</td>
+                    <td className="px-3 py-3 text-right">
+                      <div className="text-ink">
+                        {total >= 0 ? "+" : ""}
+                        {usd.format(total)}
+                      </div>
+                      <Delta value={pct} digits={2} />
+                    </td>
+                    <td className="px-3 py-3 text-right text-ink-2">{usd.format(p.realized_usd)}</td>
+                    <td className="px-3 py-3 text-right text-ink-2">{usd.format(p.unrealized_usd)}</td>
+                    <td className="px-3 py-3 text-right text-ink-2">
+                      {integer.format(p.open_count)} / {integer.format(p.closed_count)}
+                    </td>
+                    <td className="px-3 py-3 text-right text-ink-2">
+                      {p.overall.trades ? fmtPct(p.overall.win_rate_pct) : "–"}
+                    </td>
+                    <td className="px-3 py-3 text-right">
+                      {p.overall.trades ? (
+                        <>
+                          <div className="text-ink">{fmtSignedPct(p.overall.mean_return_pct, 2)}</div>
+                          <div className="text-[11px] text-ink-3">CI {ciText(p.overall)}</div>
+                        </>
+                      ) : (
+                        <span className="text-ink-3">–</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-3 text-right text-ink-2">{usd.format(p.costs_usd)}</td>
+                    <td className="px-4 py-3 text-right text-ink-2">{fmtPct(p.max_drawdown_pct, 2)}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function ProfileTabs({
+  profiles,
+  selected,
+  onSelect,
+}: {
+  profiles: ProfileSummary[] | undefined;
+  selected: string;
+  onSelect: (key: string) => void;
+}) {
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line pt-5">
+      <div>
+        <h2 className="text-base font-semibold text-ink">Detail profil</h2>
+        <p className="text-xs text-ink-3">Ringkasan, hasil trading dan posisi di bawah ini hanya untuk profil yang dipilih.</p>
+      </div>
+      <div role="tablist" aria-label="Pilih profil" className="flex rounded-lg border border-line bg-bg/80 p-1 shadow-inner shadow-black/20">
+        {(profiles ?? []).map((p) => {
+          const active = p.key === selected;
+          return (
+            <button
+              key={p.key}
+              role="tab"
+              aria-selected={active}
+              onClick={() => onSelect(p.key)}
+              className={`flex items-center gap-2 rounded-md px-3.5 py-1.5 text-sm font-medium transition-colors ${
+                active ? "bg-raised text-ink shadow-sm shadow-black/25" : "text-ink-3 hover:bg-raised/50 hover:text-ink-2"
+              }`}
+            >
+              <span
+                className="h-0.5 w-4 rounded-full"
+                style={{ background: PROFILE_COLORS[p.key] ?? "var(--color-accent)" }}
+                aria-hidden
+              />
+              {p.label}
+              <span className="tabular-nums text-xs text-ink-3">{p.open_count}</span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function PositionsCard({
+  open,
+  closed,
+  profileLabel,
+}: {
+  open: PaperPosition[];
+  closed: PaperPosition[];
+  profileLabel?: string;
+}) {
   const [tab, setTab] = useState<"open" | "closed">("open");
   const tabs = [
     { id: "open" as const, label: "Terbuka", count: open.length },
@@ -441,7 +648,9 @@ function PositionsCard({ open, closed }: { open: PaperPosition[]; closed: PaperP
     <section className="overflow-hidden rounded-xl border border-line bg-panel/90 shadow-[0_14px_42px_rgba(0,0,0,0.20),inset_0_1px_0_rgba(255,255,255,0.04)]">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line bg-raised/20 px-4 py-3">
         <div className="flex items-center gap-3">
-          <h2 className="text-sm font-semibold text-ink">Posisi</h2>
+          <h2 className="text-sm font-semibold text-ink">
+            Posisi{profileLabel ? <span className="font-normal text-ink-3"> · {profileLabel}</span> : null}
+          </h2>
           <div role="tablist" className="flex rounded-lg border border-line bg-bg/80 p-1 shadow-inner shadow-black/20">
             {tabs.map((t) => (
               <button
@@ -469,8 +678,10 @@ function PositionsCard({ open, closed }: { open: PaperPosition[]; closed: PaperP
 }
 
 export default function PaperPage() {
-  const { data, error } = usePaperData();
+  const [profile, setProfile] = useState("moderat");
+  const { data, error } = usePaperData(profile);
   const s = data?.summary;
+  const loadingProfile = !!s?.profile && s.profile.key !== profile;
   const totalPnl = s ? s.equity_usd - s.start_equity_usd : 0;
   const totalPct = s ? (totalPnl / s.start_equity_usd) * 100 : 0;
 
@@ -480,7 +691,9 @@ export default function PaperPage() {
       <main className="mx-auto w-full min-w-0 max-w-full flex-1 space-y-5 overflow-x-hidden px-4 py-6 sm:px-6 lg:py-7 2xl:px-8">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-ink sm:text-3xl">Paper trading</h1>
+          <h1 className="text-2xl font-semibold tracking-tight text-ink sm:text-3xl">
+            Paper trading{s?.profile ? <span className="text-ink-3"> · {s.profile.label}</span> : null}
+          </h1>
           <p className="mt-1 max-w-3xl text-sm leading-6 text-ink-3">
             Posisi LP virtual dibuka otomatis dari rencana posisi live, maksimal{" "}
             {s ? s.config.max_open_per_tier : "–"} posisi per tier dan minimal{" "}
@@ -512,42 +725,10 @@ export default function PaperPage() {
           </p>
         )}
 
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-5">
-          <Tile
-            label="Equity virtual"
-            value={s ? usd.format(s.equity_usd) : "–"}
-            hint={s ? `${totalPnl >= 0 ? "+" : ""}${usd.format(totalPnl)} (${fmtSignedPct(totalPct, 2)}) dari ${usd.format(s.start_equity_usd)}` : "–"}
-          />
-          <Tile
-            label="PnL terealisasi (bersih)"
-            value={s ? usd.format(s.realized_usd) : "–"}
-            hint={
-              s ? `${s.closed_count} posisi ditutup · biaya ${usd.format(s.costs.closed_cost_usd)}` : "–"
-            }
-          />
-          <Tile
-            label="PnL belum terealisasi (bersih)"
-            value={s ? usd.format(s.unrealized_usd) : "–"}
-            hint={
-              s
-                ? `${s.open_count} terbuka · biaya ${usd.format(s.costs.open_cost_usd)} · rent ${s.costs.rent_locked_sol.toFixed(2)} SOL`
-                : "–"
-            }
-          />
-          <Tile
-            label="Win rate"
-            value={s?.overall.trades ? fmtPct(s.overall.win_rate_pct) : "–"}
-            hint={s?.started_at ? `Sejak ${fmtDateTime(s.started_at)} WIB` : "Belum ada trade"}
-          />
-          <Tile
-            label="Rata-rata return / trade"
-            value={s?.overall.trades ? fmtSignedPct(s.overall.mean_return_pct, 2) : "–"}
-            hint={s?.overall.trades ? `95% CI ${ciText(s.overall)}` : "Butuh posisi yang sudah ditutup"}
-          />
-        </div>
+        <ProfileCompareCard profiles={data?.profiles} selected={profile} onSelect={setProfile} />
 
         <Card
-          title="Kurva equity"
+          title="Kurva equity per profil"
           collapsible
           right={<span className="text-xs text-ink-3">30 hari terakhir</span>}
           collapsedRight={
@@ -560,13 +741,63 @@ export default function PaperPage() {
           }
         >
           <div className="px-2 py-3 sm:px-4">
-            <EquityChart points={data?.equity ?? []} start={s?.start_equity_usd ?? 0} />
+            <EquityChart
+              series={(data?.profiles ?? []).map((p) => ({
+                key: p.key,
+                label: p.label,
+                color: PROFILE_COLORS[p.key] ?? "var(--color-accent)",
+                points: data?.equityByProfile[p.key] ?? [],
+              }))}
+              start={s?.start_equity_usd ?? 0}
+              selected={profile}
+            />
           </div>
         </Card>
 
-        <ResultsCard summary={s} />
+        <ProfileTabs profiles={data?.profiles} selected={profile} onSelect={setProfile} />
 
-        <PositionsCard open={data?.open ?? []} closed={data?.closed ?? []} />
+        <div
+          className={`space-y-5 transition-opacity ${loadingProfile ? "pointer-events-none opacity-50" : ""}`}
+          aria-busy={loadingProfile}
+        >
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-5">
+            <Tile
+              label="Equity virtual"
+              value={s ? usd.format(s.equity_usd) : "–"}
+              hint={s ? `${totalPnl >= 0 ? "+" : ""}${usd.format(totalPnl)} (${fmtSignedPct(totalPct, 2)}) dari ${usd.format(s.start_equity_usd)}` : "–"}
+            />
+            <Tile
+              label="PnL terealisasi (bersih)"
+              value={s ? usd.format(s.realized_usd) : "–"}
+              hint={
+                s ? `${s.closed_count} posisi ditutup · biaya ${usd.format(s.costs.closed_cost_usd)}` : "–"
+              }
+            />
+            <Tile
+              label="PnL belum terealisasi (bersih)"
+              value={s ? usd.format(s.unrealized_usd) : "–"}
+              hint={
+                s
+                  ? `${s.open_count} terbuka · biaya ${usd.format(s.costs.open_cost_usd)} · rent ${s.costs.rent_locked_sol.toFixed(2)} SOL`
+                  : "–"
+              }
+            />
+            <Tile
+              label="Win rate"
+              value={s?.overall.trades ? fmtPct(s.overall.win_rate_pct) : "–"}
+              hint={s?.started_at ? `Sejak ${fmtDateTime(s.started_at)} WIB` : "Belum ada trade"}
+            />
+            <Tile
+              label="Rata-rata return / trade"
+              value={s?.overall.trades ? fmtSignedPct(s.overall.mean_return_pct, 2) : "–"}
+              hint={s?.overall.trades ? `95% CI ${ciText(s.overall)}` : "Butuh posisi yang sudah ditutup"}
+            />
+          </div>
+
+          <ResultsCard summary={s} profileLabel={s?.profile?.label} />
+
+          <PositionsCard open={data?.open ?? []} closed={data?.closed ?? []} profileLabel={s?.profile?.label} />
+        </div>
 
         <p className="pb-2 text-center text-xs leading-5 text-ink-3">
           Simulasi: likuiditas rata di semua bin, fee dari fee/TVL 1 jam pool.

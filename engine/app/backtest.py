@@ -31,7 +31,8 @@ import asyncpg
 from . import config
 from .indicators import Candle, compute_indicators, flow_features, merge_market
 from .metrics import PriceHistory
-from .recommend import PlanParams, bins_below, bins_for_width, plan_position
+from .costs import CostModel, entry_costs, exit_cost, round_trip_cost_pct
+from .recommend import FEE_RATE_AVG_HOURS, PlanParams, apply_cost_gate, bins_below, bins_for_width, plan_position
 from .scoring import MARKET_INFO_FLAGS, MARKET_PENALTIES, diluted_fee_pct, market_flags
 
 HOUR_MS = 3_600_000
@@ -128,6 +129,14 @@ class LpPosition:
         return quote0 + base0 * p
 
 
+# Same cost assumptions as paper trading (no bin array rent: historical bin arrays are unknown).
+BACKTEST_COSTS = CostModel(
+    enabled=config.PAPER_COSTS_ENABLED,
+    tx_cost_sol=config.PAPER_TX_COST_SOL,
+    impact_multiplier=config.PAPER_IMPACT_MULTIPLIER,
+)
+
+
 def simulate(
     series: list[tuple[int, float]],
     start: int,
@@ -135,11 +144,25 @@ def simulate(
     capital: float,
     bin_step: int,
     plan: dict[str, Any],
+    cost_model: CostModel | None = None,
+    pool_ctx: dict[str, Any] | None = None,
+    sol_usd: float = 150.0,
 ) -> dict[str, Any]:
+    """Same exit rules, in the same order, as app.paper.exit_reason. With `cost_model`, the stop-loss and the
+    returned `return_pct` are net of entry and exit costs (capital in USD; `pool_ctx` gives base/dynamic fee)."""
     ts0, p0 = series[start]
     pos = LpPosition.build(p0, bin_step, plan["range_low_pct"], plan["range_high_pct"], capital)
     rules = plan["exit"]
-    entry_rate, _ = fee_rate_at(ts0)
+    min_hold = rules.get("min_hold_hours") or 0.0
+    positions = int(plan.get("positions") or 1)
+    entry_rate, tvl0 = fee_rate_at(ts0)
+    ctx = dict(pool_ctx or {}, tvl=tvl0)
+    entry_cost = entry_costs(pos, positions, ctx, 1.0, sol_usd, cost_model)[0] if cost_model else 0.0
+    exit_c = 0.0
+    avg_samples = int(FEE_RATE_AVG_HOURS * 2) + 1
+
+    def avg_rate(ts: int) -> float:
+        return sum(fee_rate_at(ts - k * HOUR_MS // 2)[0] for k in range(avg_samples)) / avg_samples
     breakout_low = p0 * (1 + rules["breakout_below_pct"] / 100) if rules.get("breakout_below_pct") is not None else None
     breakout_high = p0 * (1 + rules["breakout_above_pct"] / 100) if rules.get("breakout_above_pct") is not None else None
 
@@ -154,7 +177,9 @@ def simulate(
         if rate > 0 and pos.in_range(prev_p):
             fees += prev_value * rate * (ts - prev_ts) / HOUR_MS * (tvl / (tvl + capital) if tvl > 0 else 0)
         value = pos.value(p)
-        pnl_pct = (value + fees - capital) / capital * 100
+        if cost_model:
+            exit_c = exit_cost(pos, p, positions, dict(ctx, tvl=tvl or tvl0), 1.0, sol_usd, cost_model)
+        pnl_pct = (value + fees - capital - entry_cost - exit_c) / capital * 100
         held_h = (ts - ts0) / HOUR_MS
         out_since = None if pos.in_range(p) else (out_since or ts)
 
@@ -164,10 +189,13 @@ def simulate(
         if out_since is not None and (ts - out_since) / 60_000 >= rules["out_of_range_minutes"]:
             reason = "out_of_range"
             break
+        if held_h < min_hold:
+            prev_ts, prev_p, prev_value = ts, p, value
+            continue
         if (breakout_low is not None and p < breakout_low) or (breakout_high is not None and p > breakout_high):
             reason = "breakout"
             break
-        if held_h >= 1 and entry_rate > 0 and fee_rate_at(ts)[0] < entry_rate * rules["fee_decay_ratio"]:
+        if held_h >= 1 and entry_rate > 0 and avg_rate(ts) < entry_rate * rules["fee_decay_ratio"]:
             reason = "fee_decay"
             break
         if held_h >= rules["max_hold_hours"]:
@@ -183,7 +211,9 @@ def simulate(
         "price_change_pct": (p / p0 - 1) * 100,
         "fee_pct": fees / capital * 100,
         "il_vs_hodl_pct": (value - pos.hodl_value(p)) / capital * 100,
-        "return_pct": (value + fees - capital) / capital * 100,
+        "gross_return_pct": (value + fees - capital) / capital * 100,
+        "cost_pct": (entry_cost + exit_c) / capital * 100,
+        "return_pct": (value + fees - capital - entry_cost - exit_c) / capital * 100,
     }
 
 
@@ -202,6 +232,14 @@ def summarize(trades: list[dict[str, Any]]) -> dict[str, Any]:
         "mean_il_vs_hodl_pct": round(statistics.fmean(t["il_vs_hodl_pct"] for t in trades), 3),
         "mean_hold_hours": round(statistics.fmean(t["hold_hours"] for t in trades), 2),
         "exit_reasons": dict(Counter(t["exit_reason"] for t in trades)),
+        **(
+            {
+                "mean_cost_pct": round(statistics.fmean(t["cost_pct"] for t in trades), 3),
+                "mean_gross_return_pct": round(statistics.fmean(t["gross_return_pct"] for t in trades), 3),
+            }
+            if all("cost_pct" in t and "gross_return_pct" in t for t in trades)
+            else {}
+        ),
     }
 
 
@@ -586,7 +624,17 @@ def simulate_candle_trades(
             if plan["action"] in ("avoid", "wait"):
                 skipped[plan["action"]] += 1
                 continue
-            trade = simulate(series, start, fee_rate_at, capital, info["bin_step"], plan)
+            ctx = {"base_fee_pct": info["base_fee_pct"], "dynamic_fee_pct": 0.0, "tvl": tvl}
+            if BACKTEST_COSTS.enabled:
+                lp = LpPosition.build(series[start][1], info["bin_step"], plan["range_low_pct"], plan["range_high_pct"], capital)
+                cost_pct = round_trip_cost_pct(lp, int(plan.get("positions") or 1), ctx, 1.0, config.SOL_USD_FALLBACK,
+                                               BACKTEST_COSTS)
+                plan = apply_cost_gate(plan, cost_pct, diluted_fee_pct(rate * 24 * 100, tvl, capital), params)
+                if plan["action"] != "enter":
+                    skipped["fee_below_cost"] += 1
+                    continue
+            trade = simulate(series, start, fee_rate_at, capital, info["bin_step"], plan,
+                             BACKTEST_COSTS if BACKTEST_COSTS.enabled else None, ctx, config.SOL_USD_FALLBACK)
             trade.update(
                 address=address, score=score, tier=plan["tier"], strategy=plan["strategy"],
                 regime=plan["regime"], scored=stored is not None,
@@ -621,6 +669,9 @@ def default_params() -> PlanParams:
         portfolio_usd=config.PORTFOLIO_USD,
         max_position_pct=config.MAX_POSITION_PCT,
         hold_hours=config.HOLD_HOURS,
+        min_hold_hours=config.MIN_HOLD_HOURS,
+        min_fee_cost_ratio=config.MIN_FEE_COST_RATIO,
+        fee_gate_hours=config.FEE_GATE_HOURS,
     )
 
 

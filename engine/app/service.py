@@ -13,9 +13,12 @@ import redis.asyncio as aioredis
 from . import config
 from .indicators import Candle, compute_indicators, flow_features, merge_market
 from .metrics import PriceHistory
-from .paper import CostModel, PaperConfig, PaperTrader
+from .paper import PaperTrader, sol_usd_from_pools
 from .depth import Depth, depth_per_bin_y, fee_for_position_pct_day, new_bin_arrays, window_bins
-from .recommend import PlanParams, bins_below, bins_for_width, plan_position
+from .backtest import LpPosition
+from .costs import round_trip_cost_pct
+from .profiles import PROFILES, paper_config
+from .recommend import PlanParams, apply_cost_gate, bins_below, bins_for_width, plan_position
 from .scoring import base_token, expected_fee_pct_day, score_pool
 
 log = logging.getLogger("engine")
@@ -58,14 +61,20 @@ class Engine:
         self.security: dict[str, dict[str, Any]] = {}
         self.market: dict[str, dict[str, Any] | None] = {}
         self.insights: dict[str, dict[str, Any]] = {}
-        self.paper: PaperTrader | None = None
+        self.paper: PaperTrader | None = None  # default profile: its cost model prices live plans
+        self.papers: dict[str, PaperTrader] = {}  # one virtual account per risk profile (app.profiles)
+        self._paper_lock = asyncio.Lock()  # paper updates and resets never interleave
         self.depth: dict[str, Depth] = {}  # on-chain bin liquidity around the active bin (bins:latest)
         self.rows: dict[str, dict[str, Any]] = {}
         self.plan_params = PlanParams(
             portfolio_usd=config.PORTFOLIO_USD,
             max_position_pct=config.MAX_POSITION_PCT,
             hold_hours=config.HOLD_HOURS,
+            min_hold_hours=config.MIN_HOLD_HOURS,
+            min_fee_cost_ratio=config.MIN_FEE_COST_RATIO,
+            fee_gate_hours=config.FEE_GATE_HOURS,
         )
+        self.sol_usd: float | None = None
         self.position_usd = config.PORTFOLIO_USD * config.MAX_POSITION_PCT / 100
         self.updated_at: int | None = None
         self._clients: set[asyncio.Queue[dict[str, Any] | None]] = set()
@@ -89,25 +98,13 @@ class Engine:
         )
         async with self.db.acquire() as conn:
             await conn.execute(config.SCHEMA_PATH.read_text())
-        self.paper = PaperTrader(
-            self.db,
-            PaperConfig(
-                enabled=config.PAPER_ENABLED,
-                start_equity_usd=config.PAPER_START_EQUITY_USD,
-                max_open_per_tier=config.PAPER_MAX_OPEN_PER_TIER,
-                tiers=config.PAPER_TIERS,
-                cooldown_hours=config.PAPER_COOLDOWN_HOURS,
-                costs=CostModel(
-                    enabled=config.PAPER_COSTS_ENABLED,
-                    tx_cost_sol=config.PAPER_TX_COST_SOL,
-                    impact_multiplier=config.PAPER_IMPACT_MULTIPLIER,
-                    new_bin_array_share=config.PAPER_NEW_BIN_ARRAY_SHARE,
-                ),
-                min_position_usd=config.PAPER_MIN_POSITION_USD,
-                max_drawdown_pct=config.PAPER_MAX_DRAWDOWN_PCT or None,
-            ),
-        )
-        await self.paper.load()
+        for profile in PROFILES:
+            if profile.key not in config.PAPER_PROFILES:
+                continue
+            trader = PaperTrader(self.db, paper_config(profile))
+            await trader.load()
+            self.papers[profile.key] = trader
+        self.paper = self.papers.get("moderat") or next(iter(self.papers.values()), None)
         await self._backfill()
         await self._refresh_pools()
         self._tasks = [
@@ -264,6 +261,7 @@ class Engine:
             except (KeyError, TypeError, ValueError):
                 log.warning("bad bin depth for %s", address)
         self.depth = depth
+        self.sol_usd = sol_usd_from_pools(pools.values()) or self.sol_usd
         await self._load_market(list(pools))
 
         for address, pool in pools.items():
@@ -279,19 +277,30 @@ class Engine:
         self.rows = {address: self._build_row(pool, now_ms) for address, pool in pools.items()}
         self.updated_at = now_ms
         await self._save_metrics(now_ms)
-        if self.paper:
+        if self.papers:
+            open_addresses: set[str] = set()
+            async with self._paper_lock:
+                for key, trader in self.papers.items():
+                    try:
+                        await trader.on_refresh(self.pools, self.rows, now_ms)
+                    except Exception:
+                        log.exception("paper trading update failed (%s)", key)
+                    open_addresses.update(trader.open_addresses())
             try:
-                await self.paper.on_refresh(self.pools, self.rows, now_ms)
-                # Tell the ingestor which pools must stay tracked while positions are open in them.
-                open_addresses = self.paper.open_addresses()
+                # Tell the ingestor which pools must stay tracked while any profile holds positions in them.
                 async with self.redis.pipeline(transaction=True) as pipe:
                     pipe.delete(config.KEY_PAPER_OPEN_POOLS)
                     if open_addresses:
-                        pipe.sadd(config.KEY_PAPER_OPEN_POOLS, *open_addresses)
+                        pipe.sadd(config.KEY_PAPER_OPEN_POOLS, *sorted(open_addresses))
                     await pipe.execute()
             except Exception:
-                log.exception("paper trading update failed")
+                log.exception("publishing open paper pools failed")
         self._broadcast(self.snapshot_message())
+
+    async def reset_papers(self) -> dict[str, int]:
+        """Start every risk profile again from its starting equity (positions and equity history deleted)."""
+        async with self._paper_lock:
+            return {key: await trader.reset() for key, trader in self.papers.items()}
 
     def _build_row(self, pool: dict[str, Any], now_ms: int) -> dict[str, Any]:
         address = pool["address"]
@@ -342,6 +351,17 @@ class Engine:
             if depth is not None:
                 new_arrays = new_bin_arrays(depth, lower, upper)
                 plan["new_bin_arrays"] = new_arrays
+        plan_base = None  # entry plan before the cost gate: each risk profile applies its own gate
+        if plan.get("action") == "enter" and self.paper and self.paper.cfg.costs.enabled and self.sol_usd:
+            # Entry only when fees over the minimum hold pay back round-trip costs (same gate as the backtest).
+            lp = LpPosition.build(
+                pool["price"], pool["bin_step"], plan["range_low_pct"], plan["range_high_pct"], plan["size_usd"]
+            )
+            cost_pct = round_trip_cost_pct(
+                lp, int(plan.get("positions") or 1), pool, 1.0, self.sol_usd, self.paper.cfg.costs, new_arrays
+            )
+            plan_base = dict(plan, round_trip_cost_pct=round(cost_pct, 3))
+            plan = apply_cost_gate(plan, cost_pct, scored["fee_for_position_pct_day"], self.plan_params)
         tvl_per_bin_usd = None
         if depth is not None and y_usd > 0:
             tvl_per_bin_usd = sum(depth.bins.values()) * y_usd / max(1, len(depth.bins))
@@ -360,6 +380,7 @@ class Engine:
             "watched": now_ms - self.last_tick_ms.get(address, 0) < 10 * 60 * 1000,
             "updated_at": now_ms,
             "plan": _clean(plan),
+            "plan_base": _clean(plan_base),
             "security": _security_summary(security),
             "market": _clean(market),
             "insights": _clean(insights),

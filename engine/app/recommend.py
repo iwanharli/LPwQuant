@@ -19,6 +19,11 @@ BINS_PER_POSITION = 70
 # edge 0.4% above entry closing positions within a minute while the range itself spanned +9%.
 MIN_BREAKOUT_DISTANCE_PCT = 2.0
 
+# Paper trading closed positions after 0.7h on average, before fees could pay back ~0.9% of entry/exit costs.
+DEFAULT_MIN_HOLD_HOURS = 2.0
+# fee_decay compares the fee rate averaged over this many hours, not one snapshot.
+FEE_RATE_AVG_HOURS = 2.0
+
 
 def breakout_levels(
     low_pct: float | None, high_pct: float | None, atr_pct: float | None, buffer_pct: float | None
@@ -57,6 +62,15 @@ class PlanParams:
     low_size_mult: float = 1.0
     medium_size_mult: float = 0.6
     high_size_mult: float = 0.3
+    # Until this many hours only stop-loss and out-of-range exits apply.
+    min_hold_hours: float = DEFAULT_MIN_HOLD_HOURS
+    # Enter only when fees expected over min_hold_hours are at least this multiple of round-trip costs.
+    min_fee_cost_ratio: float = 2.0
+    # Hours of fees the cost gate counts; None = max(min_hold_hours, 1). On 7 days of candles with costs a 1h gate
+    # (+1.5%/trade, 119 trades) beat a 2h gate (+0.2%, 357 trades): the stricter gate drops thin-fee pools.
+    fee_gate_hours: float | None = 1.0
+    # Scales the plan's stop-loss (risk profiles: tighter < 1 < looser).
+    stop_loss_mult: float = 1.0
 
 
 def _clamp(value: float, lo: float, hi: float) -> float:
@@ -197,12 +211,38 @@ def plan_position(
         "size_capped_by_tvl": capped,
         "expected_fee_usd_day": round(size_usd * fee_for_position_pct_day / 100, 2),
         "exit": {
-            "stop_loss_pct": round(_clamp(0.75 * width, 5.0, 20.0), 1),
+            "stop_loss_pct": round(_clamp(0.75 * width, 5.0, 20.0) * params.stop_loss_mult, 1),
             "out_of_range_minutes": params.out_of_range_minutes,
             "fee_decay_ratio": params.fee_decay_ratio,
-            "max_hold_hours": params.hold_hours * 2,
+            "max_hold_hours": max(params.hold_hours * 2, params.min_hold_hours),
+            "min_hold_hours": params.min_hold_hours,
             # Close beyond the recent channel (plus a buffer against wicks) = breakout against the position.
             "breakout_below_pct": breakout_below,
             "breakout_above_pct": breakout_above,
         },
     }
+
+
+def cost_gate_ok(cost_pct: float, fee_pct_day: float, hours: float, ratio: float) -> bool:
+    """Fees expected over `hours` are at least `ratio` times the round-trip cost (no cost = pass)."""
+    return cost_pct <= 0 or fee_pct_day * hours / 24 >= ratio * cost_pct
+
+
+def apply_cost_gate(plan: dict[str, Any], cost_pct: float, fee_pct_day: float, params: PlanParams) -> dict[str, Any]:
+    """Turn an entry plan into "wait" when fees expected over the minimum hold do not cover
+    `min_fee_cost_ratio` times the round-trip cost. Keeps the estimate on the plan either way."""
+    if plan.get("action") != "enter":
+        return plan
+    hours = params.fee_gate_hours if params.fee_gate_hours is not None else max(params.min_hold_hours, 1.0)
+    fee_pct = fee_pct_day * hours / 24
+    plan = dict(plan, round_trip_cost_pct=round(cost_pct, 3), fee_over_min_hold_pct=round(fee_pct, 3))
+    if not cost_gate_ok(cost_pct, fee_pct_day, hours, params.min_fee_cost_ratio):
+        skipped = _skip(
+            "wait",
+            f"Fee {hours:g} jam ~{fee_pct:.2f}% belum menutup {params.min_fee_cost_ratio:g}x biaya {cost_pct:.2f}%",
+            plan.get("regime"),
+        )
+        skipped.update(round_trip_cost_pct=plan["round_trip_cost_pct"], fee_over_min_hold_pct=plan["fee_over_min_hold_pct"],
+                       gated_tier=plan.get("tier"))
+        return skipped
+    return plan

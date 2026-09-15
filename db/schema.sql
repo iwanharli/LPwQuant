@@ -150,6 +150,9 @@ alter table paper_positions add column if not exists cost_exit_y double precisio
 alter table paper_positions add column if not exists rent_sol double precision not null default 0;
 alter table paper_positions add column if not exists cost_pct double precision not null default 0;
 alter table paper_positions add column if not exists gross_pnl_pct double precision;
+-- Risk profile (engine/app/profiles.py); positions from before profiles existed belong to 'moderat'.
+alter table paper_positions add column if not exists profile text not null default 'moderat';
+create index if not exists paper_positions_profile_status on paper_positions (profile, status, entry_ts desc);
 
 create table if not exists paper_equity (
   ts              timestamptz not null,
@@ -159,6 +162,8 @@ create table if not exists paper_equity (
   open_count      integer not null
 );
 create index if not exists paper_equity_ts_brin on paper_equity using brin (ts);
+alter table paper_equity add column if not exists profile text not null default 'moderat';
+create index if not exists paper_equity_profile_ts on paper_equity (profile, ts);
 
 -- GMGN insider/dev/smart-money data per token mint: latest value plus history for later backtests.
 create table if not exists token_insights (

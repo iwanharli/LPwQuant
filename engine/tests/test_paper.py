@@ -67,7 +67,9 @@ def test_out_of_range_needs_the_full_window():
 def test_fee_decay_and_max_hold():
     pos = position()
     accrue(pos, pool(1.0, fees_1h=100.0), 2 * HOUR)  # rate fell from 1%/h to 0.1%/h
-    assert exit_reason(pos, 2 * HOUR) == "fee_decay"
+    assert exit_reason(pos, 2 * HOUR) is None  # the smoothed rate has not decayed enough yet
+    accrue(pos, pool(1.0, fees_1h=100.0), 4 * HOUR)  # still 0.1%/h two hours later
+    assert exit_reason(pos, 4 * HOUR) == "fee_decay"
     pos = position(entry_fee_rate=0.0)
     accrue(pos, pool(1.0, fees_1h=0.0), 9 * HOUR)
     assert exit_reason(pos, 9 * HOUR) == "max_hold"
@@ -155,7 +157,8 @@ def test_costs_reduce_net_pnl_but_not_gross():
 
 def test_stale_tight_breakout_levels_are_dropped_on_load():
     stored = dict(RULES, breakout_below_pct=-4.7, breakout_above_pct=0.4)
-    assert sanitize_exit_rules(stored, atr_pct=1.0) == dict(stored, breakout_above_pct=None)
+    # Rules stored before the minimum hold existed get the default.
+    assert sanitize_exit_rules(stored, atr_pct=1.0) == dict(stored, breakout_above_pct=None, min_hold_hours=2.0)
     # With a 5% ATR, a -4.7% level is also too close.
     assert sanitize_exit_rules(stored, atr_pct=5.0)["breakout_below_pct"] is None
 

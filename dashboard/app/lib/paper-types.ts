@@ -29,8 +29,37 @@ export type PaperCosts = {
   rent_locked_sol: number;
 };
 
+export type ProfileSettings = {
+  tiers: Tier[];
+  max_open_per_tier: number;
+  size_mult: number;
+  min_fee_cost_ratio: number | null;
+  fee_gate_hours: number | null;
+  min_hold_hours: number | null;
+  stop_loss_mult: number;
+  max_drawdown_pct: number | null;
+};
+
+export type ProfileInfo = { key: string; label: string; description: string; settings: ProfileSettings };
+
+/** Headline numbers per risk profile from /api/paper/profiles. */
+export type ProfileSummary = ProfileInfo & {
+  start_equity_usd: number;
+  equity_usd: number;
+  realized_usd: number;
+  unrealized_usd: number;
+  open_count: number;
+  closed_count: number;
+  costs_usd: number;
+  max_drawdown_pct: number;
+  entries_paused: boolean;
+  started_at: number | null;
+  overall: TradeStats;
+};
+
 export type PaperSummary = {
   enabled: boolean;
+  profile: ProfileInfo;
   config: { max_open_per_tier: number; tiers: Tier[]; cooldown_hours: number };
   costs: PaperCosts;
   risk: {
@@ -95,4 +124,12 @@ export const EXIT_REASON_LABELS: Record<string, string> = {
   fee_decay: "Fee melemah",
   max_hold: "Batas waktu",
   delisted: "Pool tidak dipantau lagi",
+};
+
+/** Line colour per risk profile (categorical slots blue, orange, violet; validated on the dark panel, and kept
+ * clear of the green/red used for gains and losses). */
+export const PROFILE_COLORS: Record<string, string> = {
+  konservatif: "#3987e5",
+  moderat: "#d95926",
+  agresif: "#9085e9",
 };

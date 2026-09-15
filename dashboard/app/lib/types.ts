@@ -49,6 +49,9 @@ export type ActivePlan = {
   size_pct: number;
   size_capped_by_tvl: boolean;
   expected_fee_usd_day: number;
+  /** Round-trip cost estimate and fees expected over the cost-gate window, both % of the position. */
+  round_trip_cost_pct?: number;
+  fee_over_min_hold_pct?: number;
   /** On-chain count of bin arrays the range must create (non-refundable rent); null = unknown. */
   new_bin_arrays?: number | null;
   exit: {
@@ -61,7 +64,18 @@ export type ActivePlan = {
   };
 };
 
-export type Plan = { action: "avoid" | "wait"; reason: string; tier: null; regime?: Regime | null } | ActivePlan;
+export type Plan =
+  | {
+      action: "avoid" | "wait";
+      reason: string;
+      tier: null;
+      regime?: Regime | null;
+      /** Tier of the entry plan the cost gate held back. */
+      gated_tier?: Tier;
+      round_trip_cost_pct?: number;
+      fee_over_min_hold_pct?: number;
+    }
+  | ActivePlan;
 
 export type Security = {
   score_normalised: number | null;
@@ -122,6 +136,8 @@ export type PoolRow = {
   security: Security | null;
   market: Market | null;
   depth: BinDepth | null;
+  /** Entry plan before the cost gate (each risk profile applies its own gate); null when there is none. */
+  plan_base?: ActivePlan | null;
   insights: Insights | null;
 };
 

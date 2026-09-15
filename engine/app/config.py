@@ -36,10 +36,14 @@ TICK_PRECEDENCE_MS = 5 * 60 * 1000
 PORTFOLIO_USD = _num("PORTFOLIO_USD", 1000)
 MAX_POSITION_PCT = _num("MAX_POSITION_PCT", 5)
 HOLD_HOURS = _num("HOLD_HOURS", 4)
+MIN_HOLD_HOURS = _num("MIN_HOLD_HOURS", 2)
+MIN_FEE_COST_RATIO = _num("MIN_FEE_COST_RATIO", 2)
+FEE_GATE_HOURS = _num("FEE_GATE_HOURS", 1)
+SOL_USD_FALLBACK = _num("SOL_USD_FALLBACK", 150)  # backtest tx/rent costs; live uses the SOL pool price
 
 # Paper trading (app/paper.py). No transactions are ever sent.
 PAPER_ENABLED = (os.getenv("PAPER_ENABLED") or "true").lower() != "false"
-PAPER_START_EQUITY_USD = _num("PAPER_START_EQUITY_USD", PORTFOLIO_USD)
+PAPER_START_EQUITY_USD = _num("PAPER_START_EQUITY_USD", 500)  # same virtual capital for every risk profile
 PAPER_MAX_OPEN_PER_TIER = int(_num("PAPER_MAX_OPEN_PER_TIER", 5))
 PAPER_TIERS = tuple(t.strip() for t in (os.getenv("PAPER_TIERS") or "low,medium,high").split(",") if t.strip())
 PAPER_COOLDOWN_HOURS = _num("PAPER_COOLDOWN_HOURS", 6)
@@ -49,8 +53,13 @@ PAPER_COSTS_ENABLED =(os.getenv("PAPER_COSTS_ENABLED") or "true").lower() != "fa
 PAPER_TX_COST_SOL = _num("PAPER_TX_COST_SOL", 0.00015)
 PAPER_IMPACT_MULTIPLIER = _num("PAPER_IMPACT_MULTIPLIER", 1.0)
 PAPER_NEW_BIN_ARRAY_SHARE = _num("PAPER_NEW_BIN_ARRAY_SHARE", 0.0)
+PAPER_PROFILES = tuple(
+    p.strip() for p in (os.getenv("PAPER_PROFILES") or "konservatif,moderat,agresif").split(",") if p.strip()
+)
 
 # Keys shared with the ingestor (ingestor/src/redis.ts).
+METEORA_API_URL = (os.getenv("METEORA_API_URL") or "https://dlmm.datapi.meteora.ag").rstrip("/")
+
 KEY_POOLS_LATEST = "pools:latest"
 KEY_SECURITY_LATEST = "security:latest"
 KEY_FLOW_LATEST = "flow:latest"
