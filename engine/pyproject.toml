@@ -1,0 +1,18 @@
+[project]
+name = "quant-engine"
+version = "0.1.0"
+description = "Consumes live DLMM pool data, computes metrics and risk score, serves API + websocket"
+requires-python = ">=3.12"
+dependencies = [
+    "asyncpg>=0.31.0",
+    "fastapi>=0.141.0",
+    "python-dotenv>=1.0.1",
+    "redis>=8.1.0",
+    "uvicorn[standard]>=0.34.0",
+]
+
+[dependency-groups]
+dev = ["pytest>=8.3.0"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]

@@ -1,0 +1,85 @@
+@import "tailwindcss";
+
+@theme inline {
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+}
+
+/* Single committed dark theme. Status hues follow the validated dataviz status palette. */
+@theme {
+  --color-bg: #07090d;
+  --color-panel: #0d1219;
+  --color-raised: #151c27;
+  --color-hover: #1a2533;
+  --color-line: #1f2a38;
+  --color-line-strong: #334155;
+
+  --color-ink: #eef3f8;
+  --color-ink-2: #aab6c6;
+  --color-ink-3: #758397;
+
+  --color-accent: #49a4ff;
+  --color-good: #22c55e;
+  --color-warning: #f5b84b;
+  --color-serious: #f08a5d;
+  --color-critical: #ef4444;
+  --color-up: #35d07f;
+  --color-down: #ff6b78;
+}
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+body {
+  background:
+    linear-gradient(180deg, rgba(22, 31, 45, 0.74) 0%, rgba(7, 9, 13, 0) 32rem),
+    linear-gradient(120deg, rgba(73, 164, 255, 0.11), transparent 28rem),
+    var(--color-bg);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+}
+
+body::before {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  content: "";
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.026) 1px, transparent 1px);
+  background-size: 44px 44px;
+  mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.62), transparent 58%);
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-line-strong) transparent;
+}
+
+::selection {
+  background: color-mix(in oklab, var(--color-accent) 35%, transparent);
+}
+
+button,
+input,
+select,
+a {
+  -webkit-tap-highlight-color: transparent;
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid color-mix(in oklab, var(--color-accent) 70%, white);
+  outline-offset: 2px;
+}
