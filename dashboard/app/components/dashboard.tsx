@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
-import type { SortKey, Tier } from "../lib/types";
+import { type SortKey, type Tier, rowTier } from "../lib/types";
 import { useLivePools } from "../lib/use-live-pools";
 import KpiStrip from "./kpi-strip";
 import PoolDrawer from "./pool-drawer";
@@ -36,14 +36,14 @@ export default function Dashboard() {
   }, [all, query, minTvl, binStep, hideExcluded]);
 
   const counts = useMemo(() => {
-    const byTier = (t: Tier) => baseFiltered.filter((p) => p.plan.tier === t).length;
+    const byTier = (t: Tier) => baseFiltered.filter((p) => rowTier(p) === t).length;
     return { all: baseFiltered.length, low: byTier("low"), medium: byTier("medium"), high: byTier("high") };
   }, [baseFiltered]);
 
   const rows = useMemo(() => {
     const dir = sortDesc ? -1 : 1;
     return baseFiltered
-      .filter((p) => tierFilter === "all" || p.plan.tier === tierFilter)
+      .filter((p) => tierFilter === "all" || rowTier(p) === tierFilter)
       .sort((a, b) => {
         const av = a[sortKey];
         const bv = b[sortKey];

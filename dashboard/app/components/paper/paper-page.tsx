@@ -255,7 +255,7 @@ function PoolCell({ p }: { p: PaperPosition }) {
   return (
     <div className="min-w-0">
       <a
-        href={`https://app.meteora.ag/dlmm/${p.address}`}
+        href={`https://meteora.ag/dlmm/${p.address}`}
         target="_blank"
         rel="noreferrer"
         className="font-medium text-ink hover:underline"

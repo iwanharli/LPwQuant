@@ -11,16 +11,21 @@ export function StatusDot({ severity, pulse = false }: { severity: Severity; pul
 }
 
 export function PlanBadge({ plan, size = "sm" }: { plan: Plan; size?: "sm" | "md" }) {
-  const meta = plan.action === "enter" ? TIER_META[plan.tier] : STATUS_META[plan.action];
+  // A plan held back by the cost gate keeps its tier: the pool's risk is known, only the entry is on hold.
+  const gatedTier = plan.action === "wait" ? plan.gated_tier : undefined;
+  const meta = plan.action === "enter" ? TIER_META[plan.tier] : gatedTier ? TIER_META[gatedTier] : STATUS_META[plan.action];
   return (
     <span
-      title={meta.hint}
-      className={`inline-flex items-center gap-1.5 rounded-md border border-line bg-raised/90 font-medium text-ink shadow-sm shadow-black/15 ${
-        size === "md" ? "px-2.5 py-1 text-sm" : "px-2 py-0.5 text-xs"
-      }`}
+      title={gatedTier && plan.action === "wait" ? `Ditahan: ${plan.reason}` : meta.hint}
+      className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-md border border-line font-medium shadow-sm shadow-black/15 ${
+        gatedTier ? "bg-raised/50 text-ink-2" : "bg-raised/90 text-ink"
+      } ${size === "md" ? "px-2.5 py-1 text-sm" : "px-2 py-0.5 text-xs"}`}
     >
-      <StatusDot severity={meta.severity} />
+      <span className={gatedTier ? "opacity-50" : undefined}>
+        <StatusDot severity={meta.severity} />
+      </span>
       {meta.label}
+      {gatedTier && <span className="font-normal text-ink-3">· ditahan</span>}
     </span>
   );
 }

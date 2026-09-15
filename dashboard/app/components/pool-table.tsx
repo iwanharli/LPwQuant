@@ -1,7 +1,9 @@
+import Link from "next/link";
 import type { ReactNode } from "react";
 import { STRATEGY_LABEL } from "../lib/flags";
 import { binStepPct, fmtAge, fmtPct, fmtPrice, usdCompact } from "../lib/format";
 import { isActivePlan, type ConnectionStatus, type PoolRow, type SortKey } from "../lib/types";
+import { CandleIcon, ExternalLinkIcon } from "./icons";
 import { Delta, FlagChips, PlanBadge, RegimeBadge, ScoreCell, TokenAvatar } from "./ui";
 
 /**
@@ -53,10 +55,12 @@ const COLUMNS: Column[] = [
       { key: "fee_tvl_pct_24h", label: "24j" },
     ],
   },
-  { label: "Sinyal", align: "left" },
+  { label: "", title: "Buka grafik detail atau pool di Meteora" },
 ];
 
 const CELL = "border-b border-line/80 px-2.5 py-2.5";
+const ICON_BUTTON =
+  "grid h-8 w-8 place-items-center rounded-md border border-line bg-bg/40 text-ink-3 transition-colors hover:border-line-strong hover:bg-raised hover:text-ink focus-visible:text-ink";
 
 function Stack({ top, bottom, align = "right" }: { top: ReactNode; bottom: ReactNode; align?: "left" | "right" }) {
   return (
@@ -133,7 +137,7 @@ export default function PoolTable({
               const active = c.sorts?.some((s) => s.key === sortKey);
               return (
                 <th
-                  key={c.label}
+                  key={c.label || "actions"}
                   scope="col"
                   title={c.title}
                   aria-sort={active ? (sortDesc ? "descending" : "ascending") : undefined}
@@ -187,6 +191,11 @@ export default function PoolTable({
                           </>
                         )}
                       </div>
+                      {p.flags.length > 0 && (
+                        <div className="mt-1">
+                          <FlagChips flags={p.flags} max={2} />
+                        </div>
+                      )}
                     </div>
                   </div>
                 </td>
@@ -236,7 +245,28 @@ export default function PoolTable({
                   />
                 </td>
                 <td className="border-b border-line/80 py-2.5 pl-2.5 pr-4">
-                  <FlagChips flags={p.flags} max={1} />
+                  <div className="flex items-center justify-end gap-1">
+                    <Link
+                      href={`/pool/${p.address}`}
+                      onClick={(e) => e.stopPropagation()}
+                      aria-label={`Grafik ${p.name}`}
+                      title="Grafik & rekomendasi range"
+                      className={ICON_BUTTON}
+                    >
+                      <CandleIcon />
+                    </Link>
+                    <a
+                      href={`https://meteora.ag/dlmm/${p.address}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={(e) => e.stopPropagation()}
+                      aria-label={`Buka ${p.name} di Meteora`}
+                      title="Buka di Meteora"
+                      className={ICON_BUTTON}
+                    >
+                      <ExternalLinkIcon />
+                    </a>
+                  </div>
                 </td>
               </tr>
             );

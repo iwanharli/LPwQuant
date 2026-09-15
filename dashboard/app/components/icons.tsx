@@ -84,3 +84,19 @@ export const ExitIcon = (p: IconProps) => (
     <path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3M10 17l5-5-5-5M15 12H4" />
   </Base>
 );
+
+export const CandleIcon = (p: IconProps) => (
+  <Base {...p}>
+    <path d="M7 4v3m0 10v3M17 3v4m0 9v5" />
+    <rect x="5" y="7" width="4" height="10" rx="1" />
+    <rect x="15" y="7" width="4" height="9" rx="1" />
+  </Base>
+);
+
+export const ExternalLinkIcon = (p: IconProps) => (
+  <Base {...p}>
+    <path d="M14 4h6v6" />
+    <path d="M20 4 11 13" />
+    <path d="M18 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4" />
+  </Base>
+);

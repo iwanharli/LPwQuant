@@ -193,3 +193,12 @@ export type UsageItem = {
 };
 
 export const isActivePlan = (plan: Plan): plan is ActivePlan => plan.action === "enter";
+
+/** A pool's risk tier even when its entry plan is held back (cost gate) or its base plan exists: tiers describe
+ * the pool's risk, while plan.tier is null for any non-entry plan. */
+export function rowTier(row: Pick<PoolRow, "plan" | "plan_base">): Tier | null {
+  const plan = row.plan;
+  if (plan.tier) return plan.tier;
+  if (plan.action === "wait" && plan.gated_tier) return plan.gated_tier;
+  return plan.action === "avoid" ? null : (row.plan_base?.tier ?? null);
+}

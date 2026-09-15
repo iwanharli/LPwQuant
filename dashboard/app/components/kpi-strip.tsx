@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { TIER_META } from "../lib/flags";
 import { fmtPct, integer, median } from "../lib/format";
-import type { PoolRow, Tier } from "../lib/types";
+import { rowTier, type PoolRow, type Tier } from "../lib/types";
 import { StatusDot } from "./ui";
 
 function Tile({ label, value, hint }: { label: ReactNode; value: ReactNode; hint: ReactNode }) {
@@ -17,7 +17,8 @@ function Tile({ label, value, hint }: { label: ReactNode; value: ReactNode; hint
 
 function TierTile({ tier, rows }: { tier: Tier; rows: PoolRow[] }) {
   const meta = TIER_META[tier];
-  const inTier = rows.filter((r) => r.plan.tier === tier);
+  const inTier = rows.filter((r) => rowTier(r) === tier);
+  const ready = inTier.filter((r) => r.plan.action === "enter").length;
   const fee = median(inTier.map((r) => r.fee_for_position_pct_day));
   return (
     <Tile
@@ -27,7 +28,7 @@ function TierTile({ tier, rows }: { tier: Tier; rows: PoolRow[] }) {
         </>
       }
       value={integer.format(inTier.length)}
-      hint={`Median fee posisi ${fmtPct(fee, 1)}/hari`}
+      hint={`${integer.format(ready)} siap masuk · median fee ${fmtPct(fee, 1)}/hari`}
     />
   );
 }

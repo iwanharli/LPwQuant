@@ -38,25 +38,22 @@ body {
 }
 
 body {
-  background:
-    linear-gradient(180deg, rgba(22, 31, 45, 0.74) 0%, rgba(7, 9, 13, 0) 32rem),
-    linear-gradient(120deg, rgba(73, 164, 255, 0.11), transparent 28rem),
-    var(--color-bg);
+  background: var(--color-bg);
   color: var(--color-ink);
   font-family: var(--font-sans);
 }
 
+/* Fixed full-screen artwork behind every page, dimmed so panels and text keep their contrast. */
 body::before {
   position: fixed;
   inset: 0;
   z-index: -1;
   pointer-events: none;
   content: "";
-  background-image:
-    linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.026) 1px, transparent 1px);
-  background-size: 44px 44px;
-  mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.62), transparent 58%);
+  background:
+    linear-gradient(180deg, rgba(7, 9, 13, 0.72) 0%, rgba(7, 9, 13, 0.5) 30%, rgba(7, 9, 13, 0.35) 55%, rgba(7, 9, 13, 0.7) 100%),
+    url("/background.webp") center bottom / cover no-repeat,
+    var(--color-bg);
 }
 
 * {

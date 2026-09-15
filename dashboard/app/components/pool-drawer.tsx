@@ -565,7 +565,7 @@ function DrawerContent({ row, onClose }: { row: PoolRow; onClose: () => void }) 
 
       <div className="mt-auto border-t border-line bg-bg/25 px-5 py-4">
         <a
-          href={`https://app.meteora.ag/dlmm/${row.address}`}
+          href={`https://meteora.ag/dlmm/${row.address}`}
           target="_blank"
           rel="noreferrer"
           className="flex w-full items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2.5 text-sm font-semibold text-white shadow-[0_14px_32px_rgba(73,164,255,0.24)] transition-opacity hover:opacity-90"
