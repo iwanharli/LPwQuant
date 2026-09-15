@@ -69,6 +69,29 @@ def exit_cost(
     return swap + positions * model.txs_close_per_position * model.tx_cost_sol * sol_to_y
 
 
+def fixed_cost_usd(
+    positions: int, n_bins: int, sol_usd: float, model: CostModel, new_bin_arrays: int | None = None
+) -> float:
+    """Size-independent part of the round trip in USD: transactions and non-refundable bin array rent. Swap fees
+    and price impact scale with size; these do not, which is why small positions pay a larger cost share."""
+    if not model.enabled or sol_usd <= 0:
+        return 0.0
+    txs = positions * (model.txs_open_per_position + model.txs_close_per_position) * model.tx_cost_sol
+    if new_bin_arrays is None:
+        arrays = model.new_bin_array_share * math.ceil(n_bins / BINS_PER_BIN_ARRAY)
+    else:
+        arrays = float(new_bin_arrays)
+    return (txs + arrays * model.bin_array_rent_sol) * sol_usd
+
+
+def resized_cost_pct(cost_pct: float, fixed_usd: float, base_size_usd: float, size_usd: float) -> float:
+    """Round-trip cost % for `size_usd`, from the cost % measured at `base_size_usd` and its fixed USD part."""
+    if base_size_usd <= 0 or size_usd <= 0:
+        return cost_pct
+    variable_pct = max(0.0, cost_pct - fixed_usd / base_size_usd * 100)
+    return variable_pct + fixed_usd / size_usd * 100
+
+
 def round_trip_cost_pct(
     lp: "LpPosition",
     positions: int,

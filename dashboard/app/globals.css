@@ -1,24 +1,25 @@
 @import "tailwindcss";
 
 @theme inline {
-  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-geist-mono), ui-monospace, monospace;
 }
 
 /* Single committed dark theme. Status hues follow the validated dataviz status palette. */
 @theme {
-  --color-bg: #07090d;
-  --color-panel: #0d1219;
-  --color-raised: #151c27;
-  --color-hover: #1a2533;
-  --color-line: #1f2a38;
-  --color-line-strong: #334155;
+  /* Neutral charcoal surfaces with a lime accent; status and data-series hues are unchanged. */
+  --color-bg: #0b0e13;
+  --color-panel: #161b22;
+  --color-raised: #1d232c;
+  --color-hover: #232b36;
+  --color-line: #262d38;
+  --color-line-strong: #3a4350;
 
-  --color-ink: #eef3f8;
-  --color-ink-2: #aab6c6;
-  --color-ink-3: #758397;
+  --color-ink: #f5f7fa;
+  --color-ink-2: #b3bac5;
+  --color-ink-3: #7d8594;
 
-  --color-accent: #49a4ff;
+  --color-accent: #c7f284;
   --color-good: #22c55e;
   --color-warning: #f5b84b;
   --color-serious: #f08a5d;

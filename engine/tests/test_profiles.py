@@ -4,6 +4,13 @@ from app.paper import pick_entries, profile_plan
 from app.profiles import PROFILE_BY_KEY, PROFILES, paper_config, plan_params
 from app.recommend import PlanParams, cost_gate_ok
 
+
+def _cfg(key):
+    """Profile config without the paper position floor, so sizing and gating rules are tested on their own."""
+    from dataclasses import replace
+
+    return replace(paper_config(PROFILE_BY_KEY[key]), position_floor_usd=0.0)
+
 BASE_EXIT = {"stop_loss_pct": 10.0, "out_of_range_minutes": 20.0, "fee_decay_ratio": 0.25, "max_hold_hours": 8.0,
              "breakout_below_pct": None, "breakout_above_pct": None, "min_hold_hours": 2.0}
 
@@ -32,16 +39,16 @@ def test_cost_gate_ok():
 
 def test_each_profile_gates_the_same_plan_differently():
     r = row(tier="medium", cost=0.5, fee_day=12.0)  # 0.5%/h of fees
-    assert profile_plan(r, paper_config(PROFILE_BY_KEY["konservatif"])) is None  # needs 1.5%
-    assert profile_plan(r, paper_config(PROFILE_BY_KEY["moderat"])) is None  # needs 1.0%
-    plan = profile_plan(r, paper_config(PROFILE_BY_KEY["agresif"]))  # 2h -> 1.0% >= 0.5%
+    assert profile_plan(r, _cfg("konservatif")) is None  # needs 1.5%
+    assert profile_plan(r, _cfg("moderat")) is None  # needs 1.0%
+    plan = profile_plan(r, _cfg("agresif"))  # 2h -> 1.0% >= 0.5%
     assert plan is not None and plan["profile"] == "agresif"
     assert math.isclose(plan["size_usd"], 60.0) and plan["exit"]["stop_loss_pct"] == 15.0
     assert plan["exit"]["min_hold_hours"] == 1.0
 
 
 def test_profile_tiers_and_tvl_cap():
-    cfg = paper_config(PROFILE_BY_KEY["konservatif"])
+    cfg = _cfg("konservatif")
     assert profile_plan(row(tier="high", fee_day=500.0), cfg) is None
     plan = profile_plan(row(tier="low", fee_day=500.0, tvl=1_000.0), cfg)
     assert plan is not None and plan["size_usd"] == 20.0  # 2% of $1k TVL
@@ -49,7 +56,7 @@ def test_profile_tiers_and_tvl_cap():
 
 
 def test_pick_entries_uses_profile_plan():
-    cfg = paper_config(PROFILE_BY_KEY["agresif"])
+    cfg = _cfg("agresif")
     picked = pick_entries([row(address="A", mint="X"), row(tier="low", address="B", mint="Y")], [], {}, cfg, 0)
     assert [p["address"] for p in picked] == ["A"]
     assert picked[0]["plan"]["profile"] == "agresif" and picked[0]["plan"]["size_usd"] == 60.0

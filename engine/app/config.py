@@ -48,6 +48,9 @@ PAPER_MAX_OPEN_PER_TIER = int(_num("PAPER_MAX_OPEN_PER_TIER", 5))
 PAPER_TIERS = tuple(t.strip() for t in (os.getenv("PAPER_TIERS") or "low,medium,high").split(",") if t.strip())
 PAPER_COOLDOWN_HOURS = _num("PAPER_COOLDOWN_HOURS", 6)
 PAPER_MIN_POSITION_USD = _num("PAPER_MIN_POSITION_USD", 25)
+# Every paper position is at least this large (TVL cap permitting): fixed tx costs (~$0.06 per round trip) sink
+# positions of a few dollars, which is what equity-based sizing gives on a $500 account.
+PAPER_POSITION_FLOOR_USD = _num("PAPER_POSITION_FLOOR_USD", 100)
 PAPER_MAX_DRAWDOWN_PCT = _num("PAPER_MAX_DRAWDOWN_PCT", 10)  # pause new entries below peak equity minus this
 PAPER_COSTS_ENABLED =(os.getenv("PAPER_COSTS_ENABLED") or "true").lower() != "false"
 PAPER_TX_COST_SOL = _num("PAPER_TX_COST_SOL", 0.00015)
@@ -64,6 +67,8 @@ KEY_POOLS_LATEST = "pools:latest"
 KEY_SECURITY_LATEST = "security:latest"
 KEY_FLOW_LATEST = "flow:latest"
 KEY_GMGN_LATEST = "gmgn:latest"
+KEY_JUPITER_LATEST = "jupiter:latest"
+KEY_PUMP_LATEST = "pump:latest"  # hash: mint -> pump.fun token data  # hash: mint -> Jupiter organic score
 KEY_BINS_LATEST = "bins:latest"  # hash: address -> bin liquidity around the active bin
 KEY_PAPER_OPEN_POOLS = "paper:open_pools"  # set: pools the ingestor must keep tracking
 STREAM_POOLS = "stream:pools"

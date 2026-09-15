@@ -23,7 +23,7 @@ import math
 import statistics
 import time
 from collections import Counter, defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 import asyncpg
@@ -32,6 +32,7 @@ from . import config
 from .indicators import Candle, compute_indicators, flow_features, merge_market
 from .metrics import PriceHistory
 from .costs import CostModel, entry_costs, exit_cost, round_trip_cost_pct
+from .depth import realization_factor
 from .recommend import FEE_RATE_AVG_HOURS, PlanParams, apply_cost_gate, bins_below, bins_for_width, plan_position
 from .scoring import MARKET_INFO_FLAGS, MARKET_PENALTIES, diluted_fee_pct, market_flags
 
@@ -160,6 +161,7 @@ def simulate(
     entry_cost = entry_costs(pos, positions, ctx, 1.0, sol_usd, cost_model)[0] if cost_model else 0.0
     exit_c = 0.0
     avg_samples = int(FEE_RATE_AVG_HOURS * 2) + 1
+    realization = realization_factor(pos.a + pos.b + 1)  # same calibrated fee model as paper trading
 
     def avg_rate(ts: int) -> float:
         return sum(fee_rate_at(ts - k * HOUR_MS // 2)[0] for k in range(avg_samples)) / avg_samples
@@ -175,7 +177,7 @@ def simulate(
     for ts, p in series[start + 1 :]:
         rate, tvl = fee_rate_at(prev_ts)
         if rate > 0 and pos.in_range(prev_p):
-            fees += prev_value * rate * (ts - prev_ts) / HOUR_MS * (tvl / (tvl + capital) if tvl > 0 else 0)
+            fees += prev_value * rate * (ts - prev_ts) / HOUR_MS * (tvl / (tvl + capital) if tvl > 0 else 0) * realization
         value = pos.value(p)
         if cost_model:
             exit_c = exit_cost(pos, p, positions, dict(ctx, tvl=tvl or tvl0), 1.0, sol_usd, cost_model)
@@ -217,6 +219,33 @@ def simulate(
     }
 
 
+SOL_MINT = "So11111111111111111111111111111111111111112"
+USD_MINTS = {
+    "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",  # USDC
+    "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",  # USDT
+}
+
+
+def quote_usd_factor(
+    quote_mint: str | None, sol_usd: tuple[list[int], list[float]], entry_ts: int, exit_ts: int
+) -> float | None:
+    """How much a unit of the quote token gained in USD between entry and exit: 1 for USD stablecoins, the SOL
+    price ratio for SOL, None for other quotes or when the SOL series does not cover the trade."""
+    if quote_mint in USD_MINTS:
+        return 1.0
+    if quote_mint != SOL_MINT:
+        return None
+    ts, prices = sol_usd
+    if not ts or entry_ts < ts[0] or exit_ts < ts[0]:
+        return None
+
+    def price_at(t: int) -> float:
+        return prices[max(0, bisect.bisect_right(ts, t) - 1)]
+
+    start = price_at(entry_ts)
+    return price_at(exit_ts) / start if start > 0 else None
+
+
 def summarize(trades: list[dict[str, Any]]) -> dict[str, Any]:
     if not trades:
         return {"trades": 0}
@@ -232,6 +261,15 @@ def summarize(trades: list[dict[str, Any]]) -> dict[str, Any]:
         "mean_il_vs_hodl_pct": round(statistics.fmean(t["il_vs_hodl_pct"] for t in trades), 3),
         "mean_hold_hours": round(statistics.fmean(t["hold_hours"] for t in trades), 2),
         "exit_reasons": dict(Counter(t["exit_reason"] for t in trades)),
+        **(
+            {
+                "usd_trades": len(usd),
+                "mean_return_usd_pct": round(statistics.fmean(usd), 3),
+                "median_return_usd_pct": round(statistics.median(usd), 3),
+            }
+            if (usd := [t["return_usd_pct"] for t in trades if t.get("return_usd_pct") is not None])
+            else {}
+        ),
         **(
             {
                 "mean_cost_pct": round(statistics.fmean(t["cost_pct"] for t in trades), 3),
@@ -490,6 +528,7 @@ class CandleData:
     latest: dict[str, Any]
     history: MarketHistory
     market_cache: dict[tuple[str, int], dict[str, Any] | None]
+    sol_usd: tuple[list[int], list[float]] = field(default_factory=lambda: ([], []))  # candle open ts, SOL price
 
     @property
     def window_start_ms(self) -> int:
@@ -499,7 +538,22 @@ class CandleData:
 async def load_candle_data(pool: asyncpg.Pool, hours: float) -> CandleData:
     secs = hours * 3600
     async with pool.acquire() as conn:
-        pools = {r["address"]: r for r in await conn.fetch("select address, bin_step, base_fee_pct from pools")}
+        pools = {
+            r["address"]: r
+            for r in await conn.fetch("select address, bin_step, base_fee_pct, mint_x, mint_y from pools")
+        }
+        # SOL/USD from the SOL-USDC(T) pool with the longest candle history, to value SOL-quoted trades in USD.
+        sol_ref = await conn.fetchval(
+            """select c.address from candles c join pools p on p.address = c.address
+               where c.timeframe = '30m' and p.mint_x = $1 and p.mint_y = any($2::text[])
+               group by c.address order by count(*) desc limit 1""",
+            SOL_MINT, list(USD_MINTS),
+        )
+        sol_rows = await conn.fetch(
+            """select (extract(epoch from ts) * 1000)::bigint as ts_ms, close from candles
+               where address = $1 and timeframe = '30m' and ts > now() - make_interval(secs => $2) order by ts""",
+            sol_ref, secs + CANDLE_HISTORY_SECS,
+        ) if sol_ref else []
         # Snapshots may be missing for backfilled pools (e.g. dead ones); they get the TVL floor instead.
         snapshots = await conn.fetch(
             """select distinct on (address) address, tvl, volume_24h, fees_24h
@@ -551,6 +605,7 @@ async def load_candle_data(pool: asyncpg.Pool, hours: float) -> CandleData:
         latest=latest,
         history=history,
         market_cache={},
+        sol_usd=([r["ts_ms"] for r in sol_rows], [r["close"] for r in sol_rows]),
     )
 
 
@@ -629,7 +684,8 @@ def simulate_candle_trades(
                 lp = LpPosition.build(series[start][1], info["bin_step"], plan["range_low_pct"], plan["range_high_pct"], capital)
                 cost_pct = round_trip_cost_pct(lp, int(plan.get("positions") or 1), ctx, 1.0, config.SOL_USD_FALLBACK,
                                                BACKTEST_COSTS)
-                plan = apply_cost_gate(plan, cost_pct, diluted_fee_pct(rate * 24 * 100, tvl, capital), params)
+                fee_pct_day = diluted_fee_pct(rate * 24 * 100, tvl, capital) * realization_factor(int(plan["bins"]))
+                plan = apply_cost_gate(plan, cost_pct, fee_pct_day, params)
                 if plan["action"] != "enter":
                     skipped["fee_below_cost"] += 1
                     continue
@@ -639,6 +695,10 @@ def simulate_candle_trades(
                 address=address, score=score, tier=plan["tier"], strategy=plan["strategy"],
                 regime=plan["regime"], scored=stored is not None,
             )
+            factor = quote_usd_factor(info["mint_y"], data.sol_usd, trade["entry_ts"], trade["exit_ts"])
+            if factor is not None:
+                trade["quote_usd_change_pct"] = (factor - 1) * 100
+                trade["return_usd_pct"] = ((1 + trade["return_pct"] / 100) * factor - 1) * 100
             trades.append(trade)
     return trades, skipped
 

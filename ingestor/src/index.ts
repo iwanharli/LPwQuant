@@ -3,6 +3,8 @@ import { applySchema, pg, pruneOld, savePools, saveTicks, saveUsage } from "./db
 import { fetchPool, fetchPools, type PoolSnapshot } from "./meteora";
 import { publishPools, publishTicks, redis } from "./redis";
 import { BinDepthFetcher } from "./bins";
+import { JupiterFetcher } from "./jupiter";
+import { PumpFetcher } from "./pump";
 import { usage } from "./rpc";
 import { GmgnFetcher } from "./gmgn";
 import { CandleFetcher, FlowFetcher } from "./market";
@@ -44,6 +46,10 @@ async function main(): Promise<void> {
   await applySchema();
   const security = new SecurityFetcher();
   await security.load();
+  const organic = new JupiterFetcher();
+  await organic.load();
+  const pump = new PumpFetcher();
+  await pump.load();
   const candles = new CandleFetcher();
   await candles.load();
   const flow = new FlowFetcher();
@@ -90,6 +96,8 @@ async function main(): Promise<void> {
       await savePools(pools);
       await publishPools(pools);
       security.enqueue(pools);
+      organic.enqueue(pools);
+      pump.enqueue(pools);
       candles.enqueue(pools);
       flow.maybeRefresh(pools);
       gmgn?.maybeRefresh(pools);
@@ -101,7 +109,7 @@ async function main(): Promise<void> {
       }
       const usageSummary = await flushUsage();
       console.log(
-        `[poller] ${pools.length} pools, watching ${watcher?.size ?? 0}, security ${security.known} known/${security.pending} queued, candles ${candles.tracked} pools/${candles.pending} queued, flow ${flow.lastCount}, gmgn ${gmgn?.known ?? "off"}, bins ${bins?.lastCount ?? "off"}, ${usageSummary}, ${Date.now() - started}ms`,
+        `[poller] ${pools.length} pools, watching ${watcher?.size ?? 0}, security ${security.known} known/${security.pending} queued, organic ${organic.known}, pump ${pump.known}, candles ${candles.tracked} pools/${candles.pending} queued, flow ${flow.lastCount}, gmgn ${gmgn?.known ?? "off"}, bins ${bins?.lastCount ?? "off"}, ${usageSummary}, ${Date.now() - started}ms`,
       );
     } catch (err) {
       console.error("[poller] failed", err);
@@ -113,6 +121,8 @@ async function main(): Promise<void> {
     stopped = true;
     clearTimeout(timer);
     security.stop();
+    organic.stop();
+    pump.stop();
     candles.stop();
     gmgn?.stop();
     await watcher?.close();

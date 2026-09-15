@@ -5,7 +5,7 @@ Pools with severe flags get no tier at all (not recommended). The expected retur
 estimate; whether higher tiers really earn more is checked per tier in app.backtest / app.validation.
 """
 
-EXCLUDE_FLAGS = {"rugged", "mint_authority", "freeze_authority", "rugcheck_danger", "dumping", "pumping"}
+EXCLUDE_FLAGS = {"rugged", "mint_authority", "freeze_authority", "rugcheck_danger", "dumping", "pumping", "tvl_suspect"}
 
 LOW_MIN_SAFETY, LOW_MAX_VOL_PCT, LOW_MIN_TVL = 25.0, 2.0, 100_000.0
 MEDIUM_MIN_SAFETY, MEDIUM_MAX_VOL_PCT, MEDIUM_MIN_TVL = 15.0, 5.0, 25_000.0

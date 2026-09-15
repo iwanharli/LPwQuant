@@ -122,7 +122,7 @@ function Card({
     </>
   );
   return (
-    <section className="overflow-hidden rounded-xl border border-line bg-panel/90 shadow-[0_14px_42px_rgba(0,0,0,0.20),inset_0_1px_0_rgba(255,255,255,0.04)]">
+    <section className="overflow-hidden rounded-2xl border border-line bg-panel/90 shadow-[0_14px_42px_rgba(0,0,0,0.20),inset_0_1px_0_rgba(255,255,255,0.04)]">
       {collapsible ? (
         <button
           type="button"
@@ -144,7 +144,7 @@ function Card({
 
 function Tile({ label, value, hint }: { label: string; value: ReactNode; hint: ReactNode }) {
   return (
-    <div className="relative min-w-0 overflow-hidden rounded-xl border border-line bg-panel/90 px-4 py-3.5 shadow-[0_12px_32px_rgba(0,0,0,0.18),inset_0_1px_0_rgba(255,255,255,0.04)]">
+    <div className="relative min-w-0 overflow-hidden rounded-2xl border border-line bg-panel/90 px-4 py-3.5 shadow-[0_12px_32px_rgba(0,0,0,0.18),inset_0_1px_0_rgba(255,255,255,0.04)]">
       <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/14 to-transparent" />
       <div className="text-xs font-medium text-ink-3">{label}</div>
       <div className="mt-2 text-2xl font-semibold tracking-tight text-ink">{value}</div>
@@ -404,7 +404,7 @@ function ResultsCard({ summary: s, profileLabel }: { summary: PaperSummary | und
     { id: "strategy" as const, label: "Per strategi" },
   ];
   return (
-    <section className="overflow-hidden rounded-xl border border-line bg-panel/90 shadow-[0_14px_42px_rgba(0,0,0,0.20),inset_0_1px_0_rgba(255,255,255,0.04)]">
+    <section className="overflow-hidden rounded-2xl border border-line bg-panel/90 shadow-[0_14px_42px_rgba(0,0,0,0.20),inset_0_1px_0_rgba(255,255,255,0.04)]">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line bg-raised/20 px-4 py-3">
         <div className="flex items-center gap-3">
           <h2 className="text-sm font-semibold text-ink">
@@ -464,6 +464,33 @@ function fmtMult(value: number | null | undefined, suffix: string): string {
   return value == null ? "–" : `${String(value).replace(".", ",")}${suffix}`;
 }
 
+const VERDICT_META = {
+  collecting: { severity: "info", label: "Mengumpulkan data" },
+  profitable: { severity: "good", label: "Terbukti untung (CI > 0)" },
+  losing: { severity: "critical", label: "Terbukti rugi (CI < 0)" },
+  inconclusive: { severity: "warning", label: "Belum meyakinkan (CI melewati 0)" },
+} as const;
+
+function VerdictBadge({ verdict }: { verdict: ProfileSummary["verdict"] }) {
+  if (!verdict) return null;
+  const meta = VERDICT_META[verdict.status];
+  const total = verdict.trades + verdict.trades_needed;
+  return (
+    <div
+      className="mt-1.5 inline-flex items-center gap-1.5 text-[11px] text-ink-2"
+      title={`Aturan ditetapkan di awal: minimal ${total} posisi ditutup, lalu 95% CI rata-rata return per trade harus di atas 0`}
+    >
+      <StatusDot severity={meta.severity} />
+      {meta.label}
+      {verdict.status === "collecting" && (
+        <span className="tabular-nums text-ink-3">
+          · {verdict.trades}/{total} posisi
+        </span>
+      )}
+    </div>
+  );
+}
+
 function ProfileCompareCard({
   profiles,
   selected,
@@ -474,7 +501,7 @@ function ProfileCompareCard({
   onSelect: (key: string) => void;
 }) {
   return (
-    <section className="overflow-hidden rounded-xl border border-line bg-panel/90 shadow-[0_14px_42px_rgba(0,0,0,0.20),inset_0_1px_0_rgba(255,255,255,0.04)]">
+    <section className="overflow-hidden rounded-2xl border border-line bg-panel/90 shadow-[0_14px_42px_rgba(0,0,0,0.20),inset_0_1px_0_rgba(255,255,255,0.04)]">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line bg-raised/20 px-4 py-3">
         <h2 className="text-sm font-semibold text-ink">Perbandingan profil risiko</h2>
         <span className="text-xs text-ink-3">
@@ -533,6 +560,7 @@ function ProfileCompareCard({
                         )}
                       </div>
                       <div className="mt-0.5 max-w-[16rem] text-xs leading-5 text-ink-3">{p.description}</div>
+                      <VerdictBadge verdict={p.verdict} />
                     </td>
                     <td className="px-3 py-3">
                       <div className="flex flex-wrap gap-1">
@@ -541,7 +569,9 @@ function ProfileCompareCard({
                         ))}
                       </div>
                       <div className="mt-1.5 text-xs leading-5 text-ink-3">
-                        Ukuran {fmtMult(st.size_mult, "×")} · maks {st.max_open_per_tier}/tier · fee ≥
+                        Ukuran {fmtMult(st.size_mult, "×")}
+                        {st.position_floor_usd ? ` (min ${usd.format(st.position_floor_usd)})` : ""} · maks{" "}
+                        {st.max_open_per_tier}/tier · fee ≥
                         {fmtMult(st.min_fee_cost_ratio, "×")} biaya ({fmtMult(st.fee_gate_hours, " j")})
                         <br />
                         Tahan min {fmtMult(st.min_hold_hours, " j")} · stop-loss {fmtMult(st.stop_loss_mult, "×")} · jeda di
@@ -645,7 +675,7 @@ function PositionsCard({
     { id: "closed" as const, label: "Ditutup", count: closed.length },
   ];
   return (
-    <section className="overflow-hidden rounded-xl border border-line bg-panel/90 shadow-[0_14px_42px_rgba(0,0,0,0.20),inset_0_1px_0_rgba(255,255,255,0.04)]">
+    <section className="overflow-hidden rounded-2xl border border-line bg-panel/90 shadow-[0_14px_42px_rgba(0,0,0,0.20),inset_0_1px_0_rgba(255,255,255,0.04)]">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line bg-raised/20 px-4 py-3">
         <div className="flex items-center gap-3">
           <h2 className="text-sm font-semibold text-ink">
@@ -691,7 +721,7 @@ export default function PaperPage() {
       <main className="mx-auto w-full min-w-0 max-w-full flex-1 space-y-5 overflow-x-hidden px-4 py-6 sm:px-6 lg:py-7 2xl:px-8">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-ink sm:text-3xl">
+          <h1 className="text-3xl font-bold tracking-tight text-ink sm:text-4xl">
             Paper trading{s?.profile ? <span className="text-ink-3"> · {s.profile.label}</span> : null}
           </h1>
           <p className="mt-1 max-w-3xl text-sm leading-6 text-ink-3">
@@ -709,18 +739,18 @@ export default function PaperPage() {
         </div>
 
         {error && (
-          <p className="flex items-center gap-2 rounded-xl border border-critical/30 bg-critical/10 px-4 py-3 text-sm text-ink-2 shadow-sm shadow-black/20">
+          <p className="flex items-center gap-2 rounded-2xl border border-critical/30 bg-critical/10 px-4 py-3 text-sm text-ink-2 shadow-sm shadow-black/20">
             <StatusDot severity="critical" /> {error}. Pastikan engine berjalan di {ENGINE_URL}.
           </p>
         )}
         {s?.risk.entries_paused && (
-          <p className="flex items-center gap-2 rounded-xl border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-ink-2 shadow-sm shadow-black/20">
+          <p className="flex items-center gap-2 rounded-2xl border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-ink-2 shadow-sm shadow-black/20">
             <StatusDot severity="warning" /> Posisi baru dihentikan: equity {fmtPct(s.risk.drawdown_pct, 1)} di bawah puncak{" "}
             {usd.format(s.risk.peak_equity_usd)} (batas {s.risk.max_drawdown_pct}%). Posisi terbuka tetap dikelola.
           </p>
         )}
         {s && !s.enabled && (
-          <p className="flex items-center gap-2 rounded-xl border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-ink-2 shadow-sm shadow-black/20">
+          <p className="flex items-center gap-2 rounded-2xl border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-ink-2 shadow-sm shadow-black/20">
             <StatusDot severity="warning" /> Paper trading nonaktif (PAPER_ENABLED=false).
           </p>
         )}

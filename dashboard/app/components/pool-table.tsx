@@ -60,7 +60,7 @@ const COLUMNS: Column[] = [
 
 const CELL = "border-b border-line/80 px-2.5 py-2.5";
 const ICON_BUTTON =
-  "grid h-8 w-8 place-items-center rounded-md border border-line bg-bg/40 text-ink-3 transition-colors hover:border-line-strong hover:bg-raised hover:text-ink focus-visible:text-ink";
+  "grid h-8 w-8 place-items-center rounded-lg border border-line bg-bg/40 text-ink-3 transition-colors hover:border-accent/70 hover:text-accent focus-visible:border-accent/70 focus-visible:text-accent";
 
 function Stack({ top, bottom, align = "right" }: { top: ReactNode; bottom: ReactNode; align?: "left" | "right" }) {
   return (
@@ -274,7 +274,7 @@ export default function PoolTable({
           {rows.length === 0 && (
             <tr>
               <td colSpan={COLUMNS.length} className="px-4 py-20 text-center text-sm text-ink-3">
-                <div className="mx-auto max-w-sm rounded-xl border border-line bg-bg/55 px-5 py-6 shadow-inner shadow-black/20">
+                <div className="mx-auto max-w-sm rounded-2xl border border-line bg-bg/55 px-5 py-6 shadow-inner shadow-black/20">
                   <div className="text-base font-medium text-ink">
                     {status === "live" ? "Tidak ada pool yang cocok" : "Menghubungkan ke engine"}
                   </div>

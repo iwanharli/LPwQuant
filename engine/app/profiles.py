@@ -5,7 +5,8 @@ and drawdowns can be compared on identical market conditions. The engine builds 
 profile picks which tiers it trades, how strictly fees must cover costs, how big it sizes, how tight its stop is
 and how long it holds at least.
 
-Compare them on history with:  uv run python -m app.profiles --hours 168
+Compare them on history with:  uv run python -m app.profiles --hours 720 (quote and USD returns, per-window
+stability and walk-forward across profiles)
 """
 
 import argparse
@@ -16,6 +17,8 @@ from . import config
 from .costs import CostModel
 from .paper import PaperConfig
 from .recommend import PlanParams
+
+HOUR_MS = 3_600_000
 
 
 @dataclass(frozen=True)
@@ -100,6 +103,7 @@ def paper_config(profile: RiskProfile) -> PaperConfig:
         fee_gate_hours=profile.fee_gate_hours,
         min_hold_hours=profile.min_hold_hours,
         stop_loss_mult=profile.stop_loss_mult,
+        position_floor_usd=config.PAPER_POSITION_FLOOR_USD,
     )
 
 
@@ -116,11 +120,19 @@ def plan_params(profile: RiskProfile, base: PlanParams) -> PlanParams:
     )
 
 
-async def _compare(hours: float, every: float) -> None:
+def _usd_view(trades: list[dict]) -> list[dict]:
+    """Trades with return_pct replaced by the USD return (trades without a USD value are dropped)."""
+    return [dict(t, return_pct=t["return_usd_pct"]) for t in trades if t.get("return_usd_pct") is not None]
+
+
+async def _compare(hours: float, every: float, window_days: float, train_days: float, test_days: float) -> None:
+    from datetime import datetime, timezone
+    from zoneinfo import ZoneInfo
+
     import asyncpg
 
     from .backtest import default_params, load_candle_data, simulate_candle_trades, summarize
-    from .validation import bootstrap_mean_ci
+    from .validation import bootstrap_mean_ci, walk_forward
 
     db = await asyncpg.create_pool(config.DATABASE_URL, min_size=1, max_size=2, **config.DB_CONNECT_KWARGS)
     try:
@@ -128,32 +140,79 @@ async def _compare(hours: float, every: float) -> None:
     finally:
         await db.close()
     base = default_params()
-    print(f"Backtest {hours:g}h, entry every {every:g} min, costs included\n")
-    print(f"{'profil':12} {'trades':>6} {'win%':>6} {'mean%':>7} {'95% CI':>18} {'fee%':>6} {'IL%':>6} {'biaya%':>6} "
-          f"{'p10%':>7} {'worst%':>7} {'USD/trade':>9}")
+    sol_ts = data.sol_usd[0]
+    print(f"Backtest {hours:g}h ({len(data.history.candles)} pools), entry every {every:g} min, costs included")
+    print(f"SOL/USD series: {len(sol_ts)} candles" + ("" if sol_ts else " (none: USD returns unavailable)"))
+
+    def ci_text(trades: list[dict]) -> str:
+        if not trades:
+            return "-"
+        ci = bootstrap_mean_ci(trades)
+        return f"{ci['mean']:+.2f}% [{ci['low']:+.2f}, {ci['high']:+.2f}]"
+
+    trades_by_profile: dict[str, list[dict]] = {}
+    print(f"\n{'profile':12} {'trades':>6} {'win%':>6} {'mean quote (95% CI)':>28} {'mean USD (95% CI)':>28} {'fee%':>6} {'IL%':>6} {'cost%':>6} {'worst%':>7}")
     for profile in PROFILES:
         params = plan_params(profile, base)
         data.market_cache.clear()
         trades, _ = simulate_candle_trades(data, every, params)
         trades = [t for t in trades if t["tier"] in profile.tiers]
+        trades_by_profile[profile.label] = trades
         s = summarize(trades)
         if not trades:
             print(f"{profile.label:12} {0:>6}")
             continue
-        ci = bootstrap_mean_ci(trades)
-        capital = params.portfolio_usd * params.max_position_pct / 100
-        print(f"{profile.label:12} {s['trades']:>6} {s['win_rate_pct']:>6} {s['mean_return_pct']:>7} "
-              f"{f'[{ci['low']:.2f}, {ci['high']:.2f}]':>18} {s['mean_fee_pct']:>6} {s['mean_il_vs_hodl_pct']:>6} "
-              f"{s.get('mean_cost_pct', 0):>6} {s['p10_return_pct']:>7} {s['worst_return_pct']:>7} "
-              f"{capital * s['mean_return_pct'] / 100:>9.2f}")
+        print(f"{profile.label:12} {s['trades']:>6} {s['win_rate_pct']:>6} {ci_text(trades):>28} {ci_text(_usd_view(trades)):>28}"
+              f" {s['mean_fee_pct']:>6} {s['mean_il_vs_hodl_pct']:>6} {s.get('mean_cost_pct', 0):>6} {s['worst_return_pct']:>7}")
+
+    start_ms, end_ms = data.window_start_ms, data.loaded_at_ms
+    tz = ZoneInfo(config.TIMEZONE)
+
+    def wib(ms: int) -> str:
+        return datetime.fromtimestamp(ms / 1000, timezone.utc).astimezone(tz).strftime("%d %b %H:%M")
+
+    window_ms = int(window_days * 24 * HOUR_MS)
+    n_windows = max(1, int((end_ms - start_ms) // window_ms))
+    print(f"\nStability: mean net return per {window_days:g}-day window (quote / USD), trades in brackets")
+    for label, trades in trades_by_profile.items():
+        cells = []
+        for w in range(n_windows):
+            lo, hi = start_ms + w * window_ms, start_ms + (w + 1) * window_ms
+            ts = [t for t in trades if lo <= t["entry_ts"] < hi]
+            if not ts:
+                cells.append("      -      ")
+                continue
+            q = sum(t["return_pct"] for t in ts) / len(ts)
+            usd = [t["return_usd_pct"] for t in ts if t.get("return_usd_pct") is not None]
+            u = f"{sum(usd) / len(usd):+.2f}" if usd else "  - "
+            cells.append(f"{q:+.2f}/{u} ({len(ts)})")
+        positive = sum(1 for c in cells if c.strip() != "-" and not c.strip().startswith("-"))
+        print(f"  {label:12} " + "  ".join(cells) + f"   | positive windows (quote): {positive}/{n_windows}")
+
+    for view, view_trades in (("quote", trades_by_profile), ("USD", {k: _usd_view(v) for k, v in trades_by_profile.items()})):
+        wf = walk_forward(view_trades, start_ms, end_ms, int(train_days * 24 * HOUR_MS), int(test_days * 24 * HOUR_MS))
+        oos = wf["oos"]
+        ci = bootstrap_mean_ci(wf["oos_trades"]) if wf["oos_trades"] else None
+        print(f"\nWalk-forward ({view}): train {train_days:g}d -> test {test_days:g}d, profile chosen on train mean")
+        for fold in wf["folds"]:
+            t = fold["test"]
+            print(f"  test from {wib(fold['test_start'])}: chose {fold['chosen']:12} train {fold['train_mean']:+.2f}%"
+                  f" -> test {t.get('mean_return_pct', 0):+.2f}% ({t.get('trades', 0)} trades)")
+        if ci:
+            print(f"  out-of-sample: {oos['trades']} trades, mean {ci['mean']:+.2f}% [{ci['low']:+.2f}, {ci['high']:+.2f}]")
+        else:
+            print("  out-of-sample: no fold had enough training trades")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Compare risk profiles on candle history (with costs)")
     parser.add_argument("--hours", type=float, default=168)
     parser.add_argument("--every", type=float, default=60, help="minutes between entry attempts per pool")
+    parser.add_argument("--window-days", type=float, default=5, help="stability table window")
+    parser.add_argument("--train-days", type=float, default=7, help="walk-forward training window")
+    parser.add_argument("--test-days", type=float, default=3, help="walk-forward test window")
     args = parser.parse_args()
-    asyncio.run(_compare(args.hours, args.every))
+    asyncio.run(_compare(args.hours, args.every, args.window_days, args.train_days, args.test_days))
 
 
 if __name__ == "__main__":

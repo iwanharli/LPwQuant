@@ -73,7 +73,7 @@ export default function Dashboard() {
       <main className="mx-auto w-full min-w-0 max-w-full flex-1 space-y-5 overflow-x-hidden px-4 py-6 sm:px-6 lg:py-7 2xl:px-8">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-ink sm:text-3xl">Pool DLMM</h1>
+          <h1 className="text-3xl font-bold tracking-tight text-ink sm:text-4xl">Pool DLMM</h1>
           <p className="mt-1 max-w-3xl text-sm leading-6 text-ink-3">
             Dikelompokkan per tingkat risiko. Di dalam tiap tier, diurutkan berdasarkan skor peluang fee, likuiditas,
             dan keamanan.
@@ -87,7 +87,7 @@ export default function Dashboard() {
 
         <KpiStrip rows={all} />
 
-        <section className="max-w-full overflow-hidden rounded-xl border border-line bg-panel/95 shadow-[0_18px_55px_rgba(0,0,0,0.24),inset_0_1px_0_rgba(255,255,255,0.04)]">
+        <section className="max-w-full overflow-hidden rounded-2xl border border-line bg-panel/95 shadow-[0_18px_55px_rgba(0,0,0,0.24),inset_0_1px_0_rgba(255,255,255,0.04)]">
           <Toolbar
             tierFilter={tierFilter}
             onTierFilter={setTierFilter}

@@ -13,7 +13,7 @@ extreme volatility, sell pressure, deep drawdown).
 import math
 from typing import Any
 
-from .depth import fee_for_position_pct_day as depth_fee_pct
+from .depth import realization_factor
 
 QUOTE_MINTS = {
     "So11111111111111111111111111111111111111112",  # SOL
@@ -22,7 +22,7 @@ QUOTE_MINTS = {
 }
 
 # Flags severe enough that the dashboard hides them by default and plans say "avoid".
-RISKY_FLAGS = {"rugged", "mint_authority", "freeze_authority", "rugcheck_danger", "dumping", "pumping"}
+RISKY_FLAGS = {"rugged", "mint_authority", "freeze_authority", "rugcheck_danger", "dumping", "pumping", "tvl_suspect"}
 
 PUMP_PCT_1H = 30.0  # LPs entering a vertical pump end up holding the token at the top
 DUMP_PCT_1H = -15.0
@@ -72,6 +72,44 @@ INSIGHT_PENALTIES = {
     "smart_money_exit": 5.0,
     "serial_dev": 3.0,
 }
+
+# Jupiter organic score (0-100). On the screener's tokens: "high" 80-99, "medium" 38-80, "low" is 0 (no organic
+# activity detected, e.g. wash-traded or bot-driven). The organic *volume* share is small even for healthy tokens
+# (median ~9%), so it is shown but not penalized.
+ORGANIC_LOW_SCORE = 40.0
+ORGANIC_WEAK_SCORE = 60.0
+BOT_HOLDERS_HEAVY_PCT = 10.0  # screener p90 was ~13%
+ORGANIC_PENALTIES = {"organic_low": 8.0, "bot_holders_heavy": 5.0}
+
+# pump.fun signals, all informational until validated on LP outcomes. "pump_banned" is pump.fun front-end moderation
+# (the coin is hidden on pump.fun), not an on-chain risk: CATE, a $65M token with deep Meteora pools, is flagged. A token below this share of its
+# all-time-high market cap is in post-peak decay; a Meteora pool holding less than this share of the token's
+# Meteora + PumpSwap liquidity competes with a deeper venue for the same flow.
+ATH_DRAWDOWN_SHARE = 0.3
+MIN_METEORA_LIQUIDITY_SHARE = 0.3
+
+
+def pump_flags(pump: dict[str, Any] | None, pool_tvl: float) -> list[str]:
+    if not pump or not pump.get("found"):
+        return []
+    flags: list[str] = []
+    if pump.get("is_banned"):
+        flags.append("pump_banned")
+    ath, mcap = pump.get("ath_market_cap_usd") or 0.0, pump.get("usd_market_cap") or 0.0
+    if ath > 0 and mcap > 0 and mcap < ATH_DRAWDOWN_SHARE * ath:
+        flags.append("ath_drawdown")
+    elsewhere = pump.get("pumpswap_liquidity_usd") or 0.0
+    if elsewhere > 0 and pool_tvl > 0 and pool_tvl / (pool_tvl + elsewhere) < MIN_METEORA_LIQUIDITY_SHARE:
+        flags.append("liquidity_elsewhere")
+    return flags
+
+
+# Reported TVL sanity. A pool claiming more than this multiple of its token's liquidity across all DEXes (Jupiter)
+# is checked against the liquidity actually read from its bins on-chain; below MIN_SCANNED_TVL_SHARE of the claimed
+# TVL, the figure is treated as wrong (ANTFUN-USDT reported $64.7M TVL: 4.2x Jupiter liquidity, 9% found on-chain).
+# Tokenized stocks like MU-USDC also exceed the Jupiter multiple but their bins hold the TVL, so they pass.
+TVL_VS_TOKEN_LIQUIDITY_MAX = 2.0
+MIN_SCANNED_TVL_SHARE = 0.2
 
 # Dynamic fee at least this share of the base fee: price is crossing bins fast, so each swap pays more.
 # An opportunity for fees and a warning for IL at the same time, hence informational only.
@@ -162,6 +200,31 @@ def insight_flags(insights: dict[str, Any] | None, now_ms: int) -> list[str]:
     return flags
 
 
+def organic_flags(organic: dict[str, Any] | None) -> list[str]:
+    """Jupiter organic-activity flags; penalties for the risky ones live in ORGANIC_PENALTIES."""
+    if not organic:
+        return []
+    flags: list[str] = []
+    score = organic.get("organic_score")
+    if organic.get("organic_label") == "low" or (score is not None and score < ORGANIC_LOW_SCORE):
+        flags.append("organic_low")
+    elif score is not None and score < ORGANIC_WEAK_SCORE:
+        flags.append("organic_weak")
+    if (organic.get("bot_holders_pct") or 0) >= BOT_HOLDERS_HEAVY_PCT:
+        flags.append("bot_holders_heavy")
+    return flags
+
+
+def tvl_flags(tvl: float, token_liquidity_usd: float | None, scanned_usd: float | None) -> list[str]:
+    """"tvl_suspect" when the reported TVL is implausible and on-chain bins do not back it; "tvl_unverified" when it is
+    implausible but no on-chain depth was read for the pool."""
+    if not tvl or not token_liquidity_usd or tvl <= TVL_VS_TOKEN_LIQUIDITY_MAX * token_liquidity_usd:
+        return []
+    if scanned_usd is None:
+        return ["tvl_unverified"]
+    return ["tvl_suspect"] if scanned_usd < MIN_SCANNED_TVL_SHARE * tvl else []
+
+
 def score_pool(
     pool: dict[str, Any],
     change_pct_1h: float | None,
@@ -171,23 +234,21 @@ def score_pool(
     position_usd: float,
     market: dict[str, Any] | None = None,
     insights: dict[str, Any] | None = None,
-    pool_per_bin_usd: float | None = None,
+    organic: dict[str, Any] | None = None,
     fee_bins: int | None = None,
+    depth_scanned_usd: float | None = None,
+    pump: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """`pool_per_bin_usd` (on-chain liquidity per bin around the active bin) and `fee_bins` (bins the position
-    spreads over) switch the fee share from "your size vs TVL" to "your per-bin size vs the traded bins"."""
+    """`fee_bins`: range width the fee estimate assumes (the plan is built afterwards; the service re-estimates
+    with the plan's own width). None = narrow-range realization."""
     tvl = pool["tvl"] or 0.0
     fees = pool["fee_tvl_pct"]
     fee_24h = fees.get("24h") or 0.0
     fee_1h_x24 = (fees.get("1h") or 0.0) * 24
     fee_expected = expected_fee_pct_day(fees)
-    if pool_per_bin_usd is not None and fee_bins:
-        fee_for_position = depth_fee_pct(
-            fee_expected, tvl, position_usd, fee_bins, pool_per_bin_usd, (fee_bins - 1) // 2,
-            (pool.get("volume") or {}).get("24h", 0.0) / 24 or None,
-        )
-    else:
-        fee_for_position = diluted_fee_pct(fee_expected, tvl, position_usd)
+    fee_for_position = diluted_fee_pct(fee_expected, tvl, position_usd) * (
+        realization_factor(fee_bins) if fee_bins else 1.0
+    )
     volume_tvl = pool["volume"]["24h"] / tvl if tvl > 0 else 0.0
     momentum = fee_1h_x24 / fee_24h if fee_24h > 0 else 0.0
     regime = (market or {}).get("regime")
@@ -247,6 +308,12 @@ def score_pool(
             penalize(flag, INSIGHT_PENALTIES[flag])
         else:
             flags.append(flag)
+    # Issuer tokens (tokenized stocks, wrapped assets) trade through market makers that Jupiter scores as non-organic.
+    for flag in organic_flags(None if issuer else organic):
+        if flag in ORGANIC_PENALTIES:
+            penalize(flag, ORGANIC_PENALTIES[flag])
+        else:
+            flags.append(flag)
     if holders < 1000:
         penalize("low_holders", 5)
     if market_cap < 1_000_000:
@@ -266,6 +333,8 @@ def score_pool(
         flags.append("high_volatility")
     if tvl < 25_000:
         flags.append("thin_liquidity")
+    flags.extend(tvl_flags(tvl, (organic or {}).get("liquidity_usd"), depth_scanned_usd))
+    flags.extend(pump_flags(pump, tvl))
     if fee_24h > 0 and momentum < 0.25:
         flags.append("fading_volume")
     base_fee_pct = pool.get("base_fee_pct") or 0.0

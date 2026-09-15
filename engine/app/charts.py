@@ -131,7 +131,7 @@ def profile_decision(row: dict[str, Any], trader: PaperTrader) -> dict[str, Any]
             "id": pos.id, "entry_ts": pos.entry_ts, "capital_usd": pos.capital_usd, "pnl_pct": pos.pnl_pct(),
             "min_price": pos.min_price, "max_price": pos.max_price, "in_range": pos.lp.in_range(pos.last_price),
         }
-    plan = profile_plan(row, cfg)
+    plan = profile_plan(row, cfg, trader.equity_usd())
     if plan is not None and (plan.get("size_usd") or 0.0) >= max(1.0, cfg.min_position_usd):
         rules = plan.get("exit") or {}
         return {**info, "enter": True, "reason": None, "size_usd": plan["size_usd"],

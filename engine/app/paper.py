@@ -23,8 +23,8 @@ from typing import Any, Iterable
 import asyncpg
 
 from .backtest import LpPosition, summarize
-from .costs import BINS_PER_BIN_ARRAY, CostModel, entry_costs, exit_cost, round_trip_cost_pct, swap_cost_fraction  # noqa: F401
-from .depth import guarded_fee_share
+from .costs import BINS_PER_BIN_ARRAY, CostModel, entry_costs, exit_cost, resized_cost_pct, round_trip_cost_pct, swap_cost_fraction  # noqa: F401
+from .depth import realization_factor
 from .recommend import DEFAULT_MIN_HOLD_HOURS, FEE_RATE_AVG_HOURS, MIN_BREAKOUT_DISTANCE_PCT, cost_gate_ok
 from .validation import bootstrap_mean_ci
 
@@ -82,6 +82,9 @@ class PaperConfig:
     min_hold_hours: float | None = None
     stop_loss_mult: float = 1.0
     max_tvl_share: float = 0.02
+    # Minimum position size in USD (0 = off), still capped by max_tvl_share. Open positions never commit more capital
+    # than the profile's equity.
+    position_floor_usd: float = 0.0
 
 
 def entries_paused(equity_usd: float, peak_equity_usd: float, max_drawdown_pct: float | None) -> bool:
@@ -117,10 +120,6 @@ class Position:
     cost_entry_y: float = 0.0
     cost_exit_y: float = 0.0  # estimated cost to exit at the last price
     rent_sol: float = 0.0
-    # Pool liquidity per bin (token Y) around the active bin at the last update; None = no on-chain depth, fall
-    # back to the TVL share. Not persisted: after a restart the first interval uses the TVL share.
-    last_depth_y: float | None = None
-    last_window_bins: int = 1  # trading window (bins either side of the active bin) at the last update
     # Fee rate (fraction of TVL per hour) smoothed over ~FEE_RATE_AVG_HOURS, so one quiet snapshot does not
     # trigger fee_decay. Not persisted: starts from the last rate after a restart.
     rate_avg: float | None = None
@@ -194,30 +193,18 @@ def accrue(
     now_ms: int,
     model: CostModel | None = None,
     sol_usd: float | None = None,
-    pool_per_bin_y: float | None = None,
-    window_bins: int = 1,
 ) -> None:
-    """Advance a position to `now_ms`: fees earned since the last update (at the previous price, fee rate and
-    bin depth, like the backtest), then revalue at the current price and re-estimate the exit cost.
+    """Advance a position to `now_ms`: fees earned since the last update (at the previous price and fee rate, like
+    the backtest), then revalue at the current price and re-estimate the exit cost.
 
-    With on-chain depth the position earns the pool's fees times its per-bin liquidity over the traded bins'
-    liquidity; without it, its value over TVL."""
+    Fees: the pool's fee rate times the position's TVL share, scaled by the realization factor for its range width
+    (app.depth, calibrated on real LP positions)."""
     tvl = pool.get("tvl") or 0.0
     y_usd = (pool.get("token_y") or {}).get("price_usd") or 0.0
     dt_h = max(0.0, (now_ms - pos.last_ts) / HOUR_MS)
     if dt_h > 0 and pos.last_rate > 0 and tvl > 0 and pos.lp.in_range(pos.last_price):
-        if pos.last_depth_y is not None and y_usd > 0:
-            tvl_y = tvl / y_usd
-            pool_fees_y_per_h = pos.last_rate * tvl_y
-            volume_y_per_h = ((pool.get("volume") or {}).get("1h") or 0.0) / y_usd
-            share = guarded_fee_share(
-                pos.lp.v, pos.last_depth_y, pos.last_window_bins, pos.value_y, tvl_y, volume_y_per_h or None
-            )
-            pos.fees_y += pool_fees_y_per_h * share * dt_h
-        else:
-            pos.fees_y += pos.value_y * pos.last_rate * dt_h * tvl / (tvl + pos.capital_usd)
-    pos.last_depth_y = pool_per_bin_y
-    pos.last_window_bins = window_bins
+        realization = realization_factor(pos.lp.a + pos.lp.b + 1)
+        pos.fees_y += pos.value_y * pos.last_rate * dt_h * tvl / (tvl + pos.capital_usd) * realization
     price = pool["price"]
     pos.value_y = pos.lp.value(price)
     pos.out_of_range_since = None if pos.lp.in_range(price) else (pos.out_of_range_since or now_ms)
@@ -255,32 +242,43 @@ def exit_reason(pos: Position, now_ms: int) -> str | None:
     return None
 
 
-def profile_plan(row: dict[str, Any], cfg: PaperConfig) -> dict[str, Any] | None:
+def profile_plan(
+    row: dict[str, Any], cfg: PaperConfig, equity_usd: float | None = None
+) -> dict[str, Any] | None:
     """The row's entry plan as this profile would trade it, or None when the profile skips it: tier not allowed,
-    or fees over the profile's gate window below its multiple of the round-trip cost. Size, stop-loss and
-    minimum hold are scaled or overridden by the profile."""
+    or fees over the profile's gate window below its multiple of the round-trip cost.
+
+    Size is the plan's size_pct of the profile's current equity (the plan itself is sized on PORTFOLIO_USD), times
+    the profile's size multiplier, capped by TVL share. The cost gate re-prices the round trip at that size: fixed
+    costs (transactions, bin array rent) weigh more on small positions."""
     base = row.get("plan_base")
-    if cfg.min_fee_cost_ratio is None or base is None:
-        plan = row.get("plan") or {}
-    else:
-        plan = base
-        cost, fee_day = plan.get("round_trip_cost_pct"), row.get("fee_for_position_pct_day")
-        hours = cfg.fee_gate_hours if cfg.fee_gate_hours is not None else 1.0
-        if cost is not None and fee_day is not None and not cost_gate_ok(cost, fee_day, hours, cfg.min_fee_cost_ratio):
-            return None
+    use_base = cfg.min_fee_cost_ratio is not None and base is not None
+    plan = base if use_base else (row.get("plan") or {})
     if plan.get("action") != "enter" or plan.get("tier") not in cfg.tiers:
         return None
+    base_size = plan.get("size_usd") or 0.0
+    size = equity_usd * plan["size_pct"] / 100 if equity_usd and equity_usd > 0 and plan.get("size_pct") else base_size
+    size *= cfg.size_mult
+    size = max(size, cfg.position_floor_usd)
+    tvl = row.get("tvl") or 0.0
+    if tvl > 0:
+        size = min(size, tvl * cfg.max_tvl_share)
+    extra: dict[str, Any] = {}
+    if use_base:
+        cost, fee_day = plan.get("round_trip_cost_pct"), row.get("fee_for_position_pct_day")
+        if cost is not None and fee_day is not None:
+            cost = resized_cost_pct(cost, plan.get("fixed_cost_usd") or 0.0, base_size, size)
+            hours = cfg.fee_gate_hours if cfg.fee_gate_hours is not None else 1.0
+            if not cost_gate_ok(cost, fee_day, hours, cfg.min_fee_cost_ratio):
+                return None
+            extra["round_trip_cost_pct"] = round(cost, 3)
     rules = dict(plan.get("exit") or {})
     if cfg.stop_loss_mult != 1.0 and rules.get("stop_loss_pct") is not None:
         rules["stop_loss_pct"] = round(max(2.0, rules["stop_loss_pct"] * cfg.stop_loss_mult), 1)
     if cfg.min_hold_hours is not None:
         rules["min_hold_hours"] = cfg.min_hold_hours
         rules["max_hold_hours"] = max(rules.get("max_hold_hours") or 0.0, cfg.min_hold_hours)
-    size = (plan.get("size_usd") or 0.0) * cfg.size_mult
-    tvl = row.get("tvl") or 0.0
-    if tvl > 0:
-        size = min(size, tvl * cfg.max_tvl_share)
-    return dict(plan, size_usd=round(size, 2), exit=rules, profile=cfg.profile)
+    return dict(plan, size_usd=round(size, 2), exit=rules, profile=cfg.profile, **extra)
 
 
 def pick_entries(
@@ -290,6 +288,7 @@ def pick_entries(
     cfg: PaperConfig,
     now_ms: int,
     last_closed_mints: dict[str, int] | None = None,
+    equity_usd: float | None = None,
 ) -> list[dict[str, Any]]:
     """Highest-score pools with an entry plan, capped per tier, one position per pool and per token,
     skipping pools and tokens closed within the cooldown (a token trades in several pools)."""
@@ -299,9 +298,11 @@ def pick_entries(
     addresses = {p.address for p in open_list}
     mints = {p.base_mint for p in open_list if p.base_mint}
     cooldown_ms = cfg.cooldown_hours * HOUR_MS
+    # Capital not yet committed to open positions; None when sizing does not follow equity.
+    available = equity_usd - sum(p.capital_usd for p in open_list) if equity_usd else None
     picked = []
     for row in sorted(rows, key=lambda r: r.get("score") or 0.0, reverse=True):
-        plan = profile_plan(row, cfg)
+        plan = profile_plan(row, cfg, equity_usd)
         if plan is None:
             continue
         tier = plan["tier"]
@@ -314,12 +315,36 @@ def pick_entries(
             continue
         if (plan.get("size_usd") or 0) < max(1.0, cfg.min_position_usd) or not row.get("price"):
             continue
+        if available is not None:
+            if plan["size_usd"] > available:
+                continue
+            available -= plan["size_usd"]
         picked.append(dict(row, plan=plan))
         per_tier[tier] += 1
         addresses.add(row["address"])
         if row.get("base_mint"):
             mints.add(row["base_mint"])
     return picked
+
+
+# Decision rule fixed on 2026-09-16, before looking at results: a profile needs this many closed positions before
+# its outcome counts, then it is "profitable" only if the 95% CI of the mean net return per trade is above zero,
+# "losing" if the whole CI is below zero, otherwise "inconclusive" (keep collecting or change the rules).
+MIN_TRADES_FOR_VERDICT = 50
+
+
+def verdict(stats: dict[str, Any], min_trades: int = MIN_TRADES_FOR_VERDICT) -> dict[str, Any]:
+    trades = int(stats.get("trades") or 0)
+    if trades < min_trades:
+        return {"status": "collecting", "trades": trades, "trades_needed": min_trades - trades}
+    low, high = stats.get("ci_low"), stats.get("ci_high")
+    if low is not None and low > 0:
+        status = "profitable"
+    elif high is not None and high < 0:
+        status = "losing"
+    else:
+        status = "inconclusive"
+    return {"status": status, "trades": trades, "trades_needed": 0}
 
 
 def _trade_stats(trades: list[dict[str, Any]]) -> dict[str, Any]:
@@ -396,16 +421,12 @@ class PaperTrader:
             if pool is None or not pool.get("price"):
                 await self._close(pos, "delisted", now_ms)
                 continue
-            row = rows.get(pos.address) or {}
-            accrue(
-                pos, pool, now_ms, self.cfg.costs, self.sol_usd, row.get("depth_per_bin_y"),
-                int((row.get("depth") or {}).get("window_bins") or 1),
-            )
+            accrue(pos, pool, now_ms, self.cfg.costs, self.sol_usd)
             reason = exit_reason(pos, now_ms)
             if reason:
                 await self._close(pos, reason, now_ms)
         await self._save_open(now_ms)
-        equity = self.cfg.start_equity_usd + self.realized_usd + self._unrealized_usd()
+        equity = self.equity_usd()
         self.peak_equity_usd = max(self.peak_equity_usd, equity)
         paused = entries_paused(equity, self.peak_equity_usd, self.cfg.max_drawdown_pct)
         if paused and not self.entries_paused:
@@ -414,7 +435,8 @@ class PaperTrader:
         self.entries_paused = paused
         if not paused:
             for row in pick_entries(
-                rows.values(), self.open.values(), self.last_closed, self.cfg, now_ms, self.last_closed_mints
+                rows.values(), self.open.values(), self.last_closed, self.cfg, now_ms, self.last_closed_mints,
+                equity_usd=equity,
             ):
                 await self._open(row, pools[row["address"]], now_ms)
         await self._record_equity(now_ms)
@@ -458,8 +480,6 @@ class PaperTrader:
             positions=int(plan.get("positions") or 1),
         )
         sol_to_y = (self.sol_usd or 0.0) / y_usd
-        pos.last_depth_y = row.get("depth_per_bin_y")
-        pos.last_window_bins = int((row.get("depth") or {}).get("window_bins") or 1)
         pos.cost_entry_y, pos.rent_sol = entry_costs(
             pos.lp, pos.positions, pool, y_usd, sol_to_y, self.cfg.costs, plan.get("new_bin_arrays")
         )
@@ -529,6 +549,9 @@ class PaperTrader:
         del self.open[pos.id]
         log.info("paper[%s] close #%d %s %s %+.2f%%", self.cfg.profile, pos.id, pos.name, reason, pnl)
 
+    def equity_usd(self) -> float:
+        return self.cfg.start_equity_usd + self.realized_usd + self._unrealized_usd()
+
     def _unrealized_usd(self) -> float:
         return sum(p.capital_usd * p.pnl_pct() / 100 for p in self.open.values())
 
@@ -558,6 +581,7 @@ class PaperTrader:
                 "min_hold_hours": c.min_hold_hours,
                 "stop_loss_mult": c.stop_loss_mult,
                 "max_drawdown_pct": c.max_drawdown_pct,
+                "position_floor_usd": c.position_floor_usd,
             },
         }
 
@@ -583,6 +607,7 @@ class PaperTrader:
             "entries_paused": s["risk"]["entries_paused"],
             "started_at": s["started_at"],
             "overall": s["overall"],
+            "verdict": verdict(s["overall"]),
         })
 
     async def summary(self) -> dict[str, Any]:

@@ -1,20 +1,35 @@
-import { SearchIcon } from "./icons";
+"use client";
+
+import { useEffect, useRef } from "react";
+import { TIER_META } from "../lib/flags";
+import { ChevronIcon, SearchIcon } from "./icons";
+import { StatusDot } from "./ui";
 
 export type TierFilter = "all" | "low" | "medium" | "high";
 
 const SEGMENTS: { id: TierFilter; label: string }[] = [
   { id: "all", label: "Semua" },
-  { id: "low", label: "Risiko rendah" },
-  { id: "medium", label: "Menengah" },
-  { id: "high", label: "Tinggi" },
+  { id: "low", label: TIER_META.low.short },
+  { id: "medium", label: TIER_META.medium.short },
+  { id: "high", label: TIER_META.high.short },
 ];
 
 const TVL_OPTIONS = [
-  { value: 0, label: "Semua TVL" },
-  { value: 25_000, label: "TVL ≥ $25K" },
-  { value: 100_000, label: "TVL ≥ $100K" },
-  { value: 500_000, label: "TVL ≥ $500K" },
+  { value: 0, label: "Semua" },
+  { value: 25_000, label: "≥ $25K" },
+  { value: 100_000, label: "≥ $100K" },
+  { value: 500_000, label: "≥ $500K" },
 ];
+
+const GROUP_LABEL = "text-[11px] font-semibold uppercase tracking-wider text-ink-3";
+
+function chipClass(active: boolean) {
+  return `inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
+    active
+      ? "border-accent/70 bg-accent/10 text-ink"
+      : "border-line bg-bg/40 text-ink-2 hover:border-line-strong hover:text-ink"
+  }`;
+}
 
 export default function Toolbar({
   tierFilter,
@@ -45,86 +60,156 @@ export default function Toolbar({
   onHideExcluded: (v: boolean) => void;
   shown: number;
 }) {
+  const searchRef = useRef<HTMLInputElement>(null);
+
+  // "/" focuses the search box from anywhere on the page, unless the user is already typing somewhere.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      const typing = target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable);
+      if (e.key === "/" && !typing && !e.metaKey && !e.ctrlKey) {
+        e.preventDefault();
+        searchRef.current?.focus();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  const filtersActive = tierFilter !== "all" || query !== "" || minTvl !== 0 || binStep !== 0;
+  const reset = () => {
+    onTierFilter("all");
+    onQuery("");
+    onMinTvl(0);
+    onBinStep(0);
+  };
+
   return (
-    <div className="flex flex-wrap items-center gap-3 border-b border-line bg-raised/20 px-4 py-3">
-      <div role="tablist" className="flex max-w-full overflow-x-auto rounded-lg border border-line bg-bg/80 p-1 shadow-inner shadow-black/20">
-        {SEGMENTS.map((s) => (
-          <button
-            key={s.id}
-            role="tab"
-            aria-selected={tierFilter === s.id}
-            onClick={() => onTierFilter(s.id)}
-            className={`flex items-center gap-1.5 whitespace-nowrap rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
-              tierFilter === s.id ? "bg-raised text-ink shadow-sm shadow-black/25" : "text-ink-3 hover:bg-raised/50 hover:text-ink-2"
-            }`}
-          >
-            {s.label}
-            <span className={`rounded px-1.5 py-0.5 tabular-nums ${tierFilter === s.id ? "bg-bg/80 text-ink-2" : "text-ink-3"}`}>
-              {counts[s.id]}
-            </span>
-          </button>
-        ))}
-      </div>
-
-      <label className="relative flex w-full min-w-0 flex-none items-center sm:min-w-[240px] sm:flex-[1_1_280px] sm:max-w-80">
-        <SearchIcon className="pointer-events-none absolute left-2.5 text-ink-3" />
-        <input
-          value={query}
-          onChange={(e) => onQuery(e.target.value)}
-          placeholder="Cari pair atau alamat"
-          className="w-full rounded-lg border border-line bg-bg/85 py-2 pl-8 pr-3 text-sm text-ink shadow-inner shadow-black/20 placeholder:text-ink-3 outline-none transition-colors focus:border-accent/70"
-        />
-      </label>
-
-      <select
-        value={minTvl}
-        onChange={(e) => onMinTvl(Number(e.target.value))}
-        className="w-full rounded-lg border border-line bg-bg/85 px-3 py-2 text-sm text-ink-2 outline-none transition-colors focus:border-accent/70 sm:w-auto"
-      >
-        {TVL_OPTIONS.map((o) => (
-          <option key={o.value} value={o.value}>
-            {o.label}
-          </option>
-        ))}
-      </select>
-
-      <select
-        value={binStep}
-        onChange={(e) => onBinStep(Number(e.target.value))}
-        aria-label="Filter bin step"
-        className="w-full rounded-lg border border-line bg-bg/85 px-3 py-2 text-sm text-ink-2 outline-none transition-colors focus:border-accent/70 sm:w-auto"
-      >
-        <option value={0}>Semua bin step</option>
-        {binSteps.map((s) => (
-          <option key={s} value={s}>
-            Bin step {s} ({(s / 100).toFixed(2)}%)
-          </option>
-        ))}
-      </select>
-
-      <button
-        role="switch"
-        aria-checked={hideExcluded}
-        onClick={() => onHideExcluded(!hideExcluded)}
-        className="flex max-w-full items-center gap-2 rounded-lg border border-transparent px-1.5 py-1 text-left text-sm text-ink-2 transition-colors hover:border-line hover:bg-bg/50 hover:text-ink"
-      >
-        <span
-          className={`relative h-5 w-9 shrink-0 rounded-full border transition-colors ${
-            hideExcluded ? "border-accent/60 bg-accent/30" : "border-line-strong bg-raised"
-          }`}
+    <div className="space-y-3 border-b border-line px-4 py-4">
+      <div className="flex flex-wrap items-center gap-3">
+        <label className="relative flex min-w-0 flex-1 basis-72 items-center">
+          <SearchIcon className="pointer-events-none absolute left-3.5 text-ink-3" width={17} height={17} />
+          <input
+            ref={searchRef}
+            value={query}
+            onChange={(e) => onQuery(e.target.value)}
+            onKeyDown={(e) => e.key === "Escape" && (onQuery(""), e.currentTarget.blur())}
+            placeholder="Cari pair, token atau alamat pool"
+            aria-label="Cari pool"
+            className="h-11 w-full rounded-xl border border-line bg-bg/70 pl-10 pr-12 text-sm text-ink placeholder:text-ink-3 outline-none transition-colors focus:border-accent/70 focus:bg-bg/90"
+          />
+          {query ? (
+            <button
+              type="button"
+              onClick={() => onQuery("")}
+              aria-label="Hapus pencarian"
+              className="absolute right-2.5 rounded-md px-2 py-1 text-xs text-ink-3 transition-colors hover:bg-raised hover:text-ink"
+            >
+              Hapus
+            </button>
+          ) : (
+            <kbd className="pointer-events-none absolute right-3 rounded-md border border-line px-1.5 py-0.5 font-mono text-[11px] text-ink-3">
+              /
+            </kbd>
+          )}
+        </label>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={hideExcluded}
+          onClick={() => onHideExcluded(!hideExcluded)}
+          className="flex items-center gap-2 rounded-full px-1 py-1 text-xs font-medium text-ink-2 transition-colors hover:text-ink"
         >
           <span
-            className={`absolute left-0 top-[2px] h-3.5 w-3.5 rounded-full bg-ink transition-transform ${
-              hideExcluded ? "translate-x-4" : "translate-x-0.5"
+            className={`relative h-5 w-9 shrink-0 rounded-full border transition-colors ${
+              hideExcluded ? "border-accent/70 bg-accent/80" : "border-line-strong bg-raised"
             }`}
-          />
-        </span>
-        Sembunyikan yang tidak direkomendasikan
-      </button>
+          >
+            <span
+              className={`absolute left-0 top-[2px] h-3.5 w-3.5 rounded-full transition-transform ${
+                hideExcluded ? "translate-x-4 bg-bg" : "translate-x-0.5 bg-ink-2"
+              }`}
+            />
+          </span>
+          Sembunyikan tidak direkomendasikan
+        </button>
+        <div className="flex items-center gap-2 text-sm">
+          <span className="tabular-nums font-semibold text-ink">{shown}</span>
+          <span className="text-ink-3">pool ditampilkan</span>
+        </div>
+      </div>
 
-      <span className="ml-auto rounded-full border border-line bg-bg/60 px-2.5 py-1 text-xs font-medium text-ink-3">
-        {shown} pool ditampilkan
-      </span>
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-3">
+        <div className="flex flex-wrap items-center gap-2" role="radiogroup" aria-label="Tier risiko">
+          <span className={GROUP_LABEL}>Tier</span>
+          {SEGMENTS.map((s) => (
+            <button
+              key={s.id}
+              type="button"
+              role="radio"
+              aria-checked={tierFilter === s.id}
+              onClick={() => onTierFilter(s.id)}
+              className={chipClass(tierFilter === s.id)}
+            >
+              {s.id !== "all" && <StatusDot severity={TIER_META[s.id].severity} />}
+              {s.label}
+              <span className="tabular-nums text-ink-3">{counts[s.id]}</span>
+            </button>
+          ))}
+        </div>
+
+        <span className="hidden h-6 w-px bg-line lg:block" aria-hidden />
+
+        <div className="flex flex-wrap items-center gap-2" role="radiogroup" aria-label="TVL minimum">
+          <span className={GROUP_LABEL}>TVL</span>
+          {TVL_OPTIONS.map((o) => (
+            <button
+              key={o.value}
+              type="button"
+              role="radio"
+              aria-checked={minTvl === o.value}
+              onClick={() => onMinTvl(o.value)}
+              className={chipClass(minTvl === o.value)}
+            >
+              {o.label}
+            </button>
+          ))}
+        </div>
+
+        <span className="hidden h-6 w-px bg-line lg:block" aria-hidden />
+
+        <label className="flex items-center gap-2">
+          <span className={GROUP_LABEL}>Bin step</span>
+          <span className="relative">
+            <select
+              value={binStep}
+              onChange={(e) => onBinStep(Number(e.target.value))}
+              aria-label="Filter bin step"
+              className={`${chipClass(binStep !== 0)} appearance-none pr-8 outline-none focus-visible:border-accent/70`}
+            >
+              <option value={0}>Semua</option>
+              {binSteps.map((s) => (
+                <option key={s} value={s}>
+                  {s} ({(s / 100).toFixed(2)}%)
+                </option>
+              ))}
+            </select>
+            <ChevronIcon className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-ink-3" width={14} height={14} />
+          </span>
+        </label>
+
+        <div className="ml-auto flex items-center">
+          {filtersActive && (
+            <button
+              type="button"
+              onClick={reset}
+              className="rounded-full border border-line px-3 py-1.5 text-xs font-medium text-ink-2 transition-colors hover:border-accent/70 hover:text-ink"
+            >
+              Reset filter
+            </button>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

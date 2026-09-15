@@ -10,6 +10,7 @@ export const RISKY_FLAGS = new Set([
   "rugcheck_danger",
   "dumping",
   "pumping",
+  "tvl_suspect",
 ]);
 
 type FlagMeta = { label: string; title: string; severity: Severity };
@@ -41,6 +42,46 @@ const FLAG_META: Record<string, FlagMeta> = {
     severity: "warning",
   },
   deep_drawdown: { label: "Drawdown >30%", title: "Harga turun >30% dari high 24 jam", severity: "warning" },
+  pump_banned: {
+    label: "Disembunyikan pump.fun",
+    title: "pump.fun menandai koin ini banned (disembunyikan dari situs pump.fun). Moderasi situs, bukan risiko on-chain",
+    severity: "info",
+  },
+  ath_drawdown: {
+    label: "Jauh di bawah ATH",
+    title: "Market cap <30% dari all-time-high (pump.fun): fase turun setelah puncak",
+    severity: "warning",
+  },
+  liquidity_elsewhere: {
+    label: "Likuiditas di PumpSwap",
+    title: "Pool Meteora ini <30% dari likuiditas Meteora + PumpSwap token: sebagian besar volume kemungkinan di venue lain",
+    severity: "info",
+  },
+  tvl_suspect: {
+    label: "TVL mencurigakan",
+    title: "TVL >2x likuiditas token di semua DEX (Jupiter) dan <20% ditemukan di bin on-chain: angka TVL kemungkinan salah",
+    severity: "critical",
+  },
+  tvl_unverified: {
+    label: "TVL belum terverifikasi",
+    title: "TVL >2x likuiditas token di semua DEX (Jupiter); bin on-chain pool ini belum dibaca untuk memastikan",
+    severity: "info",
+  },
+  organic_low: {
+    label: "Organic rendah",
+    title: "Organic score Jupiter <40 atau label low: aktivitas trading sebagian besar bot/wash, fee/TVL menyesatkan",
+    severity: "serious",
+  },
+  organic_weak: {
+    label: "Organic lemah",
+    title: "Organic score Jupiter 40–60: sebagian volume kemungkinan bukan pengguna asli",
+    severity: "info",
+  },
+  bot_holders_heavy: {
+    label: "Bot holder ≥10%",
+    title: "Wallet bot memegang ≥10% supply (audit Jupiter)",
+    severity: "warning",
+  },
   bundler_heavy: {
     label: "Bundler ≥15%",
     title: "Wallet bundler (GMGN) memegang ≥15% supply: risiko dump terkoordinasi",

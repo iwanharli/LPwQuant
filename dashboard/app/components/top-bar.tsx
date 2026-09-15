@@ -46,7 +46,7 @@ export default function TopBar({
   const meta = status ? STATUS_META[status] : null;
   return (
     <header className="sticky top-0 z-30 border-b border-white/8 bg-bg/78 shadow-[0_1px_0_rgba(255,255,255,0.04)] backdrop-blur-xl">
-      <div className="mx-auto flex h-16 w-full items-center gap-4 px-4 sm:px-6 2xl:px-8">
+      <div className="relative mx-auto flex h-16 w-full items-center gap-4 px-4 sm:px-6 2xl:px-8">
         <Link href="/" className="flex items-center gap-3 rounded-lg">
           <span className="grid h-9 w-9 place-items-center rounded-lg border border-accent/30 bg-accent/10 shadow-[inset_0_1px_0_rgba(255,255,255,0.10),0_10px_28px_rgba(73,164,255,0.14)]">
             <svg viewBox="0 0 24 24" width={18} height={18} aria-hidden>
@@ -61,12 +61,12 @@ export default function TopBar({
             </svg>
           </span>
           <div className="hidden leading-tight sm:block">
-            <div className="text-sm font-semibold tracking-tight text-ink">Quant</div>
+            <div className="text-base font-bold tracking-tight text-ink">Quant</div>
             <div className="text-[11px] text-ink-3">Meteora DLMM · LP Screener</div>
           </div>
         </Link>
 
-        <nav className="flex items-center gap-1 rounded-lg border border-line bg-panel/80 p-1 text-xs shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+        <nav className="absolute left-1/2 hidden -translate-x-1/2 items-center gap-7 text-sm font-medium md:flex">
           {NAV.map((item) => {
             const active = item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
             return (
@@ -74,9 +74,22 @@ export default function TopBar({
                 key={item.href}
                 href={item.href}
                 aria-current={active ? "page" : undefined}
-                className={`whitespace-nowrap rounded-md px-3 py-1.5 font-medium transition-colors ${
-                  active ? "bg-raised text-ink shadow-sm shadow-black/20" : "text-ink-3 hover:bg-raised/50 hover:text-ink-2"
-                }`}
+                className={`whitespace-nowrap transition-colors ${active ? "text-accent" : "text-ink-2 hover:text-ink"}`}
+              >
+                {item.label}
+              </Link>
+            );
+          })}
+        </nav>
+        <nav className="flex items-center gap-4 text-sm font-medium md:hidden">
+          {NAV.map((item) => {
+            const active = item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                aria-current={active ? "page" : undefined}
+                className={`whitespace-nowrap transition-colors ${active ? "text-accent" : "text-ink-2 hover:text-ink"}`}
               >
                 {item.label}
               </Link>
@@ -86,7 +99,7 @@ export default function TopBar({
 
         <div className="ml-auto flex items-center gap-3 text-xs sm:gap-5">
           {meta && (
-            <span className="hidden text-ink-3 md:inline">
+            <span className="hidden text-ink-3 2xl:inline">
               {lastMessageAt ? `Update terakhir ${fmtTime(lastMessageAt)} WIB` : "Menunggu data…"}
             </span>
           )}

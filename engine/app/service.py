@@ -16,7 +16,7 @@ from .metrics import PriceHistory
 from .paper import PaperTrader, sol_usd_from_pools
 from .depth import Depth, depth_per_bin_y, fee_for_position_pct_day, new_bin_arrays, window_bins
 from .backtest import LpPosition
-from .costs import round_trip_cost_pct
+from .costs import fixed_cost_usd, round_trip_cost_pct
 from .profiles import PROFILES, paper_config
 from .recommend import PlanParams, apply_cost_gate, bins_below, bins_for_width, plan_position
 from .scoring import base_token, expected_fee_pct_day, score_pool
@@ -61,6 +61,8 @@ class Engine:
         self.security: dict[str, dict[str, Any]] = {}
         self.market: dict[str, dict[str, Any] | None] = {}
         self.insights: dict[str, dict[str, Any]] = {}
+        self.organic: dict[str, dict[str, Any]] = {}  # Jupiter organic score per base mint
+        self.pump: dict[str, dict[str, Any]] = {}  # pump.fun data per base mint
         self.paper: PaperTrader | None = None  # default profile: its cost model prices live plans
         self.papers: dict[str, PaperTrader] = {}  # one virtual account per risk profile (app.profiles)
         self._paper_lock = asyncio.Lock()  # paper updates and resets never interleave
@@ -253,6 +255,10 @@ class Engine:
         self.security = {mint: json.loads(value) for mint, value in security_raw.items()}
         insights_raw = await self.redis.hgetall(config.KEY_GMGN_LATEST)
         self.insights = {mint: json.loads(value) for mint, value in insights_raw.items()}
+        organic_raw = await self.redis.hgetall(config.KEY_JUPITER_LATEST)
+        self.organic = {mint: json.loads(value) for mint, value in organic_raw.items()}
+        pump_raw = await self.redis.hgetall(config.KEY_PUMP_LATEST)
+        self.pump = {mint: json.loads(value) for mint, value in pump_raw.items()}
         depth_raw = await self.redis.hgetall(config.KEY_BINS_LATEST)
         depth: dict[str, Depth] = {}
         for address, value in depth_raw.items():
@@ -313,6 +319,8 @@ class Engine:
         base_mint = base_token(pool)["mint"]
         security = self.security.get(base_mint)
         insights = self.insights.get(base_mint)
+        organic = self.organic.get(base_mint)
+        pump = self.pump.get(base_mint)
         depth = self.depth.get(address)
         if depth is not None and (not depth.fresh(now_ms) or depth.bin_step != pool["bin_step"]):
             depth = None
@@ -320,9 +328,10 @@ class Engine:
         window = window_bins(pool["bin_step"], (market or {}).get("atr_pct") or vol_1h)
         pool_per_bin_y = depth_per_bin_y(depth, window) if depth is not None and y_usd > 0 else None
         pool_per_bin_usd = pool_per_bin_y * y_usd if pool_per_bin_y is not None else None
+        scanned_usd = sum(depth.bins.values()) * y_usd if depth is not None and y_usd > 0 else None
         scored = score_pool(
             pool, change_1h, vol_1h, now_ms, security, self.position_usd, market, insights,
-            pool_per_bin_usd=pool_per_bin_usd, fee_bins=2 * window + 1,
+            organic=organic, depth_scanned_usd=scanned_usd, pump=pump,
         )
         plan = plan_position(
             bin_step=pool["bin_step"],
@@ -340,14 +349,12 @@ class Engine:
         if plan.get("action") == "enter":
             lower = -bins_below(-plan["range_low_pct"], pool["bin_step"])
             upper = bins_for_width(plan["range_high_pct"], pool["bin_step"])
-            if pool_per_bin_usd is not None:
-                # Re-estimate with the plan's own size and bin count: a wider range spreads thinner per bin.
-                pct = fee_for_position_pct_day(
-                    expected_fee_pct_day(pool["fee_tvl_pct"]), pool["tvl"] or 0.0, plan["size_usd"], plan["bins"],
-                    pool_per_bin_usd, window, (pool["volume"].get("24h") or 0.0) / 24 or None,
-                )
-                scored["fee_for_position_pct_day"] = pct
-                plan["expected_fee_usd_day"] = round(plan["size_usd"] * pct / 100, 2)
+            # Re-estimate with the plan's own size and width: wide ranges realize less of the TVL-share fees.
+            pct = fee_for_position_pct_day(
+                expected_fee_pct_day(pool["fee_tvl_pct"]), pool["tvl"] or 0.0, plan["size_usd"], plan["bins"]
+            )
+            scored["fee_for_position_pct_day"] = pct
+            plan["expected_fee_usd_day"] = round(plan["size_usd"] * pct / 100, 2)
             if depth is not None:
                 new_arrays = new_bin_arrays(depth, lower, upper)
                 plan["new_bin_arrays"] = new_arrays
@@ -360,7 +367,11 @@ class Engine:
             cost_pct = round_trip_cost_pct(
                 lp, int(plan.get("positions") or 1), pool, 1.0, self.sol_usd, self.paper.cfg.costs, new_arrays
             )
-            plan_base = dict(plan, round_trip_cost_pct=round(cost_pct, 3))
+            fixed = fixed_cost_usd(
+                int(plan.get("positions") or 1), int(plan["bins"]), self.sol_usd, self.paper.cfg.costs, new_arrays
+            )
+            # Profiles size on their own equity and re-price the round trip from these two numbers.
+            plan_base = dict(plan, round_trip_cost_pct=round(cost_pct, 3), fixed_cost_usd=round(fixed, 4))
             plan = apply_cost_gate(plan, cost_pct, scored["fee_for_position_pct_day"], self.plan_params)
         tvl_per_bin_usd = None
         if depth is not None and y_usd > 0:
@@ -384,10 +395,13 @@ class Engine:
             "security": _security_summary(security),
             "market": _clean(market),
             "insights": _clean(insights),
+            "organic": _clean(organic),
+            "pump": _clean(pump),
             "depth_per_bin_y": pool_per_bin_y,
             "depth": None if depth is None else {
                 "age_sec": round((now_ms - depth.ts) / 1000),
                 "window_bins": window,
+                "scanned_usd": scanned_usd,
                 "per_bin_usd": pool_per_bin_usd,
                 "active_bin_usd": depth.bins.get(0, 0.0) * y_usd if y_usd > 0 else None,
                 "avg_nonempty_bin_usd": tvl_per_bin_usd,

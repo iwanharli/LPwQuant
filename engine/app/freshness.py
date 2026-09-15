@@ -25,6 +25,8 @@ SOURCES = (
     Source("pool_flow", "Arus transaksi (GeckoTerminal)", "select max(ts) from pool_flow", 15 * 60, False),
     Source("token_security", "Keamanan token (RugCheck)", "select max(fetched_at) from token_security", 90 * 60, False),
     Source("token_insights", "Insider & dev (GMGN)", "select max(fetched_at) from token_insights", 3 * 3600, False),
+    Source("token_organic", "Organic score (Jupiter)", "select max(fetched_at) from token_organic", 45 * 60, False),
+    Source("token_pump", "pump.fun", "select max(fetched_at) from token_pump", 90 * 60, False),
     Source("paper_equity", "Paper trading", "select max(ts) from paper_equity", 5 * 60, False),
 )
 

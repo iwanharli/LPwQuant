@@ -106,6 +106,21 @@ create table if not exists token_security (
   data        jsonb not null
 );
 
+-- pump.fun data for tokens launched there (ingestor/src/pump.ts): graduation, all-time-high market cap, bans,
+-- PumpSwap liquidity.
+create table if not exists token_pump (
+  mint        text primary key,
+  fetched_at  timestamptz not null,
+  data        jsonb not null
+);
+
+-- Jupiter organic score per token mint (ingestor/src/jupiter.ts): real-user vs bot/wash trading activity.
+create table if not exists token_organic (
+  mint        text primary key,
+  fetched_at  timestamptz not null,
+  data        jsonb not null
+);
+
 -- Paper trading: virtual LP positions opened from live plans (engine/app/paper.py). Values in token Y.
 create table if not exists paper_positions (
   id                  bigserial primary key,

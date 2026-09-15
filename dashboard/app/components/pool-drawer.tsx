@@ -382,6 +382,75 @@ function InsiderSection({ row }: { row: PoolRow }) {
   );
 }
 
+function OrganicSection({ row }: { row: PoolRow }) {
+  const o = row.organic;
+  if (!o) {
+    return (
+      <Section title="Aktivitas organik · Jupiter">
+        <p className="text-sm text-ink-3">Menunggu data Jupiter…</p>
+      </Section>
+    );
+  }
+  const organicVolume = (o.organic_buy_usd_24h ?? 0) + (o.organic_sell_usd_24h ?? 0);
+  const totalVolume = (o.buy_usd_24h ?? 0) + (o.sell_usd_24h ?? 0);
+  const label = o.organic_label === "high" ? "Tinggi" : o.organic_label === "medium" ? "Sedang" : o.organic_label === "low" ? "Rendah" : "–";
+  return (
+    <Section title="Aktivitas organik · Jupiter">
+      <dl className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+        <Stat label="Organic score">
+          {o.organic_score != null ? `${o.organic_score.toFixed(0)} / 100` : "–"} · {label}
+        </Stat>
+        <Stat label="Volume organik 24j">
+          {totalVolume > 0 ? `${usdCompact.format(organicVolume)} (${fmtPct((organicVolume / totalVolume) * 100, 1)})` : "–"}
+        </Stat>
+        <Stat label="Pembeli organik 24j">
+          {o.organic_buyers_24h != null ? integer.format(o.organic_buyers_24h) : "–"}
+          {o.traders_24h != null ? ` / ${integer.format(o.traders_24h)} trader` : ""}
+        </Stat>
+        <Stat label="Bot holder">{fmtPct(o.bot_holders_pct, 2)}</Stat>
+        <Stat label="Top holder">{fmtPct(o.top_holders_pct, 1)}</Stat>
+        <Stat label="Terverifikasi">{o.verified ? "Ya" : "Tidak"}</Stat>
+      </dl>
+      <p className="mt-3 text-[11px] text-ink-3">
+        Porsi volume organik biasanya kecil bahkan untuk token sehat (definisi Jupiter sempit); yang dinilai adalah
+        skornya. Diperbarui {fmtTime(o.fetched_at, false)} WIB.
+      </p>
+    </Section>
+  );
+}
+
+function PumpSection({ row }: { row: PoolRow }) {
+  const p = row.pump;
+  if (!p || !p.found) return null;
+  const now = row.updated_at ?? p.fetched_at;
+  const ageDays = p.created_ts ? (now - p.created_ts) / 86_400_000 : null;
+  const belowAth =
+    p.ath_market_cap_usd && p.usd_market_cap ? (1 - p.usd_market_cap / p.ath_market_cap_usd) * 100 : null;
+  const meteoraShare =
+    p.pumpswap_liquidity_usd && row.tvl > 0 ? (row.tvl / (row.tvl + p.pumpswap_liquidity_usd)) * 100 : null;
+  return (
+    <Section title="pump.fun">
+      <dl className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+        <Stat label="Umur token">{ageDays != null ? (ageDays < 2 ? `${(ageDays * 24).toFixed(0)} jam` : `${ageDays.toFixed(0)} hari`) : "–"}</Stat>
+        <Stat label="Graduated">{p.complete == null ? "–" : p.complete ? "Ya" : "Belum"}</Stat>
+        <Stat label="Disembunyikan pump.fun">{p.is_banned ? "Ya" : "Tidak"}</Stat>
+        <Stat label="Market cap">{p.usd_market_cap != null ? usdCompact.format(p.usd_market_cap) : "–"}</Stat>
+        <Stat label="ATH market cap">
+          {p.ath_market_cap_usd != null ? usdCompact.format(p.ath_market_cap_usd) : "–"}
+          {belowAth != null && belowAth > 0 ? ` (−${belowAth.toFixed(0)}%)` : ""}
+        </Stat>
+        <Stat label="Likuiditas PumpSwap">
+          {p.pumpswap_liquidity_usd != null ? usdCompact.format(p.pumpswap_liquidity_usd) : "–"}
+          {meteoraShare != null ? ` · Meteora ${meteoraShare.toFixed(0)}%` : ""}
+        </Stat>
+      </dl>
+      <p className="mt-3 text-[11px] text-ink-3">
+        Data dari API publik pump.fun (tidak resmi). Diperbarui {fmtTime(p.fetched_at, false)} WIB.
+      </p>
+    </Section>
+  );
+}
+
 function SecuritySection({ row }: { row: PoolRow }) {
   const s = row.security;
   const issuer = row.flags.includes("issuer_controlled");
@@ -458,7 +527,7 @@ function DrawerContent({ row, onClose }: { row: PoolRow; onClose: () => void }) 
           </div>
           <Link
             href={`/pool/${row.address}`}
-            className="rounded-md border border-line px-2.5 py-1 text-xs font-medium text-ink-2 transition-colors hover:border-line-strong hover:bg-raised hover:text-ink"
+            className="rounded-lg border border-accent/70 px-3 py-1 text-xs font-semibold text-ink transition-colors hover:bg-accent hover:text-bg"
           >
             Buka grafik
           </Link>
@@ -541,6 +610,8 @@ function DrawerContent({ row, onClose }: { row: PoolRow; onClose: () => void }) 
       <SecuritySection row={row} />
 
       <InsiderSection row={row} />
+      <OrganicSection row={row} />
+      <PumpSection row={row} />
 
       {flags.length > 0 && (
         <Section title="Sinyal">

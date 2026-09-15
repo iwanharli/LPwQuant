@@ -96,10 +96,48 @@ export type Security = {
 export type BinDepth = {
   age_sec: number;
   window_bins: number;
+  scanned_usd?: number | null;
   per_bin_usd: number | null;
   active_bin_usd: number | null;
   avg_nonempty_bin_usd: number | null;
   new_bin_arrays: number | null;
+};
+
+/** Jupiter organic score for the base token (ingestor/src/jupiter.ts). */
+export type Organic = {
+  mint: string;
+  fetched_at: number;
+  organic_score: number | null;
+  organic_label: "high" | "medium" | "low" | string | null;
+  organic_buy_usd_24h: number | null;
+  organic_sell_usd_24h: number | null;
+  buy_usd_24h: number | null;
+  sell_usd_24h: number | null;
+  organic_buyers_24h: number | null;
+  traders_24h: number | null;
+  bot_holders_pct: number | null;
+  top_holders_pct: number | null;
+  liquidity_usd?: number | null;
+  verified: boolean;
+};
+
+/** pump.fun data for tokens launched there (ingestor/src/pump.ts). */
+export type PumpToken = {
+  mint: string;
+  fetched_at: number;
+  found: boolean;
+  creator: string | null;
+  created_ts: number | null;
+  complete: boolean | null;
+  is_banned: boolean;
+  nsfw: boolean;
+  usd_market_cap: number | null;
+  ath_market_cap_usd: number | null;
+  ath_ts: number | null;
+  pump_swap_pool: string | null;
+  pumpswap_liquidity_usd: number | null;
+  twitter: string | null;
+  website: string | null;
 };
 
 export type PoolRow = {
@@ -139,6 +177,8 @@ export type PoolRow = {
   /** Entry plan before the cost gate (each risk profile applies its own gate); null when there is none. */
   plan_base?: ActivePlan | null;
   insights: Insights | null;
+  organic?: Organic | null;
+  pump?: PumpToken | null;
 };
 
 export type LiveMessage =

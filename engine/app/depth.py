@@ -1,9 +1,7 @@
-"""Fee share from on-chain bin liquidity.
+"""On-chain bin liquidity around the active bin, and the calibrated fee model.
 
-DLMM fees go only to liquidity in the bins that swaps cross, so "your share of fees" is your liquidity per
-bin against the pool's liquidity per bin *around the active bin*, not your size against the whole TVL. A
-pool whose TVL sits far from price pays in-range LPs much more than fee/TVL suggests; one crowded at the
-active bin pays much less.
+The fee model is a TVL share scaled by a realization factor measured on real LP positions (see
+REALIZATION_NARROW/WIDE). Bin depth is kept for new-bin-array rent and for display.
 
 The ingestor writes `bins:latest` (see ingestor/src/bins.ts): per pool, non-empty bins as offsets from the
 active bin with liquidity valued in token Y, plus which bin arrays exist (new ones cost non-refundable rent).
@@ -17,14 +15,14 @@ BINS_PER_BIN_ARRAY = 70  # SDK MAX_BIN_ARRAY_SIZE
 MAX_WINDOW_BINS = 35
 DEPTH_MAX_AGE_MS = 15 * 60 * 1000
 
-# Guards against attributing a pool's whole fee income to thin liquidity near the price. Paper trading once
-# credited a $30 position with 46% of a pool's fees (36% of capital in 50 minutes): the price sat still next to
-# $3.5/bin of liquidity while Meteora's rolling 1h fees ($89) came from trades an hour earlier, elsewhere.
-# Liquidity near the price turns over at most this many times per hour; volume beyond it happened elsewhere.
-MAX_WINDOW_TURNOVER_PER_HOUR = 24.0
-# A position's share of fees is at most this multiple of its share of TVL. Concentrated liquidity near the price
-# does earn more than the pool average (live pools showed 4-11x), but not orders of magnitude more.
-MAX_DEPTH_BOOST = 10.0
+# Fee realization calibrated on real Meteora LP positions (python -m app.lp_study, 2026-09-16: 551 positions in
+# 17 pools, fees per capital-day vs the TVL-share model). Positions earned the TVL share almost exactly with
+# narrow ranges (1.04x) and much less with wide ranges (0.63x: more time out of range, liquidity in bins price
+# rarely visits). The bin-depth share this module used before overstated realized fees ~2.4x, so the depth data
+# no longer boosts fees; it still sizes new bin array rent and is shown on the dashboard.
+NARROW_RANGE_BINS = 70
+REALIZATION_NARROW = 1.0
+REALIZATION_WIDE = 0.65
 
 
 @dataclass(frozen=True)
@@ -68,60 +66,24 @@ def depth_per_bin_y(depth: Depth, window: int) -> float:
     return total / (2 * window + 1)
 
 
-def fee_share(position_per_bin_y: float, pool_per_bin_y: float) -> float:
-    """Fraction of the window's fees earned by a position holding `position_per_bin_y` in each bin."""
-    if position_per_bin_y <= 0:
+def realization_factor(n_bins: int) -> float:
+    """Share of the TVL-model fees a position of this width realizes (see NARROW_RANGE_BINS)."""
+    return REALIZATION_NARROW if n_bins <= NARROW_RANGE_BINS else REALIZATION_WIDE
+
+
+def calibrated_fee_share(position_value: float, tvl: float, n_bins: int) -> float:
+    """Share of the pool's fees a position earns: its share of TVL, scaled by the realization for its width."""
+    if position_value <= 0 or tvl <= 0:
         return 0.0
-    return position_per_bin_y / (pool_per_bin_y + position_per_bin_y)
+    return position_value / (tvl + position_value) * realization_factor(n_bins)
 
 
-def guarded_fee_share(
-    position_per_bin: float,
-    pool_per_bin: float,
-    window: int,
-    position_value: float,
-    tvl: float,
-    volume_per_hour: float | None,
-) -> float:
-    """Share of the pool's fees a position earns, from bin depth but bounded (all amounts in one unit).
-
-    1. Per-bin share: position_per_bin / (pool_per_bin + position_per_bin).
-    2. Only the part of the pool's volume that liquidity near the price could have absorbed counts:
-       min(1, MAX_WINDOW_TURNOVER_PER_HOUR x window liquidity / hourly volume).
-    3. At most MAX_DEPTH_BOOST times the plain TVL share, position_value / (tvl + position_value).
-    """
-    if position_per_bin <= 0 or position_value <= 0:
-        return 0.0
-    share = fee_share(position_per_bin, pool_per_bin)
-    if volume_per_hour and volume_per_hour > 0:
-        window_liquidity = (pool_per_bin + position_per_bin) * (2 * max(window, 0) + 1)
-        share *= min(1.0, MAX_WINDOW_TURNOVER_PER_HOUR * window_liquidity / volume_per_hour)
-    if tvl > 0:
-        share = min(share, MAX_DEPTH_BOOST * position_value / (tvl + position_value))
-    return share
-
-
-def fee_for_position_pct_day(
-    fee_pct_day_of_tvl: float,
-    tvl_usd: float,
-    position_usd: float,
-    n_bins: int,
-    pool_per_bin_usd: float,
-    window: int = 1,
-    volume_per_hour_usd: float | None = None,
-) -> float:
-    """Daily fees for a position spread uniformly over `n_bins`, as % of the position.
-
-    Pool fees per day in USD are fee/TVL x TVL; the position earns guarded_fee_share of them. With n_bins larger
-    than the window the per-bin size, and so the share, shrinks: that is the real cost of a wide range.
-    """
+def fee_for_position_pct_day(fee_pct_day_of_tvl: float, tvl_usd: float, position_usd: float, n_bins: int) -> float:
+    """Daily fees for a position over `n_bins`, as % of the position (calibrated TVL-share model)."""
     if position_usd <= 0 or tvl_usd <= 0 or n_bins <= 0:
         return 0.0
     fees_usd_day = fee_pct_day_of_tvl / 100 * tvl_usd
-    share = guarded_fee_share(
-        position_usd / n_bins, pool_per_bin_usd, window, position_usd, tvl_usd, volume_per_hour_usd
-    )
-    return fees_usd_day * share / position_usd * 100
+    return fees_usd_day * calibrated_fee_share(position_usd, tvl_usd, n_bins) / position_usd * 100
 
 
 def bin_array_index(bin_id: int) -> int:

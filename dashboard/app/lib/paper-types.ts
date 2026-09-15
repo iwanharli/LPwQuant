@@ -38,6 +38,7 @@ export type ProfileSettings = {
   min_hold_hours: number | null;
   stop_loss_mult: number;
   max_drawdown_pct: number | null;
+  position_floor_usd?: number;
 };
 
 export type ProfileInfo = { key: string; label: string; description: string; settings: ProfileSettings };
@@ -55,6 +56,8 @@ export type ProfileSummary = ProfileInfo & {
   entries_paused: boolean;
   started_at: number | null;
   overall: TradeStats;
+  /** Pre-registered decision rule (engine/app/paper.py MIN_TRADES_FOR_VERDICT). */
+  verdict?: { status: "collecting" | "profitable" | "losing" | "inconclusive"; trades: number; trades_needed: number };
 };
 
 export type PaperSummary = {

@@ -99,7 +99,7 @@ export default function DataHealth() {
         <div
           role="dialog"
           aria-label="Kesegaran data"
-          className="absolute right-0 top-full z-40 mt-2 w-80 overflow-hidden rounded-xl border border-line-strong bg-raised shadow-2xl shadow-black/50"
+          className="absolute right-0 top-full z-40 mt-2 w-80 overflow-hidden rounded-2xl border border-line-strong bg-raised shadow-2xl shadow-black/50"
         >
           <div className="border-b border-line px-4 py-2.5 text-xs text-ink-3">
             Kesegaran data{data ? ` · dicek ${fmtTime(data.generated_at)} WIB` : ""}

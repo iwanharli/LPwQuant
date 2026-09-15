@@ -278,14 +278,14 @@ export default function PoolPage({ address }: { address: string }) {
         </div>
 
         {detail.error && (
-          <p className="flex items-center gap-2 rounded-xl border border-critical/30 bg-critical/10 px-4 py-3 text-sm text-ink-2">
+          <p className="flex items-center gap-2 rounded-2xl border border-critical/30 bg-critical/10 px-4 py-3 text-sm text-ink-2">
             <StatusDot severity="critical" />
             {detail.error === "HTTP 404" ? "Pool ini tidak ada di screener saat ini." : `${detail.error}. Pastikan engine berjalan.`}
           </p>
         )}
 
         <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
-          <section className="min-w-0 overflow-hidden rounded-xl border border-line bg-panel/90 shadow-[0_14px_42px_rgba(0,0,0,0.20),inset_0_1px_0_rgba(255,255,255,0.04)]">
+          <section className="min-w-0 overflow-hidden rounded-2xl border border-line bg-panel/90 shadow-[0_14px_42px_rgba(0,0,0,0.20),inset_0_1px_0_rgba(255,255,255,0.04)]">
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line bg-raised/20 px-4 py-3">
               <div role="tablist" aria-label="Timeframe" className="flex rounded-lg border border-line bg-bg/80 p-1 shadow-inner shadow-black/20">
                 {TIMEFRAMES.map((t) => (
@@ -368,7 +368,7 @@ export default function PoolPage({ address }: { address: string }) {
           </section>
 
           <aside className="space-y-5">
-            <section className="rounded-xl border border-line bg-panel/90 p-4 shadow-[0_14px_42px_rgba(0,0,0,0.20),inset_0_1px_0_rgba(255,255,255,0.04)]">
+            <section className="rounded-2xl border border-line bg-panel/90 p-4 shadow-[0_14px_42px_rgba(0,0,0,0.20),inset_0_1px_0_rgba(255,255,255,0.04)]">
               <div className="flex items-center justify-between gap-2">
                 <h2 className="text-sm font-semibold text-ink">Rekomendasi range</h2>
                 {pool?.regime && <RegimeBadge regime={pool.regime} />}
@@ -398,7 +398,7 @@ export default function PoolPage({ address }: { address: string }) {
               )}
             </section>
 
-            <section className="rounded-xl border border-line bg-panel/90 p-4 shadow-[0_14px_42px_rgba(0,0,0,0.20),inset_0_1px_0_rgba(255,255,255,0.04)]">
+            <section className="rounded-2xl border border-line bg-panel/90 p-4 shadow-[0_14px_42px_rgba(0,0,0,0.20),inset_0_1px_0_rgba(255,255,255,0.04)]">
               <h2 className="text-sm font-semibold text-ink">Keputusan per profil</h2>
               <p className="mt-0.5 text-xs text-ink-3">Slot posisi dan cooldown bisa menunda masuk yang diizinkan aturan.</p>
               <ul className="mt-1 divide-y divide-line">
@@ -410,7 +410,7 @@ export default function PoolPage({ address }: { address: string }) {
           </aside>
         </div>
 
-        <section className="overflow-hidden rounded-xl border border-line bg-panel/90 shadow-[0_14px_42px_rgba(0,0,0,0.20),inset_0_1px_0_rgba(255,255,255,0.04)]">
+        <section className="overflow-hidden rounded-2xl border border-line bg-panel/90 shadow-[0_14px_42px_rgba(0,0,0,0.20),inset_0_1px_0_rgba(255,255,255,0.04)]">
           <div className="flex items-center justify-between gap-3 border-b border-line bg-raised/20 px-4 py-3">
             <h2 className="text-sm font-semibold text-ink">Posisi paper di pool ini</h2>
             <span className="text-xs text-ink-3">Semua profil · ditandai panah di grafik</span>

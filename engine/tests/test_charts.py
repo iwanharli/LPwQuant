@@ -2,6 +2,13 @@ from app.charts import merge_candles, profile_decision, trim_inactive_start, win
 from app.paper import PaperTrader
 from app.profiles import PROFILE_BY_KEY, paper_config
 
+
+def _cfg(key):
+    """Profile config without the paper position floor, so sizing and gating rules are tested on their own."""
+    from dataclasses import replace
+
+    return replace(paper_config(PROFILE_BY_KEY[key]), position_floor_usd=0.0)
+
 HOUR = 3600
 EXIT = {"stop_loss_pct": 10.0, "out_of_range_minutes": 20.0, "fee_decay_ratio": 0.25, "max_hold_hours": 8.0,
         "breakout_below_pct": None, "breakout_above_pct": None, "min_hold_hours": 2.0}
@@ -26,7 +33,7 @@ def _row(tier="medium", cost=0.5, fee_day=12.0, size=40.0):
 
 
 def _trader(key):
-    return PaperTrader(None, paper_config(PROFILE_BY_KEY[key]))  # type: ignore[arg-type]  # no DB needed
+    return PaperTrader(None, _cfg(key))  # type: ignore[arg-type]  # no DB needed
 
 
 def test_profile_decision_reasons():

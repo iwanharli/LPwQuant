@@ -46,7 +46,7 @@ export default function UsagePanel() {
   const coverage = items?.length ? Math.max(...items.map((i) => i.hours_covered)) : 0;
 
   return (
-    <section className="overflow-hidden rounded-xl border border-line bg-panel/85 shadow-[0_12px_36px_rgba(0,0,0,0.18),inset_0_1px_0_rgba(255,255,255,0.04)]">
+    <section className="overflow-hidden rounded-2xl border border-line bg-panel/85 shadow-[0_12px_36px_rgba(0,0,0,0.18),inset_0_1px_0_rgba(255,255,255,0.04)]">
       <div className="flex w-full flex-wrap items-center gap-x-5 gap-y-1 px-4 py-3 text-sm">
         <span className="font-semibold text-ink">Pemakaian RPC</span>
         {failed ? (
