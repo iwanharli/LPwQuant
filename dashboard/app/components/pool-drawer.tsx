@@ -146,6 +146,11 @@ function PlanSection({
         <Stat label="Posisi">{plan.positions}</Stat>
         <Stat label={`1 posisi (${BINS_PER_POSITION} bin)`}>≈ {positionSpanPct(binStep).toFixed(1)}%</Stat>
         <Stat label="Fee / hari">{usd.format(plan.expected_fee_usd_day)}</Stat>
+        {plan.new_bin_arrays != null && (
+          <Stat label="Bin array baru">
+            {plan.new_bin_arrays === 0 ? "0" : `${plan.new_bin_arrays} (≈${(plan.new_bin_arrays * 0.0714).toFixed(3)} SOL)`}
+          </Stat>
+        )}
       </dl>
       {plan.positions > 1 && (
         <p className="mt-2 text-xs text-ink-3">
@@ -491,6 +496,9 @@ function DrawerContent({ row, onClose }: { row: PoolRow; onClose: () => void }) 
           <Stat label="Volume 24j">{usdCompact.format(row.volume_24h)}</Stat>
           <Stat label="Vol / TVL">{row.volume_tvl_24h.toFixed(1)}×</Stat>
           <Stat label="Fee posisi/hari">{fmtPct(row.fee_for_position_pct_day, 2)}</Stat>
+          <Stat label="Likuiditas/bin dekat harga">
+            {row.depth?.per_bin_usd != null ? `${usd.format(row.depth.per_bin_usd)} · ±${row.depth.window_bins} bin` : "–"}
+          </Stat>
           <Stat label="Fee/TVL 24j">{fmtPct(row.fee_tvl_pct_24h, 2)}</Stat>
           <Stat label="Fee 1j × 24">{fmtPct(row.fee_tvl_pct_1h_x24, 2)}</Stat>
           <Stat label="Bin step">

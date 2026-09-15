@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { fmtTime } from "../lib/format";
 import type { ConnectionStatus } from "../lib/types";
+import DataHealth from "./data-health";
 import { ClockIcon } from "./icons";
 import { StatusDot } from "./ui";
 
@@ -17,6 +18,7 @@ const STATUS_META: Record<ConnectionStatus, { label: string; severity: "good" | 
 const NAV = [
   { href: "/", label: "Screener" },
   { href: "/paper", label: "Paper trading" },
+  { href: "/rpc", label: "Pemakaian RPC" },
 ];
 
 function WibClock() {
@@ -44,7 +46,7 @@ export default function TopBar({
   const meta = status ? STATUS_META[status] : null;
   return (
     <header className="sticky top-0 z-30 border-b border-white/8 bg-bg/78 shadow-[0_1px_0_rgba(255,255,255,0.04)] backdrop-blur-xl">
-      <div className="mx-auto flex h-16 w-full max-w-[1680px] items-center gap-4 px-4 sm:px-6">
+      <div className="mx-auto flex h-16 w-full items-center gap-4 px-4 sm:px-6 2xl:px-8">
         <Link href="/" className="flex items-center gap-3 rounded-lg">
           <span className="grid h-9 w-9 place-items-center rounded-lg border border-accent/30 bg-accent/10 shadow-[inset_0_1px_0_rgba(255,255,255,0.10),0_10px_28px_rgba(73,164,255,0.14)]">
             <svg viewBox="0 0 24 24" width={18} height={18} aria-hidden>
@@ -88,6 +90,7 @@ export default function TopBar({
               {lastMessageAt ? `Update terakhir ${fmtTime(lastMessageAt)} WIB` : "Menunggu data…"}
             </span>
           )}
+          <DataHealth />
           <span className="hidden rounded-full border border-line bg-panel/50 px-3 py-1 sm:inline">
             <WibClock />
           </span>

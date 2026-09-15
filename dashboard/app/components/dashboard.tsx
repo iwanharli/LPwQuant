@@ -8,7 +8,6 @@ import PoolDrawer from "./pool-drawer";
 import PoolTable from "./pool-table";
 import Toolbar, { type TierFilter } from "./toolbar";
 import TopBar from "./top-bar";
-import UsagePanel from "./usage-panel";
 
 export default function Dashboard() {
   const { pools, status, lastMessageAt } = useLivePools();
@@ -71,7 +70,7 @@ export default function Dashboard() {
     <div className="flex min-h-screen min-w-0 flex-col overflow-x-hidden">
       <TopBar status={status} lastMessageAt={lastMessageAt} />
 
-      <main className="mx-auto w-full min-w-0 max-w-full flex-1 space-y-5 overflow-x-hidden px-4 py-6 sm:px-6 lg:py-7 2xl:max-w-[1680px]">
+      <main className="mx-auto w-full min-w-0 max-w-full flex-1 space-y-5 overflow-x-hidden px-4 py-6 sm:px-6 lg:py-7 2xl:px-8">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
           <h1 className="text-2xl font-semibold tracking-tight text-ink sm:text-3xl">Pool DLMM</h1>
@@ -114,8 +113,6 @@ export default function Dashboard() {
             onSort={onSort}
           />
         </section>
-
-        <UsagePanel />
 
         <p className="pb-2 text-center text-xs text-ink-3">
           Tier dan rencana posisi masih heuristik. Backtest belum menunjukkan edge positif. Bukan saran finansial.

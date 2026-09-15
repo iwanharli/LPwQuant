@@ -1,0 +1,17 @@
+{
+  "name": "lpwquant",
+  "private": true,
+  "description": "Process management for the LPwQuant stack (ingestor, engine, dashboard, backups)",
+  "scripts": {
+    "dashboard:build": "npm --prefix dashboard run build",
+    "up": "pm2 start ecosystem.config.cjs",
+    "down": "pm2 delete ecosystem.config.cjs",
+    "restart": "pm2 restart ecosystem.config.cjs",
+    "status": "pm2 status",
+    "logs": "pm2 logs --lines 100",
+    "backup": "bash scripts/backup-db.sh"
+  },
+  "devDependencies": {
+    "pm2": "^7.0.4"
+  }
+}

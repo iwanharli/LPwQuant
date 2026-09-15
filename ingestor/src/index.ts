@@ -2,6 +2,7 @@ import { config } from "./config";
 import { applySchema, pg, pruneOld, savePools, saveTicks, saveUsage } from "./db";
 import { fetchPool, fetchPools, type PoolSnapshot } from "./meteora";
 import { publishPools, publishTicks, redis } from "./redis";
+import { BinDepthFetcher } from "./bins";
 import { usage } from "./rpc";
 import { GmgnFetcher } from "./gmgn";
 import { CandleFetcher, FlowFetcher } from "./market";
@@ -20,8 +21,7 @@ const PAPER_OPEN_POOLS_KEY = "paper:open_pools";
 
 /** Keep tracking pools with open paper positions even after they drop out of the top-volume screen, so a
  * position is closed by its own exit rules rather than because the screener stopped watching the pool. */
-async function withPinnedPools(pools: PoolSnapshot[]): Promise<PoolSnapshot[]> {
-  const pinned = await redis.smembers(PAPER_OPEN_POOLS_KEY);
+async function withPinnedPools(pools: PoolSnapshot[], pinned: string[]): Promise<PoolSnapshot[]> {
   const tracked = new Set(pools.map((p) => p.address));
   const extra: PoolSnapshot[] = [];
   for (const address of pinned) {
@@ -53,6 +53,7 @@ async function main(): Promise<void> {
 
   const canWatch = config.rpcProviders.length > 0 && (config.watchMode === "poll" || config.wsUrl);
   const watcher = canWatch ? new PoolWatcher(onTicks) : null;
+  const bins = config.binsEnabled && config.rpcProviders.length > 0 ? new BinDepthFetcher() : null;
   if (!watcher) console.warn("[ingestor] RPC not configured: on-chain watcher disabled, API polling only");
   else {
     const names = config.rpcProviders.map((p) => p.name).join(" → ");
@@ -84,13 +85,15 @@ async function main(): Promise<void> {
   const poll = async () => {
     const started = Date.now();
     try {
-      const pools = await withPinnedPools(await fetchPools());
+      const pinned = await redis.smembers(PAPER_OPEN_POOLS_KEY);
+      const pools = await withPinnedPools(await fetchPools(), pinned);
       await savePools(pools);
       await publishPools(pools);
       security.enqueue(pools);
       candles.enqueue(pools);
       flow.maybeRefresh(pools);
       gmgn?.maybeRefresh(pools);
+      bins?.maybeRefresh(pools, pinned);
       await watcher?.sync(pools);
       if (started - lastPrune > 3_600_000) {
         await pruneOld();
@@ -98,7 +101,7 @@ async function main(): Promise<void> {
       }
       const usageSummary = await flushUsage();
       console.log(
-        `[poller] ${pools.length} pools, watching ${watcher?.size ?? 0}, security ${security.known} known/${security.pending} queued, candles ${candles.tracked} pools/${candles.pending} queued, flow ${flow.lastCount}, gmgn ${gmgn?.known ?? "off"}, ${usageSummary}, ${Date.now() - started}ms`,
+        `[poller] ${pools.length} pools, watching ${watcher?.size ?? 0}, security ${security.known} known/${security.pending} queued, candles ${candles.tracked} pools/${candles.pending} queued, flow ${flow.lastCount}, gmgn ${gmgn?.known ?? "off"}, bins ${bins?.lastCount ?? "off"}, ${usageSummary}, ${Date.now() - started}ms`,
       );
     } catch (err) {
       console.error("[poller] failed", err);

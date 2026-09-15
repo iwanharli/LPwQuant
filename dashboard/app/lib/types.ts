@@ -49,6 +49,8 @@ export type ActivePlan = {
   size_pct: number;
   size_capped_by_tvl: boolean;
   expected_fee_usd_day: number;
+  /** On-chain count of bin arrays the range must create (non-refundable rent); null = unknown. */
+  new_bin_arrays?: number | null;
   exit: {
     stop_loss_pct: number;
     out_of_range_minutes: number;
@@ -74,6 +76,16 @@ export type Security = {
   warn_count: number;
   fetched_at: number;
   risks: string[];
+};
+
+/** On-chain liquidity around the active bin, used for the fee share. */
+export type BinDepth = {
+  age_sec: number;
+  window_bins: number;
+  per_bin_usd: number | null;
+  active_bin_usd: number | null;
+  avg_nonempty_bin_usd: number | null;
+  new_bin_arrays: number | null;
 };
 
 export type PoolRow = {
@@ -109,6 +121,7 @@ export type PoolRow = {
   plan: Plan;
   security: Security | null;
   market: Market | null;
+  depth: BinDepth | null;
   insights: Insights | null;
 };
 

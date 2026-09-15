@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import { ENGINE_URL, integer } from "../lib/format";
 import type { UsageItem } from "../lib/types";
-import { ChevronIcon } from "./icons";
 import { StatusDot } from "./ui";
 
 const REFRESH_MS = 30_000;
@@ -18,7 +17,6 @@ const KIND_LABELS: Record<UsageItem["kind"], string> = {
 export default function UsagePanel() {
   const [items, setItems] = useState<UsageItem[] | null>(null);
   const [failed, setFailed] = useState(false);
-  const [open, setOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -49,11 +47,7 @@ export default function UsagePanel() {
 
   return (
     <section className="overflow-hidden rounded-xl border border-line bg-panel/85 shadow-[0_12px_36px_rgba(0,0,0,0.18),inset_0_1px_0_rgba(255,255,255,0.04)]">
-      <button
-        onClick={() => setOpen((o) => !o)}
-        aria-expanded={open}
-        className="flex w-full flex-wrap items-center gap-x-5 gap-y-1 px-4 py-3 text-left text-sm transition-colors hover:bg-raised/30"
-      >
+      <div className="flex w-full flex-wrap items-center gap-x-5 gap-y-1 px-4 py-3 text-sm">
         <span className="font-semibold text-ink">Pemakaian RPC</span>
         {failed ? (
           <span className="flex items-center gap-2 text-ink-2">
@@ -76,10 +70,9 @@ export default function UsagePanel() {
             </span>
           </>
         )}
-        <ChevronIcon className={`ml-auto text-ink-3 transition-transform ${open ? "rotate-180" : ""}`} />
-      </button>
+      </div>
 
-      {open && items && (
+      {items && (
         <div className="border-t border-line bg-bg/25 px-4 pb-4">
           {items.length === 0 ? (
             <p className="pt-3 text-sm text-ink-3">Belum ada pemakaian tercatat.</p>

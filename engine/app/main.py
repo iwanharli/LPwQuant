@@ -10,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from . import config
 from .backtest import default_params, run_backtest
+from .freshness import check_freshness
 from .service import Engine
 
 _tz = ZoneInfo(config.TIMEZONE)
@@ -59,6 +60,13 @@ async def backtest(
     # CPU work runs on the event loop; fine for occasional manual runs.
     assert engine.db
     return await run_backtest(engine.db, hours, every, default_params(), source)
+
+
+@app.get("/api/freshness")
+async def freshness() -> dict:
+    if engine.db is None:
+        raise HTTPException(status_code=503, detail="engine not ready")
+    return await check_freshness(engine.db, int(time.time() * 1000))
 
 
 def _paper():

@@ -23,6 +23,7 @@ from typing import Any, Iterable
 import asyncpg
 
 from .backtest import LpPosition, summarize
+from .depth import fee_share
 from .recommend import MIN_BREAKOUT_DISTANCE_PCT
 from .validation import bootstrap_mean_ci
 
@@ -117,6 +118,9 @@ class Position:
     cost_entry_y: float = 0.0
     cost_exit_y: float = 0.0  # estimated cost to exit at the last price
     rent_sol: float = 0.0
+    # Pool liquidity per bin (token Y) around the active bin at the last update; None = no on-chain depth, fall
+    # back to the TVL share. Not persisted: after a restart the first interval uses the TVL share.
+    last_depth_y: float | None = None
     lp: LpPosition = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
@@ -174,17 +178,27 @@ def swap_cost_fraction(pool: dict[str, Any], swap_usd: float, model: CostModel) 
 
 
 def entry_costs(
-    lp: LpPosition, positions: int, pool: dict[str, Any], y_usd: float, sol_to_y: float, model: CostModel
+    lp: LpPosition,
+    positions: int,
+    pool: dict[str, Any],
+    y_usd: float,
+    sol_to_y: float,
+    model: CostModel,
+    new_bin_arrays: int | None = None,
 ) -> tuple[float, float]:
-    """(cost in token Y, refundable rent in SOL) to open the position from token Y."""
+    """(cost in token Y, refundable rent in SOL) to open the position from token Y. `new_bin_arrays` is the
+    on-chain count of bin arrays the range must create; when unknown, `model.new_bin_array_share` is assumed."""
     if not model.enabled:
         return 0.0, 0.0
     capital_y = lp.v * (lp.a + lp.b + 1)
     swap_y = capital_y * (lp.b + 0.5) / (lp.a + lp.b + 1)  # base-token share: bins above + half the active bin
     swap = swap_y * swap_cost_fraction(pool, swap_y * y_usd, model)
     txs = positions * model.txs_open_per_position * model.tx_cost_sol * sol_to_y
-    bin_arrays = math.ceil((lp.a + lp.b + 1) / BINS_PER_BIN_ARRAY)
-    bin_array_rent = model.new_bin_array_share * bin_arrays * model.bin_array_rent_sol * sol_to_y
+    if new_bin_arrays is None:
+        new_bin_arrays_est = model.new_bin_array_share * math.ceil((lp.a + lp.b + 1) / BINS_PER_BIN_ARRAY)
+    else:
+        new_bin_arrays_est = float(new_bin_arrays)
+    bin_array_rent = new_bin_arrays_est * model.bin_array_rent_sol * sol_to_y
     return swap + txs + bin_array_rent, positions * model.position_rent_sol
 
 
@@ -220,18 +234,27 @@ def accrue(
     now_ms: int,
     model: CostModel | None = None,
     sol_usd: float | None = None,
+    pool_per_bin_y: float | None = None,
 ) -> None:
-    """Advance a position to `now_ms`: fees earned since the last update (at the previous price and fee
-    rate, like the backtest), then revalue at the current price and re-estimate the exit cost."""
+    """Advance a position to `now_ms`: fees earned since the last update (at the previous price, fee rate and
+    bin depth, like the backtest), then revalue at the current price and re-estimate the exit cost.
+
+    With on-chain depth the position earns the pool's fees times its per-bin liquidity over the traded bins'
+    liquidity; without it, its value over TVL."""
     tvl = pool.get("tvl") or 0.0
+    y_usd = (pool.get("token_y") or {}).get("price_usd") or 0.0
     dt_h = max(0.0, (now_ms - pos.last_ts) / HOUR_MS)
     if dt_h > 0 and pos.last_rate > 0 and tvl > 0 and pos.lp.in_range(pos.last_price):
-        pos.fees_y += pos.value_y * pos.last_rate * dt_h * tvl / (tvl + pos.capital_usd)
+        if pos.last_depth_y is not None and y_usd > 0:
+            pool_fees_y_per_h = pos.last_rate * tvl / y_usd
+            pos.fees_y += pool_fees_y_per_h * fee_share(pos.lp.v, pos.last_depth_y) * dt_h
+        else:
+            pos.fees_y += pos.value_y * pos.last_rate * dt_h * tvl / (tvl + pos.capital_usd)
+    pos.last_depth_y = pool_per_bin_y
     price = pool["price"]
     pos.value_y = pos.lp.value(price)
     pos.out_of_range_since = None if pos.lp.in_range(price) else (pos.out_of_range_since or now_ms)
     pos.last_ts, pos.last_price, pos.last_rate = now_ms, price, pool_fee_rate(pool)
-    y_usd = (pool.get("token_y") or {}).get("price_usd") or 0.0
     if model is not None and y_usd > 0 and sol_usd:
         pos.cost_exit_y = exit_cost(pos.lp, price, pos.positions, pool, y_usd, sol_usd / y_usd, model)
 
@@ -361,7 +384,7 @@ class PaperTrader:
             if pool is None or not pool.get("price"):
                 await self._close(pos, "delisted", now_ms)
                 continue
-            accrue(pos, pool, now_ms, self.cfg.costs, self.sol_usd)
+            accrue(pos, pool, now_ms, self.cfg.costs, self.sol_usd, (rows.get(pos.address) or {}).get("depth_per_bin_y"))
             reason = exit_reason(pos, now_ms)
             if reason:
                 await self._close(pos, reason, now_ms)
@@ -400,7 +423,10 @@ class PaperTrader:
             positions=int(plan.get("positions") or 1),
         )
         sol_to_y = (self.sol_usd or 0.0) / y_usd
-        pos.cost_entry_y, pos.rent_sol = entry_costs(pos.lp, pos.positions, pool, y_usd, sol_to_y, self.cfg.costs)
+        pos.last_depth_y = row.get("depth_per_bin_y")
+        pos.cost_entry_y, pos.rent_sol = entry_costs(
+            pos.lp, pos.positions, pool, y_usd, sol_to_y, self.cfg.costs, plan.get("new_bin_arrays")
+        )
         pos.cost_exit_y = exit_cost(pos.lp, price, pos.positions, pool, y_usd, sol_to_y, self.cfg.costs)
         snapshot = {k: row.get(k) for k in ("score", "safety", "flags", "regime", "market", "insights", "security",
                                              "fee_for_position_pct_day", "tvl", "volume_24h")}

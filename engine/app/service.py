@@ -14,8 +14,9 @@ from . import config
 from .indicators import Candle, compute_indicators, flow_features, merge_market
 from .metrics import PriceHistory
 from .paper import CostModel, PaperConfig, PaperTrader
-from .recommend import PlanParams, plan_position
-from .scoring import base_token, score_pool
+from .depth import Depth, depth_per_bin_y, fee_for_position_pct_day, new_bin_arrays, window_bins
+from .recommend import PlanParams, bins_below, bins_for_width, plan_position
+from .scoring import base_token, expected_fee_pct_day, score_pool
 
 log = logging.getLogger("engine")
 
@@ -58,6 +59,7 @@ class Engine:
         self.market: dict[str, dict[str, Any] | None] = {}
         self.insights: dict[str, dict[str, Any]] = {}
         self.paper: PaperTrader | None = None
+        self.depth: dict[str, Depth] = {}  # on-chain bin liquidity around the active bin (bins:latest)
         self.rows: dict[str, dict[str, Any]] = {}
         self.plan_params = PlanParams(
             portfolio_usd=config.PORTFOLIO_USD,
@@ -254,6 +256,14 @@ class Engine:
         self.security = {mint: json.loads(value) for mint, value in security_raw.items()}
         insights_raw = await self.redis.hgetall(config.KEY_GMGN_LATEST)
         self.insights = {mint: json.loads(value) for mint, value in insights_raw.items()}
+        depth_raw = await self.redis.hgetall(config.KEY_BINS_LATEST)
+        depth: dict[str, Depth] = {}
+        for address, value in depth_raw.items():
+            try:
+                depth[address] = Depth.parse(json.loads(value))
+            except (KeyError, TypeError, ValueError):
+                log.warning("bad bin depth for %s", address)
+        self.depth = depth
         await self._load_market(list(pools))
 
         for address, pool in pools.items():
@@ -294,7 +304,17 @@ class Engine:
         base_mint = base_token(pool)["mint"]
         security = self.security.get(base_mint)
         insights = self.insights.get(base_mint)
-        scored = score_pool(pool, change_1h, vol_1h, now_ms, security, self.position_usd, market, insights)
+        depth = self.depth.get(address)
+        if depth is not None and (not depth.fresh(now_ms) or depth.bin_step != pool["bin_step"]):
+            depth = None
+        y_usd = (pool.get("token_y") or {}).get("price_usd") or 0.0
+        window = window_bins(pool["bin_step"], (market or {}).get("atr_pct") or vol_1h)
+        pool_per_bin_y = depth_per_bin_y(depth, window) if depth is not None and y_usd > 0 else None
+        pool_per_bin_usd = pool_per_bin_y * y_usd if pool_per_bin_y is not None else None
+        scored = score_pool(
+            pool, change_1h, vol_1h, now_ms, security, self.position_usd, market, insights,
+            pool_per_bin_usd=pool_per_bin_usd, fee_bins=2 * window + 1,
+        )
         plan = plan_position(
             bin_step=pool["bin_step"],
             tvl=pool["tvl"],
@@ -307,6 +327,24 @@ class Engine:
             params=self.plan_params,
             market=market,
         )
+        new_arrays = None
+        if plan.get("action") == "enter":
+            lower = -bins_below(-plan["range_low_pct"], pool["bin_step"])
+            upper = bins_for_width(plan["range_high_pct"], pool["bin_step"])
+            if pool_per_bin_usd is not None:
+                # Re-estimate with the plan's own size and bin count: a wider range spreads thinner per bin.
+                pct = fee_for_position_pct_day(
+                    expected_fee_pct_day(pool["fee_tvl_pct"]), pool["tvl"] or 0.0, plan["size_usd"], plan["bins"],
+                    pool_per_bin_usd,
+                )
+                scored["fee_for_position_pct_day"] = pct
+                plan["expected_fee_usd_day"] = round(plan["size_usd"] * pct / 100, 2)
+            if depth is not None:
+                new_arrays = new_bin_arrays(depth, lower, upper)
+                plan["new_bin_arrays"] = new_arrays
+        tvl_per_bin_usd = None
+        if depth is not None and y_usd > 0:
+            tvl_per_bin_usd = sum(depth.bins.values()) * y_usd / max(1, len(depth.bins))
         row = {
             "address": address,
             "name": pool["name"],
@@ -325,6 +363,15 @@ class Engine:
             "security": _security_summary(security),
             "market": _clean(market),
             "insights": _clean(insights),
+            "depth_per_bin_y": pool_per_bin_y,
+            "depth": None if depth is None else {
+                "age_sec": round((now_ms - depth.ts) / 1000),
+                "window_bins": window,
+                "per_bin_usd": pool_per_bin_usd,
+                "active_bin_usd": depth.bins.get(0, 0.0) * y_usd if y_usd > 0 else None,
+                "avg_nonempty_bin_usd": tvl_per_bin_usd,
+                "new_bin_arrays": new_arrays,
+            },
             **scored,
         }
         return {k: _clean(v) for k, v in row.items()}

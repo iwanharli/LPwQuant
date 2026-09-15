@@ -6,3 +6,7 @@ dist/
 __pycache__/
 *.pyc
 .DS_Store
+
+# Local runtime output
+backups/
+logs/

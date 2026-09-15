@@ -27,7 +27,50 @@ cd ../dashboard && npm install
 ```
 Tabel dibuat otomatis saat ingestor atau engine start (`db/schema.sql`).
 
-## Menjalankan (3 terminal)
+## Menjalankan terus-menerus dengan pm2 (disarankan)
+Semua proses berjalan di background, restart otomatis kalau crash, dan log ditulis ke `logs/`.
+```bash
+npm install                 # sekali: memasang pm2 di root repo
+npm run dashboard:build     # sekali, dan setiap kali kode dashboard berubah
+npm run up                  # jalankan semua
+npm run status              # cek status
+npm run logs                # lihat log
+npm run restart             # restart semua
+npm run down                # hentikan semua
+```
+| Proses pm2 | Isi |
+|---|---|
+| `quant-ingestor` | `npm start` di `ingestor/` |
+| `quant-engine` | `uv run uvicorn app.main:app` di `engine/` (port 8000) |
+| `quant-dashboard` | `next start` di `dashboard/` (port 3000, hasil build) |
+| `quant-backup` | `scripts/backup-db.sh` tiap hari pukul 03.00 |
+| `quant-awake` | `caffeinate -ims`, supaya Mac tidak tidur selama sistem jalan. Hentikan dengan `npx pm2 stop quant-awake` |
+
+Supaya pm2 ikut jalan setelah Mac restart: `npx pm2 startup` (ikuti perintah `sudo` yang ditampilkan), lalu `npx pm2 save`.
+
+**Hentikan dulu proses yang jalan manual di terminal** (port 3000 dan 8000) sebelum `npm run up`.
+
+### Backup database
+`npm run backup` membuat dump `backups/db_quant-YYYYMMDD-HHMM.dump` (format custom, terkompresi) dan menyimpan 14 dump terbaru (`BACKUP_KEEP`). Restore:
+```bash
+pg_restore --clean --if-exists -d db_quant backups/db_quant-YYYYMMDD-HHMM.dump
+```
+
+### Kesegaran data
+`/api/freshness` mengecek kapan terakhir tiap sumber diperbarui. Pil di top bar dashboard berwarna kuning kalau ada yang basi; klik untuk rincian per sumber.
+
+| Sumber | Batas | Wajib |
+|---|---|---|
+| Snapshot pool (Meteora), skor engine | 5 menit | ya |
+| Candle 30m | 50 menit (dari jam buka candle) | ya |
+| Harga on-chain (Helius), arus transaksi (GeckoTerminal) | 15 menit | tidak |
+| Keamanan token (RugCheck) | 90 menit | tidak |
+| Insider & dev (GMGN) | 3 jam | tidak |
+| Paper trading | 5 menit | tidak |
+
+Sumber yang tidak wajib dan belum pernah punya data ditampilkan "tidak aktif", bukan basi.
+
+## Menjalankan manual (3 terminal, untuk development)
 ```bash
 cd ingestor  && npm run dev                                   # poll API + watcher on-chain
 cd engine    && uv run uvicorn app.main:app --port 8000 --reload

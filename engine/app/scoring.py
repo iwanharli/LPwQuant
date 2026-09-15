@@ -13,6 +13,8 @@ extreme volatility, sell pressure, deep drawdown).
 import math
 from typing import Any
 
+from .depth import fee_for_position_pct_day as depth_fee_pct
+
 QUOTE_MINTS = {
     "So11111111111111111111111111111111111111112",  # SOL
     "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",  # USDC
@@ -169,13 +171,20 @@ def score_pool(
     position_usd: float,
     market: dict[str, Any] | None = None,
     insights: dict[str, Any] | None = None,
+    pool_per_bin_usd: float | None = None,
+    fee_bins: int | None = None,
 ) -> dict[str, Any]:
+    """`pool_per_bin_usd` (on-chain liquidity per bin around the active bin) and `fee_bins` (bins the position
+    spreads over) switch the fee share from "your size vs TVL" to "your per-bin size vs the traded bins"."""
     tvl = pool["tvl"] or 0.0
     fees = pool["fee_tvl_pct"]
     fee_24h = fees.get("24h") or 0.0
     fee_1h_x24 = (fees.get("1h") or 0.0) * 24
     fee_expected = expected_fee_pct_day(fees)
-    fee_for_position = diluted_fee_pct(fee_expected, tvl, position_usd)
+    if pool_per_bin_usd is not None and fee_bins:
+        fee_for_position = depth_fee_pct(fee_expected, tvl, position_usd, fee_bins, pool_per_bin_usd)
+    else:
+        fee_for_position = diluted_fee_pct(fee_expected, tvl, position_usd)
     volume_tvl = pool["volume"]["24h"] / tvl if tvl > 0 else 0.0
     momentum = fee_1h_x24 / fee_24h if fee_24h > 0 else 0.0
     regime = (market or {}).get("regime")

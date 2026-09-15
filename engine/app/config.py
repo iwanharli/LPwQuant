@@ -55,6 +55,7 @@ KEY_POOLS_LATEST = "pools:latest"
 KEY_SECURITY_LATEST = "security:latest"
 KEY_FLOW_LATEST = "flow:latest"
 KEY_GMGN_LATEST = "gmgn:latest"
+KEY_BINS_LATEST = "bins:latest"  # hash: address -> bin liquidity around the active bin
 KEY_PAPER_OPEN_POOLS = "paper:open_pools"  # set: pools the ingestor must keep tracking
 STREAM_POOLS = "stream:pools"
 STREAM_PRICES = "stream:prices"

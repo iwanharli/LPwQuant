@@ -54,6 +54,11 @@ export const config = {
   watchMode: (process.env.WATCH_MODE === "ws" ? "ws" : "poll") as "ws" | "poll",
   watchPollIntervalMs: Math.max(num("WATCH_POLL_INTERVAL_SEC", 10), 1) * 1000,
   retentionHours: num("RETENTION_HOURS", 168),
+  // Bin liquidity around the active bin (fee share, uninitialized bin arrays): top N pools every N seconds.
+  binsEnabled: process.env.BINS_ENABLED !== "false",
+  binsTopN: num("BINS_TOP_N", 60),
+  binsRefreshMs: Math.max(num("BINS_REFRESH_SEC", 300), 60) * 1000,
+  binsArraysEachSide: Math.max(Math.round(num("BINS_ARRAYS_EACH_SIDE", 2)), 1),
   rpcProviders: rpcProviders(),
   wsUrl: process.env.WS_URL || (heliusKey ? `wss://mainnet.helius-rpc.com/?api-key=${heliusKey}` : ""),
   wsProviderName: process.env.WS_URL ? "custom" : "helius",

@@ -162,3 +162,23 @@ def test_stale_tight_breakout_levels_are_dropped_on_load():
     pos = position(exit_rules=sanitize_exit_rules(stored, 1.0), range_low_pct=-8.0, range_high_pct=9.0)
     accrue(pos, pool(1.005), MINUTE)  # +0.5%: above the stale 0.4% level
     assert exit_reason(pos, MINUTE) is None
+
+
+def test_accrue_uses_bin_depth_when_available():
+    base = dict(COST_POOL, fees={"1h": 1_000.0})  # 1% of TVL per hour = 1000 USD = 6.67 Y per hour
+    tvl_pos = position(capital_y=1.0, value_y=1.0)
+    depth_pos = position(capital_y=1.0, value_y=1.0, last_depth_y=0.0)
+    accrue(tvl_pos, base, HOUR)
+    accrue(depth_pos, base, HOUR)
+    assert tvl_pos.fees_y > 0
+    # With no other liquidity in the traded bins the position takes all of the pool's fees.
+    assert math.isclose(depth_pos.fees_y, 1_000.0 / 150.0)
+    assert depth_pos.fees_y > tvl_pos.fees_y
+
+
+def test_entry_costs_charge_known_new_bin_arrays():
+    model = CostModel()
+    lp = LpPosition.build(1.0, 100, -10.0, 10.0, 1.0)
+    base_cost, _ = entry_costs(lp, 1, COST_POOL, 150.0, 1.0, model)
+    with_arrays, _ = entry_costs(lp, 1, COST_POOL, 150.0, 1.0, model, new_bin_arrays=2)
+    assert math.isclose(with_arrays - base_cost, 2 * model.bin_array_rent_sol)
