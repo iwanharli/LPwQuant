@@ -70,6 +70,18 @@ def test_plan_params_for_backtest():
     assert agg.max_position_pct == 7.5 and agg.fee_gate_hours == 2.0 and agg.stop_loss_mult == 1.5
 
 
+def test_plan_params_carry_the_tier_filter():
+    # Without this the backtest cannot tell two profiles apart when tiers are all that separate them:
+    # "tinggi_tenang" (high tier only) would score exactly like "tenang" (every tier).
+    base = PlanParams(portfolio_usd=1000, max_position_pct=5, hold_hours=4)
+    tenang = plan_params(PROFILE_BY_KEY["tenang"], base)
+    tinggi = plan_params(PROFILE_BY_KEY["tinggi_tenang"], base)
+    assert tenang.allowed_tiers == ("low", "medium", "high")
+    assert tinggi.allowed_tiers == ("high",)
+    assert tenang.allowed_tiers != tinggi.allowed_tiers
+    assert plan_params(PROFILE_BY_KEY["konservatif"], base).allowed_tiers == ("low", "medium")
+
+
 def test_tenang_profile_only_enters_calm_pools():
     cfg = paper_config(PROFILE_BY_KEY["tenang"])
     assert cfg.max_atr_pct == 2.0

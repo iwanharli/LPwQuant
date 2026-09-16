@@ -168,11 +168,16 @@ def paper_config(profile: RiskProfile) -> PaperConfig:
 
 
 def plan_params(profile: RiskProfile, base: PlanParams) -> PlanParams:
-    """Backtest parameters for a profile (tier filter is applied to the trades; open-position caps and the
-    drawdown pause are not simulated)."""
+    """Backtest parameters for a profile.
+
+    The tier filter is passed through as `allowed_tiers`, so a profile that only trades one tier backtests as
+    that profile and not as its unrestricted twin. Open-position caps and the drawdown pause are still not
+    simulated, so a backtest counts more entries than paper trading would take.
+    """
     return replace(
         base,
         max_position_pct=base.max_position_pct * profile.size_mult,
+        allowed_tiers=profile.tiers or None,
         min_fee_cost_ratio=profile.min_fee_cost_ratio,
         fee_gate_hours=profile.fee_gate_hours,
         min_hold_hours=profile.min_hold_hours,
