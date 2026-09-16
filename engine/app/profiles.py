@@ -1,6 +1,6 @@
 """Risk profiles for paper trading and the backtest.
 
-Three profiles trade the same live plans side by side, each with its own virtual equity, so their gains, losses
+The profiles trade the same live plans side by side, each with its own virtual equity, so their gains, losses
 and drawdowns can be compared on identical market conditions. The engine builds one un-gated plan per pool; a
 profile picks which tiers it trades, how strictly fees must cover costs, how big it sizes, how tight its stop is
 and how long it holds at least.
@@ -98,6 +98,25 @@ PROFILES: tuple[RiskProfile, ...] = (
         # defaults, with IL -0.24% and costs 0.19%. Chosen on that same data, so paper decides it on fresh data.
         max_atr_pct=2.0,
         plan_variant="single",
+    ),
+    RiskProfile(
+        key="tinggi_tenang",
+        label="Tinggi Tenang",
+        description="Hanya tier tinggi dengan ATR 30m <=2%: menguji bahwa volatilitas, bukan label risiko, yang menentukan rugi",
+        tiers=("high",),
+        max_open_per_tier=5,
+        size_mult=1.0,
+        min_fee_cost_ratio=config.MIN_FEE_COST_RATIO,
+        fee_gate_hours=config.FEE_GATE_HOURS,
+        min_hold_hours=config.MIN_HOLD_HOURS,
+        stop_loss_mult=1.0,
+        max_drawdown_pct=10.0,
+        # Breaking the 30-day backtest down by tier and by ATR showed the high tier is not what loses money: high
+        # tier with ATR <2% returned +0.93%/trade over 29 trades (win 76%), while the same tier at ATR 2-5% and
+        # 5-10% returned -1.06% and -1.31%. Fees barely move across those buckets (1.26-1.32%); IL does
+        # (-0.14% -> -2.01%). Replaces "agresif", which lost on both history and paper for exactly this reason.
+        # Chosen on the same candles as the other ATR profiles, so paper trading decides it on fresh data.
+        max_atr_pct=2.0,
     ),
     RiskProfile(
         key="agresif",

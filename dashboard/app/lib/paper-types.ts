@@ -129,14 +129,17 @@ export const EXIT_REASON_LABELS: Record<string, string> = {
   fee_decay: "Fee melemah",
   max_hold: "Batas waktu",
   delisted: "Pool tidak dipantau lagi",
+  profile_retired: "Profil dihentikan",
 };
 
-/** Line colour per risk profile (categorical slots blue, orange, aqua, violet; validated on the dark panel with
- * scripts/validate_palette.js, and kept clear of the green/red used for gains and losses). */
+/** Line colour per risk profile, one fixed hue per profile so a profile keeps its colour as profiles come and
+ * go (validated on the dark panel with scripts/validate_palette.js, and kept clear of the green/red used for
+ * gains and losses). "agresif" no longer trades but keeps its violet, so its history never changes colour. */
 export const PROFILE_COLORS: Record<string, string> = {
   konservatif: "#3987e5",
   moderat: "#d95926",
   tenang: "#199e70",
   satu_sisi: "#c98500",
+  tinggi_tenang: "#c0468f",
   agresif: "#9085e9",
 };

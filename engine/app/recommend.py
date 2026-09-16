@@ -166,9 +166,6 @@ def plan_position(
 
     notes: list[str] = []
     width = max(widths)
-    if m.get("bb_squeeze"):
-        width *= 1.3
-        notes.append("Bollinger squeeze: volatilitas bisa meledak, range dilebarkan 30%")
     width = _clamp(width, max(2.0, 3 * bin_step / 100), 60.0)
 
     if params.require_ranging and regime != "ranging":

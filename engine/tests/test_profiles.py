@@ -24,7 +24,7 @@ def row(tier="medium", cost=0.5, fee_day=12.0, size=40.0, tvl=100_000.0, address
 
 
 def test_profiles_have_distinct_rules():
-    assert [p.key for p in PROFILES] == ["konservatif", "moderat", "tenang", "satu_sisi", "agresif"]
+    assert [p.key for p in PROFILES] == ["konservatif", "moderat", "tenang", "satu_sisi", "tinggi_tenang", "agresif"]
     cons, agg = PROFILE_BY_KEY["konservatif"], PROFILE_BY_KEY["agresif"]
     assert cons.min_fee_cost_ratio > agg.min_fee_cost_ratio and cons.stop_loss_mult < agg.stop_loss_mult
     assert "high" not in cons.tiers and "low" not in agg.tiers

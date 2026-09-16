@@ -110,9 +110,12 @@ def test_plan_uses_market_regime_and_indicators():
     assert down["strategy"] == "bid_ask" and down["range_high_pct"] == 0
     assert any("RSI" in n for n in down["notes"])
 
+    # A Bollinger squeeze used to widen the range 30%. Over 30 days of candles a squeeze did not change the size
+    # of the next 4h move (5.31% vs 5.22%) and removing the rule left returns unchanged, so the range no longer
+    # reacts to it; the flag stays as information on the dashboard.
     base = _plan(market={"regime": "mixed", "atr_pct": 2.0})
     squeezed = _plan(market={"regime": "mixed", "atr_pct": 2.0, "bb_squeeze": True})
-    assert squeezed["range_high_pct"] > base["range_high_pct"]
+    assert squeezed["range_high_pct"] == base["range_high_pct"]
 
     assert _plan(flags=["strong_downtrend", "sell_pressure"])["action"] == "avoid"
 
