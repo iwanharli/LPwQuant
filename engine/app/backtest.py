@@ -32,7 +32,7 @@ from . import config
 from .indicators import Candle, compute_indicators, flow_features, merge_market
 from .metrics import PriceHistory
 from .costs import CostModel, entry_costs, exit_cost, round_trip_cost_pct
-from .depth import realization_factor
+from .depth import fee_rate_realization, realization_factor
 from .recommend import FEE_RATE_AVG_HOURS, PlanParams, apply_cost_gate, bins_below, bins_for_width, plan_position
 from .scoring import MARKET_INFO_FLAGS, MARKET_PENALTIES, diluted_fee_pct, market_flags
 
@@ -701,6 +701,7 @@ def simulate_candle_trades(
                 cost_pct = round_trip_cost_pct(lp, int(plan.get("positions") or 1), ctx, 1.0, config.SOL_USD_FALLBACK,
                                                BACKTEST_COSTS)
                 fee_pct_day = diluted_fee_pct(rate * 24 * 100, tvl, size) * realization_factor(int(plan["bins"]))
+                fee_pct_day *= fee_rate_realization(fee_pct_day)  # same shrink the live gate applies
                 plan = apply_cost_gate(plan, cost_pct, fee_pct_day, params)
                 if plan["action"] != "enter":
                     skipped["fee_below_cost"] += 1

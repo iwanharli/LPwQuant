@@ -83,7 +83,25 @@ def fee_for_position_pct_day(fee_pct_day_of_tvl: float, tvl_usd: float, position
     if position_usd <= 0 or tvl_usd <= 0 or n_bins <= 0:
         return 0.0
     fees_usd_day = fee_pct_day_of_tvl / 100 * tvl_usd
-    return fees_usd_day * calibrated_fee_share(position_usd, tvl_usd, n_bins) / position_usd * 100
+    pct_day = fees_usd_day * calibrated_fee_share(position_usd, tvl_usd, n_bins) / position_usd * 100
+    return pct_day * fee_rate_realization(pct_day)
+
+
+# What a position actually collects over its hold, against what the fee rate at entry implied. Measured on 481
+# backtested trades (python -m app.backtest): the shortfall grows with the rate we enter on, because fee spikes
+# mean-revert and because a hot pool leaves the range sooner. Medians by entry rate:
+#   <10%/day 0.51x, 10-25% 0.46x, 25-50% 0.32x, >=50% 0.25x
+# A power law fits those four points to within a few percent. Without this the gate judges entries on a fee level
+# that typically never arrives: expected fees ran 2.4x the fees the same trades went on to collect.
+FEE_REALIZATION_SCALE = 0.78
+FEE_REALIZATION_EXP = -0.263
+
+
+def fee_rate_realization(fee_pct_day: float) -> float:
+    """Share of the entry fee rate a position collects over its hold (1.0 for calm pools, ~0.25 for hot ones)."""
+    if fee_pct_day <= 0:
+        return 1.0
+    return min(1.0, FEE_REALIZATION_SCALE * fee_pct_day**FEE_REALIZATION_EXP)
 
 
 def bin_array_index(bin_id: int) -> int:
