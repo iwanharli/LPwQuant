@@ -157,6 +157,9 @@ def test_costs_reduce_net_pnl_but_not_gross():
 
 def test_stale_tight_breakout_levels_are_dropped_on_load():
     stored = dict(RULES, breakout_below_pct=-4.7, breakout_above_pct=0.4)
+    # A stop-loss wider than today's cap is tightened for positions opened under the old rules.
+    assert sanitize_exit_rules(dict(RULES, stop_loss_pct=30.0), atr_pct=1.0, max_stop_loss_pct=10.0)["stop_loss_pct"] == 10.0
+    assert sanitize_exit_rules(dict(RULES, stop_loss_pct=8.0), atr_pct=1.0, max_stop_loss_pct=10.0)["stop_loss_pct"] == 8.0
     # Rules stored before the minimum hold existed get the default.
     assert sanitize_exit_rules(stored, atr_pct=1.0) == dict(stored, breakout_above_pct=None, min_hold_hours=2.0)
     # With a 5% ATR, a -4.7% level is also too close.

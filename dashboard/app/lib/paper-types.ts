@@ -39,6 +39,7 @@ export type ProfileSettings = {
   stop_loss_mult: number;
   max_drawdown_pct: number | null;
   position_floor_usd?: number;
+  max_atr_pct?: number | null;
 };
 
 export type ProfileInfo = { key: string; label: string; description: string; settings: ProfileSettings };
@@ -129,10 +130,11 @@ export const EXIT_REASON_LABELS: Record<string, string> = {
   delisted: "Pool tidak dipantau lagi",
 };
 
-/** Line colour per risk profile (categorical slots blue, orange, violet; validated on the dark panel, and kept
- * clear of the green/red used for gains and losses). */
+/** Line colour per risk profile (categorical slots blue, orange, aqua, violet; validated on the dark panel with
+ * scripts/validate_palette.js, and kept clear of the green/red used for gains and losses). */
 export const PROFILE_COLORS: Record<string, string> = {
   konservatif: "#3987e5",
   moderat: "#d95926",
+  tenang: "#199e70",
   agresif: "#9085e9",
 };

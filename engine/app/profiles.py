@@ -34,6 +34,7 @@ class RiskProfile:
     min_hold_hours: float
     stop_loss_mult: float
     max_drawdown_pct: float | None
+    max_atr_pct: float | None = None  # only enter pools calmer than this 30m ATR
 
 
 PROFILES: tuple[RiskProfile, ...] = (
@@ -62,6 +63,23 @@ PROFILES: tuple[RiskProfile, ...] = (
         min_hold_hours=config.MIN_HOLD_HOURS,
         stop_loss_mult=1.0,
         max_drawdown_pct=config.PAPER_MAX_DRAWDOWN_PCT or None,
+    ),
+    RiskProfile(
+        key="tenang",
+        label="Tenang",
+        description="Aturan Moderat plus hanya pool dengan ATR 30m <=2%: fee tetap, pergerakan harga minim",
+        tiers=("low", "medium", "high"),
+        max_open_per_tier=5,
+        size_mult=1.0,
+        min_fee_cost_ratio=config.MIN_FEE_COST_RATIO,
+        fee_gate_hours=config.FEE_GATE_HOURS,
+        min_hold_hours=config.MIN_HOLD_HOURS,
+        stop_loss_mult=1.0,
+        max_drawdown_pct=10.0,
+        # Forward test of the one rule that beat the defaults over 30 days of candles (+1.04%/trade vs -0.57%,
+        # IL -0.13% vs -1.74%). Picked after comparing 15 variants, and never testable out-of-sample there
+        # (never 30 training trades in a fold), so paper trading decides it on fresh data.
+        max_atr_pct=2.0,
     ),
     RiskProfile(
         key="agresif",
@@ -104,6 +122,9 @@ def paper_config(profile: RiskProfile) -> PaperConfig:
         min_hold_hours=profile.min_hold_hours,
         stop_loss_mult=profile.stop_loss_mult,
         position_floor_usd=config.PAPER_POSITION_FLOOR_USD,
+        max_round_trip_cost_pct=config.MAX_ROUND_TRIP_COST_PCT,
+        max_stop_loss_pct=config.MAX_STOP_LOSS_PCT,
+        max_atr_pct=profile.max_atr_pct,
     )
 
 
@@ -117,6 +138,9 @@ def plan_params(profile: RiskProfile, base: PlanParams) -> PlanParams:
         fee_gate_hours=profile.fee_gate_hours,
         min_hold_hours=profile.min_hold_hours,
         stop_loss_mult=profile.stop_loss_mult,
+        max_atr_pct=profile.max_atr_pct,
+        max_round_trip_cost_pct=config.MAX_ROUND_TRIP_COST_PCT,
+        max_stop_loss_pct=config.MAX_STOP_LOSS_PCT,
     )
 
 

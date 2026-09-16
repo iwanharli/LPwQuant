@@ -129,7 +129,7 @@ export default function EquityChart({
 
   return (
     <div className="relative overflow-hidden rounded-lg border border-line bg-bg/35">
-      <div className="grid grid-cols-1 gap-2 border-b border-line px-4 py-3 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-2 border-b border-line px-4 py-3 sm:grid-cols-2 lg:grid-cols-4">
         {latest.map(({ s, last }) => {
           const equity = last?.equity_usd ?? start;
           const pnl = equity - start;

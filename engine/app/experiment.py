@@ -27,6 +27,12 @@ def variants(base: PlanParams) -> dict[str, PlanParams]:
         "atr_cap_3": replace(previous, max_atr_pct=3.0),
         "curve_atr_3": replace(previous, curve_max_atr_pct=3.0),
         "defaults": base,
+        # Structural variants: the LP study found narrow ranges realize far more of the modelled fees, and the
+        # losses come from price moving through the range.
+        "narrow_70": replace(base, max_bins=70),
+        "sideways_only": replace(base, require_ranging=True),
+        "quote_only": replace(base, force_side="quote"),
+        "narrow_sideways": replace(base, max_bins=70, require_ranging=True),
         "defaults_atr_2": replace(base, max_atr_pct=2.0),
         "defaults_atr_3": replace(base, max_atr_pct=3.0),
         "defaults_atr_5": replace(base, max_atr_pct=5.0),

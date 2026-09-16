@@ -85,6 +85,12 @@ class PaperConfig:
     # Minimum position size in USD (0 = off), still capped by max_tvl_share. Open positions never commit more capital
     # than the profile's equity.
     position_floor_usd: float = 0.0
+    # Reject entries whose round trip costs more than this share of the position (None = no cap).
+    max_round_trip_cost_pct: float | None = None
+    # Upper bound on the stop-loss after stop_loss_mult.
+    max_stop_loss_pct: float = 10.0
+    # Only enter pools whose 30m ATR is at or below this (None = any volatility).
+    max_atr_pct: float | None = None
 
 
 def entries_paused(equity_usd: float, peak_equity_usd: float, max_drawdown_pct: float | None) -> bool:
@@ -158,12 +164,17 @@ class Position:
         return (now_ms - self.entry_ts) / HOUR_MS
 
 
-def sanitize_exit_rules(rules: dict[str, Any], atr_pct: float | None) -> dict[str, Any]:
-    """Apply the current minimum breakout distance to rules stored by an older engine version, so positions
-    opened before a rule change are not closed by a stale, too-tight level."""
+def sanitize_exit_rules(
+    rules: dict[str, Any], atr_pct: float | None, max_stop_loss_pct: float | None = None
+) -> dict[str, Any]:
+    """Bring rules stored by an older engine version up to the current ones: drop breakout levels that are now
+    too tight, add the minimum hold, and cap the stop-loss. Positions opened before a rule change otherwise keep
+    stops as wide as 30%."""
     min_distance = max(MIN_BREAKOUT_DISTANCE_PCT, atr_pct or 0.0)
     out = dict(rules)
     out.setdefault("min_hold_hours", DEFAULT_MIN_HOLD_HOURS)
+    if max_stop_loss_pct is not None and out.get("stop_loss_pct") is not None:
+        out["stop_loss_pct"] = min(out["stop_loss_pct"], max_stop_loss_pct)
     below, above = out.get("breakout_below_pct"), out.get("breakout_above_pct")
     if below is not None and below > -min_distance:
         out["breakout_below_pct"] = None
@@ -256,6 +267,10 @@ def profile_plan(
     plan = base if use_base else (row.get("plan") or {})
     if plan.get("action") != "enter" or plan.get("tier") not in cfg.tiers:
         return None
+    if cfg.max_atr_pct is not None:
+        atr = (row.get("market") or {}).get("atr_pct")
+        if atr is None or atr > cfg.max_atr_pct:
+            return None
     base_size = plan.get("size_usd") or 0.0
     size = equity_usd * plan["size_pct"] / 100 if equity_usd and equity_usd > 0 and plan.get("size_pct") else base_size
     size *= cfg.size_mult
@@ -268,13 +283,16 @@ def profile_plan(
         cost, fee_day = plan.get("round_trip_cost_pct"), row.get("fee_for_position_pct_day")
         if cost is not None and fee_day is not None:
             cost = resized_cost_pct(cost, plan.get("fixed_cost_usd") or 0.0, base_size, size)
+            if cfg.max_round_trip_cost_pct is not None and cost > cfg.max_round_trip_cost_pct:
+                return None
             hours = cfg.fee_gate_hours if cfg.fee_gate_hours is not None else 1.0
             if not cost_gate_ok(cost, fee_day, hours, cfg.min_fee_cost_ratio):
                 return None
             extra["round_trip_cost_pct"] = round(cost, 3)
     rules = dict(plan.get("exit") or {})
-    if cfg.stop_loss_mult != 1.0 and rules.get("stop_loss_pct") is not None:
-        rules["stop_loss_pct"] = round(max(2.0, rules["stop_loss_pct"] * cfg.stop_loss_mult), 1)
+    if rules.get("stop_loss_pct") is not None:
+        scaled = rules["stop_loss_pct"] * cfg.stop_loss_mult
+        rules["stop_loss_pct"] = round(min(max(2.0, scaled), cfg.max_stop_loss_pct), 1)
     if cfg.min_hold_hours is not None:
         rules["min_hold_hours"] = cfg.min_hold_hours
         rules["max_hold_hours"] = max(rules.get("max_hold_hours") or 0.0, cfg.min_hold_hours)
@@ -289,6 +307,7 @@ def pick_entries(
     now_ms: int,
     last_closed_mints: dict[str, int] | None = None,
     equity_usd: float | None = None,
+    sol_usd: float | None = None,
 ) -> list[dict[str, Any]]:
     """Highest-score pools with an entry plan, capped per tier, one position per pool and per token,
     skipping pools and tokens closed within the cooldown (a token trades in several pools)."""
@@ -299,7 +318,9 @@ def pick_entries(
     mints = {p.base_mint for p in open_list if p.base_mint}
     cooldown_ms = cfg.cooldown_hours * HOUR_MS
     # Capital not yet committed to open positions; None when sizing does not follow equity.
-    available = equity_usd - sum(p.capital_usd for p in open_list) if equity_usd else None
+    # Position rent is refunded on close but must be held in SOL meanwhile, so it is not available for new entries.
+    rent_usd = sum(p.rent_sol for p in open_list) * (sol_usd or 0.0)
+    available = equity_usd - sum(p.capital_usd for p in open_list) - rent_usd if equity_usd else None
     picked = []
     for row in sorted(rows, key=lambda r: r.get("score") or 0.0, reverse=True):
         plan = profile_plan(row, cfg, equity_usd)
@@ -372,9 +393,12 @@ class PaperTrader:
 
     async def load(self) -> None:
         async with self.db.acquire() as conn:
+            stale: list[tuple[int, str]] = []
             for r in await conn.fetch("select * from paper_positions where status = 'open' and profile = $1", self.cfg.profile):
                 snapshot = _json(r["entry_snapshot"]) or {}
-                rules = sanitize_exit_rules(_json(r["exit_rules"]), (snapshot.get("market") or {}).get("atr_pct"))
+                rules = sanitize_exit_rules(
+                    _json(r["exit_rules"]), (snapshot.get("market") or {}).get("atr_pct"), self.cfg.max_stop_loss_pct
+                )
                 pos = Position(
                     id=r["id"], address=r["address"], name=r["name"], base_mint=r["base_mint"], tier=r["tier"],
                     strategy=r["strategy"], bin_step=r["bin_step"], entry_ts=_ms(r["entry_ts"]),
@@ -387,11 +411,17 @@ class PaperTrader:
                     rent_sol=r["rent_sol"],
                 )
                 self.open[pos.id] = pos
+                if rules != _json(r["exit_rules"]):
+                    stale.append((pos.id, json.dumps(_clean(rules))))
             closed = await conn.fetch(
                 "select address, max(exit_ts) as last_exit from paper_positions where status = 'closed' and profile = $1 "
                 "group by address",
                 self.cfg.profile,
             )
+            if stale:
+                # Rules tightened since these positions were opened (see sanitize_exit_rules): store what we apply.
+                await conn.executemany("update paper_positions set exit_rules = $2::jsonb where id = $1", stale)
+                log.info("paper[%s]: updated exit rules on %d open positions", self.cfg.profile, len(stale))
             self.last_closed = {r["address"]: _ms(r["last_exit"]) for r in closed}
             closed_mints = await conn.fetch(
                 """select base_mint, max(exit_ts) as last_exit from paper_positions
@@ -418,10 +448,11 @@ class PaperTrader:
         self.sol_usd = sol_usd_from_pools(pools.values()) or self.sol_usd
         for pos in list(self.open.values()):
             pool = pools.get(pos.address)
+            row = rows.get(pos.address) or {}
             if pool is None or not pool.get("price"):
                 await self._close(pos, "delisted", now_ms)
                 continue
-            accrue(pos, pool, now_ms, self.cfg.costs, self.sol_usd)
+            accrue(pos, self._pool_ctx(pool, row), now_ms, self.cfg.costs, self.sol_usd)
             reason = exit_reason(pos, now_ms)
             if reason:
                 await self._close(pos, reason, now_ms)
@@ -436,7 +467,7 @@ class PaperTrader:
         if not paused:
             for row in pick_entries(
                 rows.values(), self.open.values(), self.last_closed, self.cfg, now_ms, self.last_closed_mints,
-                equity_usd=equity,
+                equity_usd=equity, sol_usd=self.sol_usd,
             ):
                 await self._open(row, pools[row["address"]], now_ms)
         await self._record_equity(now_ms)
@@ -460,6 +491,12 @@ class PaperTrader:
                     self.cfg.start_equity_usd)
         return int(deleted)
 
+    @staticmethod
+    def _pool_ctx(pool: dict[str, Any], row: dict[str, Any]) -> dict[str, Any]:
+        """Pool snapshot plus the on-chain bin depth, so swap costs use bin depth instead of TVL."""
+        per_bin = (row.get("depth") or {}).get("per_bin_usd")
+        return dict(pool, depth_per_bin_usd=per_bin) if per_bin else pool
+
     def open_addresses(self) -> list[str]:
         return sorted({p.address for p in self.open.values()})
 
@@ -479,6 +516,7 @@ class PaperTrader:
             value_y=capital_usd / y_usd, fees_y=0.0, last_ts=now_ms, last_price=price, last_rate=rate,
             positions=int(plan.get("positions") or 1),
         )
+        pool = self._pool_ctx(pool, row)
         sol_to_y = (self.sol_usd or 0.0) / y_usd
         pos.cost_entry_y, pos.rent_sol = entry_costs(
             pos.lp, pos.positions, pool, y_usd, sol_to_y, self.cfg.costs, plan.get("new_bin_arrays")
@@ -582,6 +620,7 @@ class PaperTrader:
                 "stop_loss_mult": c.stop_loss_mult,
                 "max_drawdown_pct": c.max_drawdown_pct,
                 "position_floor_usd": c.position_floor_usd,
+                "max_atr_pct": c.max_atr_pct,
             },
         }
 
@@ -655,6 +694,7 @@ class PaperTrader:
                 "closed_cost_usd": sum(t["cost_usd"] for t in trades),
                 "open_cost_usd": sum(p.capital_usd * p.cost_pct() / 100 for p in self.open.values()),
                 "rent_locked_sol": sum(p.rent_sol for p in self.open.values()),
+                "rent_locked_usd": sum(p.rent_sol for p in self.open.values()) * (self.sol_usd or 0.0),
             },
             "started_at": self.started_at,
             "start_equity_usd": self.cfg.start_equity_usd,

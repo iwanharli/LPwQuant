@@ -39,6 +39,11 @@ HOLD_HOURS = _num("HOLD_HOURS", 4)
 MIN_HOLD_HOURS = _num("MIN_HOLD_HOURS", 2)
 MIN_FEE_COST_RATIO = _num("MIN_FEE_COST_RATIO", 2)
 FEE_GATE_HOURS = _num("FEE_GATE_HOURS", 1)
+# Reject plans whose round trip costs more than this share of the position: paper trading opened $100 positions
+# in shallow pools at 2.3% and 3.9% round-trip cost, which no realistic fee rate pays back.
+MAX_ROUND_TRIP_COST_PCT = _num("MAX_ROUND_TRIP_COST_PCT", 1.5)
+# Cap on the plan stop-loss after the profile multiplier: positions were held to -16% before another rule closed them.
+MAX_STOP_LOSS_PCT = _num("MAX_STOP_LOSS_PCT", 10)
 SOL_USD_FALLBACK = _num("SOL_USD_FALLBACK", 150)  # backtest tx/rent costs; live uses the SOL pool price
 
 # Paper trading (app/paper.py). No transactions are ever sent.
@@ -57,7 +62,7 @@ PAPER_TX_COST_SOL = _num("PAPER_TX_COST_SOL", 0.00015)
 PAPER_IMPACT_MULTIPLIER = _num("PAPER_IMPACT_MULTIPLIER", 1.0)
 PAPER_NEW_BIN_ARRAY_SHARE = _num("PAPER_NEW_BIN_ARRAY_SHARE", 0.0)
 PAPER_PROFILES = tuple(
-    p.strip() for p in (os.getenv("PAPER_PROFILES") or "konservatif,moderat,agresif").split(",") if p.strip()
+    p.strip() for p in (os.getenv("PAPER_PROFILES") or "konservatif,moderat,tenang,agresif").split(",") if p.strip()
 )
 
 # Keys shared with the ingestor (ingestor/src/redis.ts).

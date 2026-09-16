@@ -66,6 +66,19 @@ class PlanParams:
     min_hold_hours: float = DEFAULT_MIN_HOLD_HOURS
     # Enter only when fees expected over min_hold_hours are at least this multiple of round-trip costs.
     min_fee_cost_ratio: float = 2.0
+    # Never enter when the round trip itself costs more than this share of the position.
+    max_round_trip_cost_pct: float = 1.5
+    # Upper bound on the plan stop-loss (after any profile multiplier).
+    max_stop_loss_pct: float = 10.0
+    # Position sizing, mirroring paper trading: a floor (fixed costs sink tiny positions) and a minimum below
+    # which the trade is skipped. Both are still capped by max_tvl_share.
+    position_floor_usd: float = 0.0
+    min_position_usd: float = 0.0
+    # Structural variants (app.experiment): cap the range width in bins, only enter while the market is ranging,
+    # or provide liquidity on one side only ("quote"), which skips the entry swap and base-token exposure.
+    max_bins: int | None = None
+    require_ranging: bool = False
+    force_side: str | None = None
     # Hours of fees the cost gate counts; None = max(min_hold_hours, 1). On 7 days of candles with costs a 1h gate
     # (+1.5%/trade, 119 trades) beat a 2h gate (+0.2%, 357 trades): the stricter gate drops thin-fee pools.
     fee_gate_hours: float | None = 1.0
@@ -153,6 +166,9 @@ def plan_position(
         notes.append("Bollinger squeeze: volatilitas bisa meledak, range dilebarkan 30%")
     width = _clamp(width, max(2.0, 3 * bin_step / 100), 60.0)
 
+    if params.require_ranging and regime != "ranging":
+        return _skip("wait", "Hanya masuk saat rezim sideways", regime)
+
     if regime == "trending_down" or (regime is None and change is not None and change <= -5):
         strategy, side = "bid_ask", "quote"
         low, high = -width, 0.0
@@ -179,6 +195,18 @@ def plan_position(
         strategy, side = "spot", "both"
         low, high = -width, width
         note = "Arah belum jelas: sebar rata di range"
+
+    if params.force_side == "quote":
+        strategy, side = "bid_ask", "quote"
+        low, high = -width, 0.0
+        note = "Satu sisi: hanya token quote di bawah harga, tanpa swap ke token dasar saat masuk"
+    if params.max_bins is not None:
+        # Both sides round up to whole bins, so one scaling pass can still land a bin over the cap.
+        for _ in range(4):
+            spread = bins_below(-low, bin_step) + bins_for_width(high, bin_step) + 1
+            if spread <= params.max_bins:
+                break
+            low, high = low * params.max_bins / spread, high * params.max_bins / spread
 
     bins = bins_below(-low, bin_step) + bins_for_width(high, bin_step) + 1
     tier_mult = {"low": params.low_size_mult, "medium": params.medium_size_mult, "high": params.high_size_mult}[tier]
@@ -211,7 +239,9 @@ def plan_position(
         "size_capped_by_tvl": capped,
         "expected_fee_usd_day": round(size_usd * fee_for_position_pct_day / 100, 2),
         "exit": {
-            "stop_loss_pct": round(_clamp(0.75 * width, 5.0, 20.0) * params.stop_loss_mult, 1),
+            "stop_loss_pct": round(
+                min(_clamp(0.75 * width, 5.0, 20.0) * params.stop_loss_mult, params.max_stop_loss_pct), 1
+            ),
             "out_of_range_minutes": params.out_of_range_minutes,
             "fee_decay_ratio": params.fee_decay_ratio,
             "max_hold_hours": max(params.hold_hours * 2, params.min_hold_hours),
@@ -236,6 +266,11 @@ def apply_cost_gate(plan: dict[str, Any], cost_pct: float, fee_pct_day: float, p
     hours = params.fee_gate_hours if params.fee_gate_hours is not None else max(params.min_hold_hours, 1.0)
     fee_pct = fee_pct_day * hours / 24
     plan = dict(plan, round_trip_cost_pct=round(cost_pct, 3), fee_over_min_hold_pct=round(fee_pct, 3))
+    if cost_pct > params.max_round_trip_cost_pct:
+        skipped = _skip("wait", f"Biaya bolak-balik {cost_pct:.2f}% di atas batas {params.max_round_trip_cost_pct:g}%",
+                        plan.get("regime"))
+        skipped.update(round_trip_cost_pct=plan["round_trip_cost_pct"], gated_tier=plan.get("tier"))
+        return skipped
     if not cost_gate_ok(cost_pct, fee_pct_day, hours, params.min_fee_cost_ratio):
         skipped = _skip(
             "wait",

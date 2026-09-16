@@ -400,6 +400,8 @@ def _group_trades(trades: list[dict[str, Any]], key: str) -> dict[str, dict[str,
 
 
 def _report(source: str, hours: float, every: float, capital: float, trades, skipped, with_score: bool):
+    if trades and "capital_usd" in trades[0]:
+        capital = statistics.fmean(t["capital_usd"] for t in trades)
     report = {
         "source": source,
         "hours": hours,
@@ -609,6 +611,15 @@ async def load_candle_data(pool: asyncpg.Pool, hours: float) -> CandleData:
     )
 
 
+def trade_size(plan_size_usd: float, tvl: float, params: PlanParams) -> float:
+    """Position size for a backtest trade, sized like paper trading: the plan's size, floored, then capped by
+    the share of TVL. Returns 0 when the result is below the minimum position size."""
+    size = max(plan_size_usd, params.position_floor_usd)
+    if tvl > 0:
+        size = min(size, tvl * params.max_tvl_share)
+    return size if size >= params.min_position_usd else 0.0
+
+
 def simulate_candle_trades(
     data: CandleData, every_minutes: float, params: PlanParams, min_volume_24h: float = MIN_UNIVERSE_VOLUME_24H
 ) -> tuple[list[dict[str, Any]], Counter[str]]:
@@ -679,21 +690,25 @@ def simulate_candle_trades(
             if plan["action"] in ("avoid", "wait"):
                 skipped[plan["action"]] += 1
                 continue
+            size = trade_size(plan["size_usd"], tvl, params)
+            if size <= 0:
+                skipped["below_min_size"] += 1
+                continue
             ctx = {"base_fee_pct": info["base_fee_pct"], "dynamic_fee_pct": 0.0, "tvl": tvl}
             if BACKTEST_COSTS.enabled:
-                lp = LpPosition.build(series[start][1], info["bin_step"], plan["range_low_pct"], plan["range_high_pct"], capital)
+                lp = LpPosition.build(series[start][1], info["bin_step"], plan["range_low_pct"], plan["range_high_pct"], size)
                 cost_pct = round_trip_cost_pct(lp, int(plan.get("positions") or 1), ctx, 1.0, config.SOL_USD_FALLBACK,
                                                BACKTEST_COSTS)
-                fee_pct_day = diluted_fee_pct(rate * 24 * 100, tvl, capital) * realization_factor(int(plan["bins"]))
+                fee_pct_day = diluted_fee_pct(rate * 24 * 100, tvl, size) * realization_factor(int(plan["bins"]))
                 plan = apply_cost_gate(plan, cost_pct, fee_pct_day, params)
                 if plan["action"] != "enter":
                     skipped["fee_below_cost"] += 1
                     continue
-            trade = simulate(series, start, fee_rate_at, capital, info["bin_step"], plan,
+            trade = simulate(series, start, fee_rate_at, size, info["bin_step"], plan,
                              BACKTEST_COSTS if BACKTEST_COSTS.enabled else None, ctx, config.SOL_USD_FALLBACK)
             trade.update(
                 address=address, score=score, tier=plan["tier"], strategy=plan["strategy"],
-                regime=plan["regime"], scored=stored is not None,
+                regime=plan["regime"], scored=stored is not None, capital_usd=size,
             )
             factor = quote_usd_factor(info["mint_y"], data.sol_usd, trade["entry_ts"], trade["exit_ts"])
             if factor is not None:
@@ -726,11 +741,16 @@ async def run_backtest(
 
 def default_params() -> PlanParams:
     return PlanParams(
-        portfolio_usd=config.PORTFOLIO_USD,
+        portfolio_usd=config.PAPER_START_EQUITY_USD,
         max_position_pct=config.MAX_POSITION_PCT,
         hold_hours=config.HOLD_HOURS,
+        # Paper trading is the reference: same equity, floor and minimum, so backtest and paper size alike.
+        position_floor_usd=config.PAPER_POSITION_FLOOR_USD,
+        min_position_usd=config.PAPER_MIN_POSITION_USD,
         min_hold_hours=config.MIN_HOLD_HOURS,
         min_fee_cost_ratio=config.MIN_FEE_COST_RATIO,
+        max_round_trip_cost_pct=config.MAX_ROUND_TRIP_COST_PCT,
+        max_stop_loss_pct=config.MAX_STOP_LOSS_PCT,
         fee_gate_hours=config.FEE_GATE_HOURS,
     )
 

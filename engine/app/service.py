@@ -75,6 +75,8 @@ class Engine:
             min_hold_hours=config.MIN_HOLD_HOURS,
             min_fee_cost_ratio=config.MIN_FEE_COST_RATIO,
             fee_gate_hours=config.FEE_GATE_HOURS,
+            max_round_trip_cost_pct=config.MAX_ROUND_TRIP_COST_PCT,
+            max_stop_loss_pct=config.MAX_STOP_LOSS_PCT,
         )
         self.sol_usd: float | None = None
         self.position_usd = config.PORTFOLIO_USD * config.MAX_POSITION_PCT / 100
@@ -365,7 +367,8 @@ class Engine:
                 pool["price"], pool["bin_step"], plan["range_low_pct"], plan["range_high_pct"], plan["size_usd"]
             )
             cost_pct = round_trip_cost_pct(
-                lp, int(plan.get("positions") or 1), pool, 1.0, self.sol_usd, self.paper.cfg.costs, new_arrays
+                lp, int(plan.get("positions") or 1), dict(pool, depth_per_bin_usd=pool_per_bin_usd), 1.0,
+                self.sol_usd, self.paper.cfg.costs, new_arrays,
             )
             fixed = fixed_cost_usd(
                 int(plan.get("positions") or 1), int(plan["bins"]), self.sol_usd, self.paper.cfg.costs, new_arrays

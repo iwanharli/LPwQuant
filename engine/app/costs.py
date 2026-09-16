@@ -26,11 +26,22 @@ class CostModel:
 
 
 def swap_cost_fraction(pool: dict[str, Any], swap_usd: float, model: CostModel) -> float:
-    """Pool swap fee (base + dynamic) plus a price-impact estimate, as a fraction of the swapped value."""
+    """Pool swap fee (base + dynamic) plus a price-impact estimate, as a fraction of the swapped value.
+
+    With on-chain bin depth (`depth_per_bin_usd` on the pool dict), impact follows the bins the swap crosses:
+    it consumes `swap / depth_per_bin` bins, each moving the price by one bin step, so the average fill is about
+    half of that move. Without depth it falls back to swap value over TVL.
+    """
     fee = ((pool.get("base_fee_pct") or 0.0) + (pool.get("dynamic_fee_pct") or 0.0)) / 100
-    tvl = pool.get("tvl") or 0.0
-    impact = min(model.max_impact, swap_usd / tvl * model.impact_multiplier) if tvl > 0 else model.max_impact
-    return fee + impact
+    depth_per_bin = pool.get("depth_per_bin_usd") or 0.0
+    bin_step = pool.get("bin_step") or 0
+    if depth_per_bin > 0 and bin_step > 0:
+        bins_crossed = swap_usd / depth_per_bin
+        impact = bins_crossed * (bin_step / 10_000) / 2 * model.impact_multiplier
+    else:
+        tvl = pool.get("tvl") or 0.0
+        impact = swap_usd / tvl * model.impact_multiplier if tvl > 0 else model.max_impact
+    return fee + min(model.max_impact, impact)
 
 
 def entry_costs(

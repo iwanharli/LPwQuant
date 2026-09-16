@@ -23,8 +23,8 @@ def row(tier="medium", cost=0.5, fee_day=12.0, size=40.0, tvl=100_000.0, address
             "plan": {"action": "wait", "reason": "gated by default profile"}}
 
 
-def test_three_profiles_with_distinct_rules():
-    assert [p.key for p in PROFILES] == ["konservatif", "moderat", "agresif"]
+def test_profiles_have_distinct_rules():
+    assert [p.key for p in PROFILES] == ["konservatif", "moderat", "tenang", "agresif"]
     cons, agg = PROFILE_BY_KEY["konservatif"], PROFILE_BY_KEY["agresif"]
     assert cons.min_fee_cost_ratio > agg.min_fee_cost_ratio and cons.stop_loss_mult < agg.stop_loss_mult
     assert "high" not in cons.tiers and "low" not in agg.tiers
@@ -43,7 +43,9 @@ def test_each_profile_gates_the_same_plan_differently():
     assert profile_plan(r, _cfg("moderat")) is None  # needs 1.0%
     plan = profile_plan(r, _cfg("agresif"))  # 2h -> 1.0% >= 0.5%
     assert plan is not None and plan["profile"] == "agresif"
-    assert math.isclose(plan["size_usd"], 60.0) and plan["exit"]["stop_loss_pct"] == 15.0
+    # 10% x 1.5 = 15%, capped by the profile's max_stop_loss_pct.
+    assert math.isclose(plan["size_usd"], 60.0)
+    assert plan["exit"]["stop_loss_pct"] == _cfg("agresif").max_stop_loss_pct
     assert plan["exit"]["min_hold_hours"] == 1.0
 
 
@@ -66,3 +68,16 @@ def test_plan_params_for_backtest():
     base = PlanParams(portfolio_usd=1000, max_position_pct=5, hold_hours=4)
     agg = plan_params(PROFILE_BY_KEY["agresif"], base)
     assert agg.max_position_pct == 7.5 and agg.fee_gate_hours == 2.0 and agg.stop_loss_mult == 1.5
+
+
+def test_tenang_profile_only_enters_calm_pools():
+    cfg = paper_config(PROFILE_BY_KEY["tenang"])
+    assert cfg.max_atr_pct == 2.0
+    calm = {**row(tier="medium", fee_day=500.0), "market": {"atr_pct": 1.4}}
+    wild = {**row(tier="medium", fee_day=500.0), "market": {"atr_pct": 6.0}}
+    unknown = {**row(tier="medium", fee_day=500.0), "market": {}}
+    assert profile_plan(calm, cfg, equity_usd=500.0) is not None
+    assert profile_plan(wild, cfg, equity_usd=500.0) is None
+    assert profile_plan(unknown, cfg, equity_usd=500.0) is None  # no ATR reading: stay out
+    # The other profiles ignore volatility.
+    assert profile_plan(wild, paper_config(PROFILE_BY_KEY["agresif"]), equity_usd=500.0) is not None
