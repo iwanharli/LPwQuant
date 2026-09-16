@@ -193,3 +193,11 @@ create table if not exists token_insight_snapshots (
 );
 create index if not exists token_insight_snapshots_mint_ts on token_insight_snapshots (mint, ts desc);
 create index if not exists token_insight_snapshots_ts_brin on token_insight_snapshots using brin (ts);
+
+-- Momentum swap-bot backtests (engine/app/momentum.py). One row per run; the dashboard shows the newest.
+create table if not exists momentum_runs (
+  ts       timestamptz not null,
+  hours    double precision not null,
+  results  jsonb not null
+);
+create index if not exists momentum_runs_ts on momentum_runs (ts desc);

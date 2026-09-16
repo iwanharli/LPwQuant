@@ -1,3 +1,4 @@
+import json
 import logging
 from contextlib import asynccontextmanager
 from datetime import datetime
@@ -77,6 +78,18 @@ async def pool_paper(address: str) -> dict:
     if engine.db is None:
         raise HTTPException(status_code=503, detail="engine not ready")
     return {"positions": await pool_paper_positions(engine.db, address)}
+
+
+@app.get("/api/momentum")
+async def momentum() -> dict:
+    """Newest momentum swap-bot backtest (engine/app/momentum.py --save). Runs are manual, not live."""
+    if engine.db is None:
+        raise HTTPException(status_code=503, detail="engine not ready")
+    row = await engine.db.fetchrow("select ts, hours, results from momentum_runs order by ts desc limit 1")
+    if row is None:
+        return {"run_at": None, "hours": None, "results": []}
+    results = row["results"] if isinstance(row["results"], list) else json.loads(row["results"])
+    return {"run_at": int(row["ts"].timestamp() * 1000), "hours": row["hours"], "results": results}
 
 
 @app.get("/api/usage")
