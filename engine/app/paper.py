@@ -25,6 +25,7 @@ import asyncpg
 from .backtest import LpPosition, summarize
 from .costs import BINS_PER_BIN_ARRAY, CostModel, entry_costs, exit_cost, resized_cost_pct, round_trip_cost_pct, swap_cost_fraction  # noqa: F401
 from .depth import realization_factor
+from .scoring import effective_tvl
 from .recommend import DEFAULT_MIN_HOLD_HOURS, FEE_RATE_AVG_HOURS, MIN_BREAKOUT_DISTANCE_PCT, cost_gate_ok
 from .validation import bootstrap_mean_ci
 
@@ -131,6 +132,10 @@ class Position:
     # Fee rate (fraction of TVL per hour) smoothed over ~FEE_RATE_AVG_HOURS, so one quiet snapshot does not
     # trigger fee_decay. Not persisted: starts from the last rate after a restart.
     rate_avg: float | None = None
+    # TVL that produced `last_rate`. Fees are rate x TVL share, and the two must come from the same snapshot:
+    # reading the rate when TVL had collapsed and the share when it was back cost a $100 position $3.4M of
+    # phantom fees in one cycle (CHIP-USDC, 2026-09-16 19:01 UTC).
+    last_tvl: float = 0.0
     lp: LpPosition = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
@@ -195,8 +200,8 @@ def sol_usd_from_pools(pools: Iterable[dict[str, Any]]) -> float | None:
 
 
 def pool_fee_rate(pool: dict[str, Any]) -> float:
-    """Pool fees over the last hour as a fraction of TVL, per hour."""
-    tvl = pool.get("tvl") or 0.0
+    """Pool fees over the last hour as a fraction of TVL, per hour, against the floored TVL (app.scoring)."""
+    tvl = effective_tvl(pool)
     return (pool.get("fees", {}).get("1h") or 0.0) / tvl if tvl > 0 else 0.0
 
 
@@ -212,12 +217,17 @@ def accrue(
 
     Fees: the pool's fee rate times the position's TVL share, scaled by the realization factor for its range width
     (app.depth, calibrated on real LP positions)."""
-    tvl = pool.get("tvl") or 0.0
+    tvl = effective_tvl(pool)
     y_usd = (pool.get("token_y") or {}).get("price_usd") or 0.0
     dt_h = max(0.0, (now_ms - pos.last_ts) / HOUR_MS)
-    if dt_h > 0 and pos.last_rate > 0 and tvl > 0 and pos.lp.in_range(pos.last_price):
+    share_tvl = pos.last_tvl  # the TVL `last_rate` was measured against, never the current one
+    if share_tvl <= 0:
+        # Restored from the database, where last_tvl is not stored. Seeding it from the current snapshot and
+        # skipping this one cycle costs a minute of fees; pairing the stored rate with today's TVL would not.
+        pos.last_tvl = tvl
+    if dt_h > 0 and pos.last_rate > 0 and share_tvl > 0 and pos.lp.in_range(pos.last_price):
         realization = realization_factor(pos.lp.a + pos.lp.b + 1)
-        pos.fees_y += pos.value_y * pos.last_rate * dt_h * tvl / (tvl + pos.capital_usd) * realization
+        pos.fees_y += pos.value_y * pos.last_rate * dt_h * share_tvl / (share_tvl + pos.capital_usd) * realization
     price = pool["price"]
     pos.value_y = pos.lp.value(price)
     pos.out_of_range_since = None if pos.lp.in_range(price) else (pos.out_of_range_since or now_ms)
@@ -226,7 +236,7 @@ def accrue(
         pos.rate_avg = pos.last_rate
     alpha = 1 - math.exp(-dt_h / FEE_RATE_AVG_HOURS) if dt_h > 0 else 0.0
     pos.rate_avg += alpha * (rate - pos.rate_avg)
-    pos.last_ts, pos.last_price, pos.last_rate = now_ms, price, rate
+    pos.last_ts, pos.last_price, pos.last_rate, pos.last_tvl = now_ms, price, rate, tvl
     if model is not None and y_usd > 0 and sol_usd:
         pos.cost_exit_y = exit_cost(pos.lp, price, pos.positions, pool, y_usd, sol_usd / y_usd, model)
 
@@ -524,6 +534,7 @@ class PaperTrader:
             range_low_pct=plan["range_low_pct"], range_high_pct=plan["range_high_pct"], capital_usd=capital_usd,
             capital_y=capital_usd / y_usd, entry_fee_rate=rate, exit_rules=plan["exit"],
             value_y=capital_usd / y_usd, fees_y=0.0, last_ts=now_ms, last_price=price, last_rate=rate,
+            last_tvl=effective_tvl(pool),
             positions=int(plan.get("positions") or 1),
         )
         pool = self._pool_ctx(pool, row)

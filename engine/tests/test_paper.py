@@ -1,6 +1,7 @@
 import math
 
 from app.backtest import LpPosition
+from app.scoring import effective_tvl
 from app.paper import (
     CostModel,
     PaperConfig,
@@ -28,7 +29,7 @@ def position(**overrides) -> Position:
         id=1, address="POOL", name="MEME-SOL", base_mint="MEME", tier="medium", strategy="spot", bin_step=100,
         entry_ts=0, entry_price=1.0, range_low_pct=-10.0, range_high_pct=10.0, capital_usd=50.0, capital_y=0.5,
         entry_fee_rate=0.01, exit_rules=dict(RULES), value_y=0.5, fees_y=0.0, last_ts=0, last_price=1.0,
-        last_rate=0.01,
+        last_rate=0.01, last_tvl=100_000.0,  # opening a position seeds last_tvl from the pool
     )
     kwargs.update(overrides)
     return Position(**kwargs)
@@ -187,3 +188,35 @@ def test_entry_costs_charge_known_new_bin_arrays():
     base_cost, _ = entry_costs(lp, 1, COST_POOL, 150.0, 1.0, model)
     with_arrays, _ = entry_costs(lp, 1, COST_POOL, 150.0, 1.0, model, new_bin_arrays=2)
     assert math.isclose(with_arrays - base_cost, 2 * model.bin_array_rent_sol)
+
+
+def test_effective_tvl_floors_drained_pools():
+    # CHIP-USDC reported $0.000377 of TVL while 24h volume was $310k: fees/TVL came out at 298,507,864%/day.
+    drained = {"tvl": 0.000377, "volume": {"24h": 310_213.0}}
+    assert effective_tvl(drained) == 310_213.0 / 20.0
+    healthy = {"tvl": 100_000.0, "volume": {"24h": 50_000.0}}
+    assert effective_tvl(healthy) == 100_000.0  # a real TVL is never lowered
+    assert effective_tvl({"tvl": 500.0}) == 500.0  # no volume reported: nothing to floor with
+
+
+def test_fees_use_the_tvl_the_rate_was_measured_against():
+    # 2026-09-16 19:00:13 UTC the pool read $0.000372 of TVL, at 19:01:13 it read $199.62. Taking the rate from
+    # the collapsed reading and the TVL share from the restored one booked $3.4M of fees on a $100 position in
+    # one cycle, and carried four paper profiles to $3.4M of virtual equity.
+    volume = {"24h": 310_213.0}
+    collapsed = {"price": 1.0, "tvl": 0.000372, "fees": {"1h": 47.0}, "volume": volume}
+    restored = {"price": 1.0, "tvl": 199.62, "fees": {"1h": 47.0}, "volume": volume}
+    pos = position(capital_usd=100.0, capital_y=100.0, value_y=100.0, last_tvl=0.0)
+    accrue(pos, collapsed, MINUTE)
+    accrue(pos, restored, 2 * MINUTE)
+    assert pos.fee_pct() < 1.0  # was 3,387,371% before the fix
+
+
+def test_restored_position_seeds_tvl_before_accruing():
+    # last_tvl is not persisted, so a position loaded from the database starts at 0. It must seed, not pair the
+    # stored rate with today's TVL, and it must not stop earning fees for good either.
+    pos = position(last_tvl=0.0)
+    accrue(pos, pool(1.0), MINUTE)
+    assert pos.fees_y == 0.0 and pos.last_tvl == 100_000.0
+    accrue(pos, pool(1.0), 2 * MINUTE)
+    assert pos.fees_y > 0

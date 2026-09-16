@@ -136,6 +136,29 @@ def _clamp(value: float, lo: float, hi: float) -> float:
     return max(lo, min(hi, value))
 
 
+# A pool whose reported TVL has collapsed makes fees/TVL explode: CHIP-USDC reported $0.000377 of TVL against
+# $1,126 of 24h fees, i.e. 298,507,864%/day, and paper trading booked $3.4M of fees on a $100 position from it.
+# Volume/TVL above this means the reported TVL is stale or drained, so the fee ratio is computed against a floor
+# instead. Same guard, same constant, as the backtest's tvl_at().
+MAX_DAILY_TURNOVER = 20.0
+
+
+def effective_tvl(pool: dict[str, Any]) -> float:
+    """Reported TVL, floored by 24h volume / MAX_DAILY_TURNOVER so a drained pool cannot imply absurd fee rates."""
+    tvl = pool.get("tvl") or 0.0
+    volume_24h = (pool.get("volume") or {}).get("24h") or 0.0
+    return max(tvl, volume_24h / MAX_DAILY_TURNOVER) if volume_24h > 0 else tvl
+
+
+def fee_tvl_pct_sane(pool: dict[str, Any]) -> dict[str, float]:
+    """The pool's fee/TVL percentages recomputed against effective_tvl. The upstream `fee_tvl_pct` divides by the
+    reported TVL, which goes to zero on dead pools."""
+    tvl = effective_tvl(pool)
+    if tvl <= 0:
+        return {}
+    return {window: (fees or 0.0) / tvl * 100 for window, fees in (pool.get("fees") or {}).items()}
+
+
 def expected_fee_pct_day(fee_tvl_pct: dict[str, float]) -> float:
     """Daily fee/TVL estimate weighted toward recent windows (24h 20%, 4h 40%, 1h 40%)."""
     return (

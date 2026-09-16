@@ -20,7 +20,7 @@ from .backtest import LpPosition
 from .costs import fixed_cost_usd, round_trip_cost_pct
 from .profiles import PROFILES, paper_config
 from .recommend import PlanParams, apply_cost_gate, bins_below, bins_for_width, plan_position
-from .scoring import base_token, expected_fee_pct_day, score_pool
+from .scoring import base_token, effective_tvl, expected_fee_pct_day, fee_tvl_pct_sane, score_pool
 
 log = logging.getLogger("engine")
 
@@ -354,7 +354,7 @@ class Engine:
             upper = bins_for_width(plan["range_high_pct"], pool["bin_step"])
             # Re-estimate with the plan's own size and width: wide ranges realize less of the TVL-share fees.
             pct = fee_for_position_pct_day(
-                expected_fee_pct_day(pool["fee_tvl_pct"]), pool["tvl"] or 0.0, plan["size_usd"], plan["bins"]
+                expected_fee_pct_day(fee_tvl_pct_sane(pool)), effective_tvl(pool), plan["size_usd"], plan["bins"]
             )
             scored["fee_for_position_pct_day"] = pct
             plan["expected_fee_usd_day"] = round(plan["size_usd"] * pct / 100, 2)
@@ -392,7 +392,7 @@ class Engine:
                     if depth is not None else None
                 )
                 s_fee = fee_for_position_pct_day(
-                    expected_fee_pct_day(pool["fee_tvl_pct"]), pool["tvl"] or 0.0, single["size_usd"], single["bins"]
+                    expected_fee_pct_day(fee_tvl_pct_sane(pool)), effective_tvl(pool), single["size_usd"], single["bins"]
                 )
                 s_lp = LpPosition.build(
                     pool["price"], pool["bin_step"], single["range_low_pct"], single["range_high_pct"],
