@@ -61,8 +61,10 @@ PAPER_COSTS_ENABLED =(os.getenv("PAPER_COSTS_ENABLED") or "true").lower() != "fa
 PAPER_TX_COST_SOL = _num("PAPER_TX_COST_SOL", 0.00015)
 PAPER_IMPACT_MULTIPLIER = _num("PAPER_IMPACT_MULTIPLIER", 1.0)
 PAPER_NEW_BIN_ARRAY_SHARE = _num("PAPER_NEW_BIN_ARRAY_SHARE", 0.0)
+# Share of the base tokens held at close that we sell back to the quote token right away (see costs.exit_cost).
+PAPER_EXIT_SWAP_SHARE = _num("PAPER_EXIT_SWAP_SHARE", 1.0)
 PAPER_PROFILES = tuple(
-    p.strip() for p in (os.getenv("PAPER_PROFILES") or "konservatif,moderat,tenang,agresif").split(",") if p.strip()
+    p.strip() for p in (os.getenv("PAPER_PROFILES") or "konservatif,moderat,tenang,satu_sisi,agresif").split(",") if p.strip()
 )
 
 # Keys shared with the ingestor (ingestor/src/redis.ts).

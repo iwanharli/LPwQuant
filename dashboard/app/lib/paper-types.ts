@@ -40,6 +40,7 @@ export type ProfileSettings = {
   max_drawdown_pct: number | null;
   position_floor_usd?: number;
   max_atr_pct?: number | null;
+  plan_variant?: string;
 };
 
 export type ProfileInfo = { key: string; label: string; description: string; settings: ProfileSettings };
@@ -136,5 +137,6 @@ export const PROFILE_COLORS: Record<string, string> = {
   konservatif: "#3987e5",
   moderat: "#d95926",
   tenang: "#199e70",
+  satu_sisi: "#c98500",
   agresif: "#9085e9",
 };

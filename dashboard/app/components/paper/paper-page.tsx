@@ -577,6 +577,7 @@ function ProfileCompareCard({
                         Tahan min {fmtMult(st.min_hold_hours, " j")} · stop-loss {fmtMult(st.stop_loss_mult, "×")} · jeda di
                         drawdown {st.max_drawdown_pct == null ? "–" : `${st.max_drawdown_pct}%`}
                         {st.max_atr_pct != null ? ` · hanya ATR ≤${st.max_atr_pct}%` : ""}
+                        {st.plan_variant === "single" ? " · posisi satu sisi (quote)" : ""}
                       </div>
                     </td>
                     <td className="px-3 py-3 text-right font-medium text-ink">{usd.format(p.equity_usd)}</td>

@@ -79,6 +79,9 @@ class PlanParams:
     max_bins: int | None = None
     require_ranging: bool = False
     force_side: str | None = None
+    # Only trade these risk tiers (None = all). On 30 days of candles the high tier lost -0.67%/trade over 418
+    # trades while the medium tier made +0.48% over 40.
+    allowed_tiers: tuple[str, ...] | None = None
     # Hours of fees the cost gate counts; None = max(min_hold_hours, 1). On 7 days of candles with costs a 1h gate
     # (+1.5%/trade, 119 trades) beat a 2h gate (+0.2%, 357 trades): the stricter gate drops thin-fee pools.
     fee_gate_hours: float | None = 1.0
@@ -158,6 +161,8 @@ def plan_position(
     tier, tier_reason = classify_tier(safety=safety, flags=flags, tvl=tvl, vol_pct=vol, regime=regime)
     if tier is None:
         return _skip("avoid", tier_reason, regime)
+    if params.allowed_tiers is not None and tier not in params.allowed_tiers:
+        return _skip("wait", f"Tier {tier} tidak dipakai aturan ini", regime)
 
     notes: list[str] = []
     width = max(widths)

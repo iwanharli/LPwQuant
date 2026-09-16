@@ -35,6 +35,7 @@ class RiskProfile:
     stop_loss_mult: float
     max_drawdown_pct: float | None
     max_atr_pct: float | None = None  # only enter pools calmer than this 30m ATR
+    plan_variant: str = "base"  # "single" trades the quote-only version of the plan
 
 
 PROFILES: tuple[RiskProfile, ...] = (
@@ -82,6 +83,23 @@ PROFILES: tuple[RiskProfile, ...] = (
         max_atr_pct=2.0,
     ),
     RiskProfile(
+        key="satu_sisi",
+        label="Satu Sisi",
+        description="Hanya token quote di bawah harga, pool ATR 30m <=2%: range sempit, tanpa swap saat masuk",
+        tiers=("low", "medium", "high"),
+        max_open_per_tier=5,
+        size_mult=1.0,
+        min_fee_cost_ratio=config.MIN_FEE_COST_RATIO,
+        fee_gate_hours=config.FEE_GATE_HOURS,
+        min_hold_hours=config.MIN_HOLD_HOURS,
+        stop_loss_mult=1.0,
+        max_drawdown_pct=10.0,
+        # Best variant on 30 days of candles: +0.51%/trade [+0.30, +0.72] over 223 trades vs -0.61% for the
+        # defaults, with IL -0.24% and costs 0.19%. Chosen on that same data, so paper decides it on fresh data.
+        max_atr_pct=2.0,
+        plan_variant="single",
+    ),
+    RiskProfile(
         key="agresif",
         label="Agresif",
         description="Tier menengah dan tinggi, ukuran 1,5x, fee cukup 1x biaya dalam 2 jam, stop-loss longgar",
@@ -110,6 +128,7 @@ def paper_config(profile: RiskProfile) -> PaperConfig:
             tx_cost_sol=config.PAPER_TX_COST_SOL,
             impact_multiplier=config.PAPER_IMPACT_MULTIPLIER,
             new_bin_array_share=config.PAPER_NEW_BIN_ARRAY_SHARE,
+            exit_swap_share=config.PAPER_EXIT_SWAP_SHARE,
         ),
         min_position_usd=config.PAPER_MIN_POSITION_USD,
         max_drawdown_pct=profile.max_drawdown_pct,
@@ -125,6 +144,7 @@ def paper_config(profile: RiskProfile) -> PaperConfig:
         max_round_trip_cost_pct=config.MAX_ROUND_TRIP_COST_PCT,
         max_stop_loss_pct=config.MAX_STOP_LOSS_PCT,
         max_atr_pct=profile.max_atr_pct,
+        plan_variant=profile.plan_variant,
     )
 
 
@@ -139,6 +159,7 @@ def plan_params(profile: RiskProfile, base: PlanParams) -> PlanParams:
         min_hold_hours=profile.min_hold_hours,
         stop_loss_mult=profile.stop_loss_mult,
         max_atr_pct=profile.max_atr_pct,
+        force_side="quote" if profile.plan_variant == "single" else None,
         max_round_trip_cost_pct=config.MAX_ROUND_TRIP_COST_PCT,
         max_stop_loss_pct=config.MAX_STOP_LOSS_PCT,
     )

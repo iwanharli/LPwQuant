@@ -5,6 +5,7 @@ import math
 import time
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
+from dataclasses import replace
 from typing import Any
 
 import asyncpg
@@ -361,6 +362,7 @@ class Engine:
                 new_arrays = new_bin_arrays(depth, lower, upper)
                 plan["new_bin_arrays"] = new_arrays
         plan_base = None  # entry plan before the cost gate: each risk profile applies its own gate
+        plan_single = None  # same pool as a single-sided quote position (profiles with plan_variant "single")
         if plan.get("action") == "enter" and self.paper and self.paper.cfg.costs.enabled and self.sol_usd:
             # Entry only when fees over the minimum hold pay back round-trip costs (same gate as the backtest).
             lp = LpPosition.build(
@@ -375,6 +377,40 @@ class Engine:
             )
             # Profiles size on their own equity and re-price the round trip from these two numbers.
             plan_base = dict(plan, round_trip_cost_pct=round(cost_pct, 3), fixed_cost_usd=round(fixed, 4))
+            # Single-sided variant: quote only, below the price. Narrower range, no entry swap into the base token,
+            # so it needs its own fee and cost estimate.
+            single = plan_position(
+                bin_step=pool["bin_step"], tvl=pool["tvl"], score=scored["score"], safety=scored["safety"],
+                flags=scored["flags"], change_pct_1h=change_1h, realized_vol_pct_1h=vol_1h,
+                fee_for_position_pct_day=scored["fee_for_position_pct_day"],
+                params=replace(self.plan_params, force_side="quote"), market=market,
+            )
+            if single.get("action") == "enter":
+                s_arrays = (
+                    new_bin_arrays(depth, -bins_below(-single["range_low_pct"], pool["bin_step"]),
+                                   bins_for_width(single["range_high_pct"], pool["bin_step"]))
+                    if depth is not None else None
+                )
+                s_fee = fee_for_position_pct_day(
+                    expected_fee_pct_day(pool["fee_tvl_pct"]), pool["tvl"] or 0.0, single["size_usd"], single["bins"]
+                )
+                s_lp = LpPosition.build(
+                    pool["price"], pool["bin_step"], single["range_low_pct"], single["range_high_pct"],
+                    single["size_usd"],
+                )
+                s_cost = round_trip_cost_pct(
+                    s_lp, int(single.get("positions") or 1), dict(pool, depth_per_bin_usd=pool_per_bin_usd), 1.0,
+                    self.sol_usd, self.paper.cfg.costs, s_arrays,
+                )
+                s_fixed = fixed_cost_usd(
+                    int(single.get("positions") or 1), int(single["bins"]), self.sol_usd, self.paper.cfg.costs,
+                    s_arrays,
+                )
+                plan_single = dict(
+                    single, round_trip_cost_pct=round(s_cost, 3), fixed_cost_usd=round(s_fixed, 4),
+                    fee_for_position_pct_day=s_fee, new_bin_arrays=s_arrays,
+                    expected_fee_usd_day=round(single["size_usd"] * s_fee / 100, 2),
+                )
             plan = apply_cost_gate(plan, cost_pct, scored["fee_for_position_pct_day"], self.plan_params)
         tvl_per_bin_usd = None
         if depth is not None and y_usd > 0:
@@ -395,6 +431,7 @@ class Engine:
             "updated_at": now_ms,
             "plan": _clean(plan),
             "plan_base": _clean(plan_base),
+            "plan_single": _clean(plan_single),
             "security": _security_summary(security),
             "market": _clean(market),
             "insights": _clean(insights),

@@ -23,6 +23,10 @@ class CostModel:
     new_bin_array_share: float = 0.0  # share of the range's bin arrays assumed uninitialized
     impact_multiplier: float = 1.0  # price impact = swap value / pool TVL * multiplier
     max_impact: float = 0.05
+    # Share of the base tokens held at close that we swap back to the quote token (see exit_cost). Closing a DLMM
+    # position does not swap by itself, but equity is measured in the quote token and the next position in another
+    # pool must be funded from it, so the default charges the full swap. Lower it to model keeping the bag.
+    exit_swap_share: float = 1.0
 
 
 def swap_cost_fraction(pool: dict[str, Any], swap_usd: float, model: CostModel) -> float:
@@ -72,10 +76,17 @@ def entry_costs(
 def exit_cost(
     lp: "LpPosition", price: float, positions: int, pool: dict[str, Any], y_usd: float, sol_to_y: float, model: CostModel
 ) -> float:
-    """Cost in token Y to close all positions and swap the base tokens held at `price` back to token Y."""
+    """Cost in token Y to close all positions and swap the base tokens held at `price` back to token Y.
+
+    Closing itself never swaps: the bins are withdrawn as whatever mix of base and quote they hold (only an
+    explicit zap out swaps). The swap is charged anyway because the round trip this model prices starts and ends
+    in the quote token -- redeploying into another pool has to sell the base tokens. What the model does assume is
+    that the sale happens immediately, at the close price; `model.exit_swap_share` makes that assumption explicit
+    and testable (1.0 = sell everything at close, 0.0 = keep the whole bag and pay nothing here).
+    """
     if not model.enabled:
         return 0.0
-    base_y = lp.base_value(price)
+    base_y = lp.base_value(price) * model.exit_swap_share
     swap = base_y * swap_cost_fraction(pool, base_y * y_usd, model)
     return swap + positions * model.txs_close_per_position * model.tx_cost_sol * sol_to_y
 

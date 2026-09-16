@@ -1,7 +1,8 @@
 import math
 from dataclasses import replace
 
-from app.costs import CostModel, swap_cost_fraction
+from app.backtest import LpPosition
+from app.costs import CostModel, exit_cost, swap_cost_fraction
 from app.paper import profile_plan
 from app.profiles import PROFILE_BY_KEY, paper_config
 from app.recommend import PlanParams, apply_cost_gate
@@ -49,3 +50,18 @@ def test_stop_loss_is_capped_after_the_profile_multiplier():
                                                         "size_pct": 20.0, "exit": dict(EXIT)}}
     plan = profile_plan(row, replace(cfg, min_fee_cost_ratio=None), equity_usd=500.0)
     assert plan["exit"]["stop_loss_pct"] == cfg.max_stop_loss_pct  # 20% x 1.5 capped at 10%
+
+
+def test_exit_swap_share_makes_the_zap_out_assumption_explicit():
+    # Closing a DLMM position does not swap by itself; exit_swap_share says how much of the base tokens we sell
+    # back to the quote token right away. The transaction cost is charged either way.
+    lp = LpPosition.build(1.0, 100, -5.0, 5.0, 1000.0)
+    txs = MODEL.txs_close_per_position * MODEL.tx_cost_sol * 150.0
+    keep_all = exit_cost(lp, 1.0, 1, POOL, 1.0, 150.0, replace(MODEL, exit_swap_share=0.0))
+    assert math.isclose(keep_all, txs)  # nothing sold: only the close transactions
+    sell_all = exit_cost(lp, 1.0, 1, POOL, 1.0, 150.0, MODEL)  # default is 1.0: unchanged behaviour
+    assert sell_all > keep_all
+    half = exit_cost(lp, 1.0, 1, POOL, 1.0, 150.0, replace(MODEL, exit_swap_share=0.5))
+    assert keep_all < half < sell_all
+    # Selling half costs less than half the swap, because a smaller swap also moves the price less.
+    assert (half - txs) < (sell_all - txs) / 2

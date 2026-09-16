@@ -135,6 +135,7 @@ BACKTEST_COSTS = CostModel(
     enabled=config.PAPER_COSTS_ENABLED,
     tx_cost_sol=config.PAPER_TX_COST_SOL,
     impact_multiplier=config.PAPER_IMPACT_MULTIPLIER,
+    exit_swap_share=config.PAPER_EXIT_SWAP_SHARE,
 )
 
 

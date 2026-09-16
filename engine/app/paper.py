@@ -91,6 +91,8 @@ class PaperConfig:
     max_stop_loss_pct: float = 10.0
     # Only enter pools whose 30m ATR is at or below this (None = any volatility).
     max_atr_pct: float | None = None
+    # Which plan the profile trades: "base" (two-sided, as the engine recommends) or "single" (quote only).
+    plan_variant: str = "base"
 
 
 def entries_paused(equity_usd: float, peak_equity_usd: float, max_drawdown_pct: float | None) -> bool:
@@ -262,9 +264,15 @@ def profile_plan(
     Size is the plan's size_pct of the profile's current equity (the plan itself is sized on PORTFOLIO_USD), times
     the profile's size multiplier, capped by TVL share. The cost gate re-prices the round trip at that size: fixed
     costs (transactions, bin array rent) weigh more on small positions."""
-    base = row.get("plan_base")
-    use_base = cfg.min_fee_cost_ratio is not None and base is not None
-    plan = base if use_base else (row.get("plan") or {})
+    if cfg.plan_variant == "single":
+        plan = row.get("plan_single")
+        if plan is None:
+            return None
+        use_base = cfg.min_fee_cost_ratio is not None
+    else:
+        base = row.get("plan_base")
+        use_base = cfg.min_fee_cost_ratio is not None and base is not None
+        plan = base if use_base else (row.get("plan") or {})
     if plan.get("action") != "enter" or plan.get("tier") not in cfg.tiers:
         return None
     if cfg.max_atr_pct is not None:
@@ -280,7 +288,9 @@ def profile_plan(
         size = min(size, tvl * cfg.max_tvl_share)
     extra: dict[str, Any] = {}
     if use_base:
-        cost, fee_day = plan.get("round_trip_cost_pct"), row.get("fee_for_position_pct_day")
+        cost = plan.get("round_trip_cost_pct")
+        # The single-sided plan carries its own fee estimate (different range width).
+        fee_day = plan.get("fee_for_position_pct_day") or row.get("fee_for_position_pct_day")
         if cost is not None and fee_day is not None:
             cost = resized_cost_pct(cost, plan.get("fixed_cost_usd") or 0.0, base_size, size)
             if cfg.max_round_trip_cost_pct is not None and cost > cfg.max_round_trip_cost_pct:
@@ -621,6 +631,7 @@ class PaperTrader:
                 "max_drawdown_pct": c.max_drawdown_pct,
                 "position_floor_usd": c.position_floor_usd,
                 "max_atr_pct": c.max_atr_pct,
+                "plan_variant": c.plan_variant,
             },
         }
 

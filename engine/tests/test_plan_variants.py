@@ -36,3 +36,12 @@ def test_force_side_quote_is_single_sided():
     p = plan(replace_params(force_side="quote"), RANGING)
     assert p["strategy"] == "bid_ask" and p["side"] == "quote"
     assert p["range_high_pct"] == 0.0 and p["range_low_pct"] < 0
+
+
+def test_allowed_tiers_filters_by_tier():
+    default = plan(BASE, RANGING)
+    assert default["action"] == "enter"
+    tier = default["tier"]
+    others = tuple(t for t in ("low", "medium", "high") if t != tier)
+    assert plan(replace_params(allowed_tiers=others), RANGING)["action"] == "wait"
+    assert plan(replace_params(allowed_tiers=(tier,)), RANGING)["action"] == "enter"
