@@ -201,3 +201,13 @@ create table if not exists momentum_runs (
   results  jsonb not null
 );
 create index if not exists momentum_runs_ts on momentum_runs (ts desc);
+
+-- Telegram alerts already delivered (engine/app/alerts.py). One row per pool per kind, so a pool fires once and
+-- a restart does not replay it. The first cycle for a kind seeds this table without sending.
+create table if not exists alerts_sent (
+  kind     text not null,
+  address  text not null,
+  ts       timestamptz not null default now(),
+  primary key (kind, address)
+);
+create index if not exists alerts_sent_ts on alerts_sent (ts desc);

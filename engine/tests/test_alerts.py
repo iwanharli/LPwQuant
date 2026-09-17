@@ -1,0 +1,63 @@
+import app.alerts as alerts
+
+ROW = {
+    "address": "PoolAddr",
+    "name": "MEME-SOL",
+    "market_cap": 470_160.0,
+    "tvl": 125_870.0,
+    "volume_24h": 269.34,
+    "holders": 24,
+    "score": 51.2,
+    "pool_age_hours": 10.0,
+    "fee_tvl_pct_24h": 1.2,
+    "fee_for_position_pct_day": 120.0,
+    "flags": ["new_pool", "unverified"],
+    "market": {"atr_pct": 1.4},
+    "security": {"top10_pct": 21.0, "mint_authority": True, "freeze_authority": False,
+                 "lp_locked_pct": 100.0, "risks": ["Mint Authority still enabled", "Low Liquidity"]},
+    "organic": {"organic_score": 0.0, "organic_label": "low", "verified": True, "bot_holders_pct": 0.0},
+    "insights": {"tags": {"bundler": {"holding_pct": 0.0}, "sniper": {"holding_pct": 0.0}}},
+    "plan_base": {"action": "enter", "round_trip_cost_pct": 0.5, "strategy": "spot",
+                  "range_low_pct": -5.0, "range_high_pct": 5.0},
+}
+
+
+def test_new_pool_and_lp_filters():
+    assert alerts.is_new_pool(ROW)
+    assert not alerts.is_new_pool({**ROW, "pool_age_hours": 40.0})
+    assert alerts.passes_lp_filters(ROW)
+    # each LP default rejects on its own
+    assert not alerts.passes_lp_filters({**ROW, "market": {"atr_pct": 9.0}})
+    assert not alerts.passes_lp_filters({**ROW, "security": {**ROW["security"], "top10_pct": 60.0}})
+    assert not alerts.passes_lp_filters({**ROW, "tvl": 1_000.0})
+    # a pool that reports nothing must not slip through as if it passed
+    assert not alerts.passes_lp_filters({**ROW, "market": {}})
+
+
+def test_gate_matches_the_profile_rule():
+    # 120%/day over a 1h window is 5%, against 2 x 0.5% cost: through.
+    assert alerts.passes_gate(ROW)
+    assert not alerts.passes_gate({**ROW, "fee_for_position_pct_day": 1.0})
+    assert not alerts.passes_gate({**ROW, "plan_base": {**ROW["plan_base"], "action": "wait"}})
+    assert not alerts.passes_gate({**ROW, "plan_base": {**ROW["plan_base"], "round_trip_cost_pct": 0.0}})
+
+
+def test_message_has_the_numbers_and_escapes_html():
+    text = alerts.message(ROW, "gate")
+    assert "MEME-SOL" in text and "PoolAddr" in text
+    assert "Holders 24" in text and "Top10 21.0%" in text
+    assert "Mint AKTIF" in text and "Freeze mati" in text
+    assert "meteora.ag/dlmm/PoolAddr" in text
+    nasty = alerts.message({**ROW, "name": "<script>&"}, "new_pool")
+    assert "<script>" not in nasty and "&lt;script&gt;&amp;" in nasty
+
+
+def test_disabled_without_credentials(monkeypatch):
+    monkeypatch.setattr(alerts.config, "TELEGRAM_BOT_TOKEN", "")
+    monkeypatch.setattr(alerts.config, "TELEGRAM_CHAT_ID", "")
+    assert alerts.Alerter(db=object()).enabled is False
+    monkeypatch.setattr(alerts.config, "TELEGRAM_BOT_TOKEN", "t")
+    monkeypatch.setattr(alerts.config, "TELEGRAM_CHAT_ID", "c")
+    monkeypatch.setattr(alerts.config, "ALERTS_ENABLED", True)
+    monkeypatch.setattr(alerts.config, "ALERT_KINDS", ("gate",))
+    assert alerts.Alerter(db=object()).enabled is True

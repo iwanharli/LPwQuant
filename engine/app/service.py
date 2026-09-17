@@ -12,6 +12,7 @@ import asyncpg
 import redis.asyncio as aioredis
 
 from . import config
+from .alerts import Alerter
 from .indicators import Candle, compute_indicators, flow_features, merge_market
 from .metrics import PriceHistory
 from .paper import PaperTrader, sol_usd_from_pools
@@ -103,6 +104,9 @@ class Engine:
         )
         async with self.db.acquire() as conn:
             await conn.execute(config.SCHEMA_PATH.read_text())
+        self.alerter = Alerter(self.db)
+        if self.alerter.enabled:
+            log.info("telegram alerts on for: %s", ", ".join(self.alerter.kinds))
         for profile in PROFILES:
             if profile.key not in config.PAPER_PROFILES:
                 continue
@@ -304,6 +308,11 @@ class Engine:
                     await pipe.execute()
             except Exception:
                 log.exception("publishing open paper pools failed")
+        if getattr(self, "alerter", None) is not None:
+            try:
+                await self.alerter.on_refresh(self.rows)
+            except Exception:
+                log.exception("telegram alerts failed")
         self._broadcast(self.snapshot_message())
 
     async def reset_papers(self) -> dict[str, int]:

@@ -67,6 +67,15 @@ PAPER_PROFILES = tuple(
     p.strip() for p in (os.getenv("PAPER_PROFILES") or "konservatif,moderat,tenang,satu_sisi").split(",") if p.strip()
 )
 
+# Telegram alerts (engine/app/alerts.py). Without a token and chat id nothing is ever sent, so leaving these
+# empty keeps the feature switched off. The token is a secret: keep it in .env, which is gitignored.
+ALERTS_ENABLED = (os.getenv("ALERTS_ENABLED") or "true").lower() != "false"
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN") or ""
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID") or ""
+ALERT_KINDS = tuple(
+    k.strip() for k in (os.getenv("ALERT_KINDS") or "new_pool,gate,new_lp").split(",") if k.strip()
+)
+
 # Keys shared with the ingestor (ingestor/src/redis.ts).
 METEORA_API_URL = (os.getenv("METEORA_API_URL") or "https://dlmm.datapi.meteora.ag").rstrip("/")
 
