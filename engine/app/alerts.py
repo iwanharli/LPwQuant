@@ -219,3 +219,45 @@ class Alerter:
         await self._remember(kind, delivered)
         if delivered:
             log.info("alerts: sent %d %s", len(delivered), kind)
+
+
+def _get_me(token: str) -> dict[str, Any] | None:
+    """Ask Telegram who this token belongs to, so a typo is caught before anything else."""
+    try:
+        with urllib.request.urlopen(f"https://api.telegram.org/bot{token}/getMe", timeout=15) as response:
+            body = json.load(response)
+        return body.get("result") if body.get("ok") else None
+    except (urllib.error.URLError, TimeoutError, ValueError):
+        return None
+
+
+def main() -> None:
+    """Check the Telegram setup without ever printing the token: uv run python -m app.alerts [--send]"""
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Check Telegram alert credentials, optionally send a test message")
+    parser.add_argument("--send", action="store_true", help="send a test message to the configured chat")
+    args = parser.parse_args()
+
+    token, chat_id = config.TELEGRAM_BOT_TOKEN, config.TELEGRAM_CHAT_ID
+    print(f"ALERTS_ENABLED   : {config.ALERTS_ENABLED}")
+    print(f"TELEGRAM_BOT_TOKEN: {'terisi' if token else 'KOSONG'}")
+    print(f"TELEGRAM_CHAT_ID  : {'terisi' if chat_id else 'KOSONG'}")
+    print(f"ALERT_KINDS       : {', '.join(config.ALERT_KINDS) or '(kosong)'}")
+    if not token or not chat_id:
+        print("\nAlert MATI. Isi TELEGRAM_BOT_TOKEN dan TELEGRAM_CHAT_ID di .env, lalu restart engine.")
+        return
+    me = _get_me(token)
+    if not me:
+        print("\nToken ditolak Telegram (getMe gagal). Periksa lagi token dari @BotFather.")
+        return
+    print(f"\nBot terhubung: @{me.get('username')} ({me.get('first_name')})")
+    if not args.send:
+        print("Tambahkan --send untuk mengirim pesan uji ke chat tersebut.")
+        return
+    ok = _post(token, chat_id, "<b>Uji koneksi</b>\nAlert quant engine siap.")
+    print("Pesan uji terkirim." if ok else "Gagal mengirim. Pastikan chat id benar dan bot sudah Anda ajak bicara.")
+
+
+if __name__ == "__main__":
+    main()
