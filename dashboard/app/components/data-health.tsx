@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { ENGINE_URL, fmtTime } from "../lib/format";
+import type { ConnectionStatus } from "../lib/types";
 import { StatusDot } from "./ui";
 
 type FreshnessItem = {
@@ -24,8 +25,17 @@ function fmtAge(sec: number | null): string {
   return `${(sec / 3600).toFixed(1)} jam lalu`;
 }
 
-/** Top-bar pill that turns amber when any data source stops updating; click for per-source ages. */
-export default function DataHealth() {
+/** The top bar's one status pill: socket state and data freshness in a single label, because two chips saying
+ * "Live" and "Data segar" read as the same thing. They are not the same measurement -- the socket is this
+ * browser's connection, freshness comes from /api/freshness on the engine -- so the pill shows the worse of the
+ * two and never reports "Live" while a source has gone stale. Click it for per-source ages. */
+export default function DataHealth({
+  status,
+  lastMessageAt,
+}: {
+  status?: ConnectionStatus;
+  lastMessageAt?: number | null;
+}) {
   const [data, setData] = useState<Freshness | null>(null);
   const [failed, setFailed] = useState(false);
   const [open, setOpen] = useState(false);
@@ -68,14 +78,29 @@ export default function DataHealth() {
     };
   }, [open]);
 
-  const severity = failed ? "critical" : !data ? "info" : data.ok ? "good" : "warning";
+  // Worst of the two wins, so a dead socket or a stale source can never hide behind a green "Live".
+  const socketBad = status === "offline" ? "critical" : status === "connecting" ? "warning" : null;
+  const freshBad = failed ? "critical" : !data ? null : data.ok ? null : "warning";
+  const severity = socketBad === "critical" || freshBad === "critical"
+    ? "critical"
+    : socketBad === "warning" || freshBad === "warning"
+      ? "warning"
+      : !data
+        ? "info"
+        : "good";
   const label = failed
     ? "Engine tidak terjangkau"
-    : !data
-      ? "Cek data…"
-      : data.ok
-        ? "Data segar"
-        : `${data.stale.length} sumber basi`;
+    : status === "offline"
+      ? "Terputus"
+      : status === "connecting"
+        ? "Menghubungkan"
+        : !data
+          ? "Cek data…"
+          : !data.ok
+            ? `${data.stale.length} sumber basi`
+            : lastMessageAt
+              ? `Live ${fmtTime(lastMessageAt)}`
+              : "Live";
 
   return (
     <div ref={ref} className="relative">

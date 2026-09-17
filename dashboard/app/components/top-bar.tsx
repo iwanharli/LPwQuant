@@ -2,18 +2,8 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
-import { fmtTime } from "../lib/format";
 import type { ConnectionStatus } from "../lib/types";
 import DataHealth from "./data-health";
-import { ClockIcon } from "./icons";
-import { StatusDot } from "./ui";
-
-const STATUS_META: Record<ConnectionStatus, { label: string; severity: "good" | "warning" | "critical" }> = {
-  live: { label: "Live", severity: "good" },
-  connecting: { label: "Menghubungkan", severity: "warning" },
-  offline: { label: "Terputus", severity: "critical" },
-};
 
 const NAV = [
   { href: "/", label: "Screener" },
@@ -21,20 +11,6 @@ const NAV = [
   { href: "/momentum", label: "Bot swap" },
   { href: "/rpc", label: "Pemakaian RPC" },
 ];
-
-function WibClock() {
-  const [now, setNow] = useState<number | null>(null);
-  useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(timer);
-  }, []);
-  return (
-    <span className="inline-flex items-center gap-1.5 tabular-nums text-ink-2">
-      <ClockIcon className="text-ink-3" />
-      {now ? fmtTime(now) : "--.--.--"} <span className="text-ink-3">WIB</span>
-    </span>
-  );
-}
 
 export default function TopBar({
   status,
@@ -44,7 +20,6 @@ export default function TopBar({
   lastMessageAt?: number | null;
 }) {
   const pathname = usePathname();
-  const meta = status ? STATUS_META[status] : null;
   return (
     <header className="sticky top-0 z-30 border-b border-white/8 bg-bg/78 shadow-[0_1px_0_rgba(255,255,255,0.04)] backdrop-blur-xl">
       <div className="relative mx-auto flex h-16 w-full items-center gap-4 px-4 sm:px-6 2xl:px-8">
@@ -98,22 +73,11 @@ export default function TopBar({
           })}
         </nav>
 
-        <div className="ml-auto flex items-center gap-3 text-xs sm:gap-5">
-          {meta && (
-            <span className="hidden text-ink-3 2xl:inline">
-              {lastMessageAt ? `Update terakhir ${fmtTime(lastMessageAt)} WIB` : "Menunggu data…"}
-            </span>
-          )}
-          <DataHealth />
-          <span className="hidden rounded-full border border-line bg-panel/50 px-3 py-1 sm:inline">
-            <WibClock />
-          </span>
-          {meta && (
-            <span className="inline-flex items-center gap-2 rounded-full border border-line bg-panel/80 px-3 py-1.5 font-semibold shadow-sm shadow-black/20">
-              <StatusDot severity={meta.severity} pulse={status === "live"} />
-              {meta.label}
-            </span>
-          )}
+        {/* Two chips, not four: data freshness (click for per-source detail) and the socket state. The old
+            "Update terakhir" line repeated the timestamp already inside the freshness panel and only appeared on
+            2xl screens, and a wall clock says nothing about this system -- it now rides along as a tooltip. */}
+        <div className="ml-auto flex items-center text-xs">
+          <DataHealth status={status} lastMessageAt={lastMessageAt} />
         </div>
       </div>
     </header>
