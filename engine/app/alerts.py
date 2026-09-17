@@ -23,6 +23,10 @@ log = logging.getLogger("alerts")
 
 API_URL = "https://api.telegram.org/bot{token}/sendMessage"
 MAX_PER_CYCLE = 5  # a quiet trickle beats a flood when many pools qualify at once
+# Marks a kind as having run at least once. Without it, a kind that matched nothing on the first cycle looks
+# indistinguishable from a kind that never ran, and its first real hit would be swallowed as "seeding" --
+# which is exactly what would have happened to the first "gate" alert, the rarest and most wanted one.
+SEED_MARKER = "__seeded__"
 KINDS = ("new_pool", "gate", "new_lp")
 
 # Mirrors the screener's LP defaults (dashboard/app/lib/filters.ts defaultFilters).
@@ -181,7 +185,12 @@ class Alerter:
 
     async def _already_sent(self, kind: str) -> set[str]:
         rows = await self.db.fetch("select address from alerts_sent where kind = $1", kind)
-        return {r["address"] for r in rows}
+        return {r["address"] for r in rows if r["address"] != SEED_MARKER}
+
+    async def _seeded(self, kind: str) -> bool:
+        """Any row at all means this kind has run before. Kinds recorded before the marker existed count too, so
+        the change does not re-seed them and swallow a pool that appeared in the meantime."""
+        return bool(await self.db.fetchval("select 1 from alerts_sent where kind = $1 limit 1", kind))
 
     async def _remember(self, kind: str, addresses: list[str]) -> None:
         if addresses:
@@ -201,16 +210,17 @@ class Alerter:
 
     async def _run_kind(self, kind: str, rows: dict[str, dict[str, Any]]) -> None:
         hits = [a for a, row in rows.items() if matches(row, kind)]
+        if not await self._seeded(kind):
+            # First run for this kind: record what already qualifies instead of announcing all of it at once, and
+            # mark the kind as run even when nothing qualifies, so the next match is a real alert.
+            await self._remember(kind, [*hits, SEED_MARKER])
+            log.info("alerts: seeded %s with %d pools, sending from the next match on", kind, len(hits))
+            return
         if not hits:
             return
         sent = await self._already_sent(kind)
         fresh = [a for a in hits if a not in sent]
         if not fresh:
-            return
-        if not sent:
-            # First run for this kind: record the current state instead of announcing all of it at once.
-            await self._remember(kind, fresh)
-            log.info("alerts: seeded %d pools for %s without sending", len(fresh), kind)
             return
         delivered: list[str] = []
         for address in fresh[:MAX_PER_CYCLE]:

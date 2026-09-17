@@ -61,3 +61,67 @@ def test_disabled_without_credentials(monkeypatch):
     monkeypatch.setattr(alerts.config, "ALERTS_ENABLED", True)
     monkeypatch.setattr(alerts.config, "ALERT_KINDS", ("gate",))
     assert alerts.Alerter(db=object()).enabled is True
+
+
+class FakeDb:
+    """Just enough of an asyncpg pool for the seeding logic."""
+
+    def __init__(self, rows=()):
+        self.rows = set(rows)  # (kind, address)
+        self.posted: list[str] = []
+
+    async def fetch(self, _sql, kind):
+        return [{"address": a} for k, a in self.rows if k == kind]
+
+    async def fetchval(self, _sql, kind):
+        return 1 if any(k == kind for k, _ in self.rows) else None
+
+    async def executemany(self, _sql, args):
+        self.rows.update((k, a) for k, a in args)
+
+
+def _alerter(db, monkeypatch, sent_ok=True):
+    monkeypatch.setattr(alerts.config, "TELEGRAM_BOT_TOKEN", "t")
+    monkeypatch.setattr(alerts.config, "TELEGRAM_CHAT_ID", "c")
+    monkeypatch.setattr(alerts.config, "ALERTS_ENABLED", True)
+    monkeypatch.setattr(alerts.config, "ALERT_KINDS", ("gate",))
+    a = alerts.Alerter(db)
+    monkeypatch.setattr(alerts, "_post", lambda token, chat, text: (db.posted.append(text), sent_ok)[1])
+    return a
+
+
+def test_a_kind_that_matches_nothing_still_counts_as_seeded(monkeypatch):
+    # The bug this covers: "gate" matched nothing on the first cycle, so it looked like it had never run, and its
+    # first real candidate would have been recorded as seeding instead of sent.
+    import asyncio
+
+    db = FakeDb()
+    a = _alerter(db, monkeypatch)
+    asyncio.run(a.on_refresh({}))  # nothing qualifies yet
+    assert ("gate", alerts.SEED_MARKER) in db.rows
+    assert db.posted == []
+
+    asyncio.run(a.on_refresh({"PoolAddr": ROW}))  # the first real candidate must be sent, not swallowed
+    assert len(db.posted) == 1 and "PoolAddr" in db.posted[0]
+    assert ("gate", "PoolAddr") in db.rows
+
+
+def test_first_cycle_with_matches_seeds_them_silently(monkeypatch):
+    import asyncio
+
+    db = FakeDb()
+    a = _alerter(db, monkeypatch)
+    asyncio.run(a.on_refresh({"PoolAddr": ROW}))
+    assert db.posted == []                      # no burst on the very first cycle
+    assert ("gate", "PoolAddr") in db.rows
+    asyncio.run(a.on_refresh({"PoolAddr": ROW}))
+    assert db.posted == []                      # and it is not re-sent every cycle
+
+
+def test_existing_rows_from_before_the_marker_count_as_seeded(monkeypatch):
+    import asyncio
+
+    db = FakeDb([("gate", "OldPool")])          # recorded before SEED_MARKER existed
+    a = _alerter(db, monkeypatch)
+    asyncio.run(a.on_refresh({"PoolAddr": ROW}))
+    assert len(db.posted) == 1                  # treated as already seeded, so this is a real alert
