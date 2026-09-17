@@ -1,8 +1,10 @@
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
+import { type Filters, activeFilterCount, emptyFilters, matchesFilters } from "../lib/filters";
 import { type SortKey, type Tier, rowTier } from "../lib/types";
 import { useLivePools } from "../lib/use-live-pools";
+import FilterPanel from "./filter-panel";
 import KpiStrip from "./kpi-strip";
 import PoolDrawer from "./pool-drawer";
 import PoolTable from "./pool-table";
@@ -15,10 +17,11 @@ export default function Dashboard() {
   const [sortKey, setSortKey] = useState<SortKey>("score");
   const [sortDesc, setSortDesc] = useState(true);
   const [query, setQuery] = useState("");
-  const [minTvl, setMinTvl] = useState(0);
   const [binStep, setBinStep] = useState(0);
   const [hideExcluded, setHideExcluded] = useState(true);
   const [tierFilter, setTierFilter] = useState<TierFilter>("all");
+  const [filters, setFilters] = useState<Filters>(emptyFilters);
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
   const all = useMemo(() => [...pools.values()], [pools]);
   const binSteps = useMemo(() => [...new Set(all.map((p) => p.bin_step))].sort((a, b) => a - b), [all]);
@@ -28,12 +31,12 @@ export default function Dashboard() {
     const q = query.trim().toLowerCase();
     return all.filter(
       (p) =>
-        p.tvl >= minTvl &&
+        matchesFilters(p, filters) &&
         (!binStep || p.bin_step === binStep) &&
         (!hideExcluded || p.plan.action !== "avoid") &&
         (!q || p.name.toLowerCase().includes(q) || p.address.toLowerCase().includes(q)),
     );
-  }, [all, query, minTvl, binStep, hideExcluded]);
+  }, [all, query, filters, binStep, hideExcluded]);
 
   const counts = useMemo(() => {
     const byTier = (t: Tier) => baseFiltered.filter((p) => rowTier(p) === t).length;
@@ -94,8 +97,11 @@ export default function Dashboard() {
             counts={counts}
             query={query}
             onQuery={setQuery}
-            minTvl={minTvl}
-            onMinTvl={setMinTvl}
+            minTvl={filters.tvl.min ?? 0}
+            onMinTvl={(v) => setFilters((f) => ({ ...f, tvl: { ...f.tvl, min: v || null } }))}
+            filterCount={activeFilterCount(filters)}
+            onOpenFilters={() => setFiltersOpen(true)}
+            onClearFilters={() => setFilters(emptyFilters())}
             binStep={binStep}
             onBinStep={setBinStep}
             binSteps={binSteps}
@@ -118,6 +124,15 @@ export default function Dashboard() {
           Tier dan rencana posisi masih heuristik. Backtest belum menunjukkan edge positif. Bukan saran finansial.
         </p>
       </main>
+
+      <FilterPanel
+        open={filtersOpen}
+        onClose={() => setFiltersOpen(false)}
+        filters={filters}
+        onChange={setFilters}
+        shown={rows.length}
+        total={all.length}
+      />
 
       <PoolDrawer row={selectedRow} onClose={closeDrawer} />
     </div>

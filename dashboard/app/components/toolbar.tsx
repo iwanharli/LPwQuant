@@ -45,6 +45,9 @@ export default function Toolbar({
   hideExcluded,
   onHideExcluded,
   shown,
+  filterCount,
+  onOpenFilters,
+  onClearFilters,
 }: {
   tierFilter: TierFilter;
   onTierFilter: (v: TierFilter) => void;
@@ -59,6 +62,9 @@ export default function Toolbar({
   hideExcluded: boolean;
   onHideExcluded: (v: boolean) => void;
   shown: number;
+  filterCount: number;
+  onOpenFilters: () => void;
+  onClearFilters: () => void;
 }) {
   const searchRef = useRef<HTMLInputElement>(null);
 
@@ -76,12 +82,13 @@ export default function Toolbar({
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  const filtersActive = tierFilter !== "all" || query !== "" || minTvl !== 0 || binStep !== 0;
+  // Counts the advanced panel too, so "Reset filter" never hides filters it did not clear.
+  const filtersActive = tierFilter !== "all" || query !== "" || binStep !== 0 || filterCount > 0;
   const reset = () => {
     onTierFilter("all");
     onQuery("");
-    onMinTvl(0);
     onBinStep(0);
+    onClearFilters();
   };
 
   return (
@@ -198,7 +205,21 @@ export default function Toolbar({
           </span>
         </label>
 
-        <div className="ml-auto flex items-center">
+        <div className="ml-auto flex items-center gap-2">
+          <button
+            type="button"
+            onClick={onOpenFilters}
+            className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
+              filterCount > 0
+                ? "border-accent/70 bg-accent/10 text-ink"
+                : "border-line bg-bg/40 text-ink-2 hover:border-line-strong hover:text-ink"
+            }`}
+          >
+            Filter lanjutan
+            {filterCount > 0 && (
+              <span className="rounded-full bg-accent/20 px-1.5 tabular-nums text-[11px] text-ink">{filterCount}</span>
+            )}
+          </button>
           {filtersActive && (
             <button
               type="button"
