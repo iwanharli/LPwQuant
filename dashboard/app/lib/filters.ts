@@ -4,6 +4,7 @@ import type { PoolRow } from "./types";
 export type Range = { min: number | null; max: number | null };
 
 export type Filters = {
+  atr: Range;
   marketCap: Range;
   holders: Range;
   top10: Range;
@@ -22,7 +23,7 @@ export type Filters = {
 };
 
 export const RANGE_KEYS = [
-  "marketCap", "holders", "top10", "organic", "poolAge", "volume", "fees", "feeTvl", "tvl", "baseFee",
+  "atr", "marketCap", "holders", "top10", "organic", "poolAge", "volume", "fees", "feeTvl", "tvl", "baseFee",
 ] as const;
 export const TOGGLE_KEYS = ["verified", "newListing", "lowConcentration", "noInsiders", "lpLocked"] as const;
 
@@ -33,10 +34,31 @@ export const LP_LOCKED_MIN_PCT = 50;
 export function emptyFilters(): Filters {
   const r = () => ({ min: null, max: null });
   return {
-    marketCap: r(), holders: r(), top10: r(), organic: r(), poolAge: r(),
+    atr: r(), marketCap: r(), holders: r(), top10: r(), organic: r(), poolAge: r(),
     volume: r(), fees: r(), feeTvl: r(), tvl: r(), baseFee: r(),
     verified: false, newListing: false, lowConcentration: false, noInsiders: false, lpLocked: false,
   };
+}
+
+
+/** Starting point for LP, from what this project actually measured rather than round numbers.
+ *
+ * ATR <= 5%: impermanent loss tracks volatility hard (backtested IL -0.17% under 2% ATR against -2.62% above
+ * 10%), and the two worst buckets are the ones this cuts. 2% scored better still, but on 18 closed trades that
+ * is too tight to impose as a default.
+ * Top 10 holders <= 30%: the only flag that survived a pool-clustered bootstrap on both metrics (mean -1.30pp
+ * [-2.48, -0.27], odds of a higher price -6.44pp [-13.24, -0.21]).
+ * TVL >= $25k: price impact scales with 1/TVL, and closed trades below 25k averaged -2.71%.
+ *
+ * Everything else is left open: there is no measurement here to justify a threshold, and a made-up one would
+ * read as a recommendation.
+ */
+export function defaultFilters(): Filters {
+  const f = emptyFilters();
+  f.atr.max = 5;
+  f.top10.max = 30;
+  f.tvl.min = 25_000;
+  return f;
 }
 
 /** A set range cannot judge a value the pool does not report, so those pools drop out rather than slip through. */
@@ -49,6 +71,7 @@ function inRange(value: number | null | undefined, r: Range): boolean {
 }
 
 export function matchesFilters(p: PoolRow, f: Filters): boolean {
+  if (!inRange(p.market?.atr_pct ?? null, f.atr)) return false;
   if (!inRange(p.market_cap, f.marketCap)) return false;
   if (!inRange(p.holders, f.holders)) return false;
   if (!inRange(p.security?.top10_pct ?? p.organic?.top_holders_pct ?? null, f.top10)) return false;

@@ -10,6 +10,7 @@ import {
   type Range,
   MAX_PRESETS,
   activeFilterCount,
+  defaultFilters,
   deletePreset,
   emptyFilters,
   loadPresets,
@@ -26,6 +27,7 @@ type Props = {
 };
 
 const NUM_FIELDS: { key: keyof Filters; label: string; hint?: string; suffix?: string }[] = [
+  { key: "atr", label: "ATR 30m", hint: "volatilitas, penentu IL", suffix: "%" },
   { key: "marketCap", label: "Market cap", suffix: "$" },
   { key: "holders", label: "Holders" },
   { key: "top10", label: "Top 10 holders", suffix: "%" },
@@ -79,6 +81,13 @@ export default function FilterPanel({ open, onClose, filters, onChange, shown, t
             </p>
           </div>
           <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => onChange(defaultFilters())}
+              className="rounded-full border border-line px-3 py-1.5 text-xs font-medium text-ink-2 transition-colors hover:border-accent/70 hover:text-ink"
+            >
+              Default LP
+            </button>
             {active > 0 && (
               <button
                 type="button"
@@ -209,8 +218,9 @@ export default function FilterPanel({ open, onClose, filters, onChange, shown, t
           </section>
 
           <p className="border-t border-line pt-3 text-[11px] leading-5 text-ink-3">
-            Pool yang tidak melaporkan sebuah nilai akan keluar dari hasil saat filter itu diisi, bukan lolos
-            diam-diam. Data konsentrasi holder dan LP berasal dari RugCheck, skor organik dari Jupiter, dan
+            Default LP diisi ATR &le; 5%, top 10 holders &le; 30%, dan TVL &ge; $25.000 — tiga ambang yang
+            punya dasar pengukuran di proyek ini. Sisanya sengaja dikosongkan. Pool yang tidak melaporkan sebuah
+            nilai akan keluar dari hasil saat filter itu diisi, bukan lolos diam-diam. Data konsentrasi holder dan LP berasal dari RugCheck, skor organik dari Jupiter, dan
             keduanya tidak tersedia untuk semua token.
           </p>
         </div>

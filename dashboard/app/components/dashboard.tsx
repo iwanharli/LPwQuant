@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
-import { type Filters, activeFilterCount, emptyFilters, matchesFilters } from "../lib/filters";
+import { type Filters, activeFilterCount, defaultFilters, emptyFilters, matchesFilters } from "../lib/filters";
 import { type SortKey, type Tier, rowTier } from "../lib/types";
 import { useLivePools } from "../lib/use-live-pools";
 import FilterPanel from "./filter-panel";
@@ -20,7 +20,7 @@ export default function Dashboard() {
   const [binStep, setBinStep] = useState(0);
   const [hideExcluded, setHideExcluded] = useState(true);
   const [tierFilter, setTierFilter] = useState<TierFilter>("all");
-  const [filters, setFilters] = useState<Filters>(emptyFilters);
+  const [filters, setFilters] = useState<Filters>(defaultFilters);
   const [filtersOpen, setFiltersOpen] = useState(false);
 
   const all = useMemo(() => [...pools.values()], [pools]);
