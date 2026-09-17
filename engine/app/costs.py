@@ -20,7 +20,14 @@ class CostModel:
     txs_close_per_position: int = 2  # remove liquidity & claim + close position
     position_rent_sol: float = 0.05740608  # SDK POSITION_FEE, refunded on close
     bin_array_rent_sol: float = 0.07143744  # SDK BIN_ARRAY_FEE, not refunded
-    new_bin_array_share: float = 0.0  # share of the range's bin arrays assumed uninitialized
+    # Share of the range's bin arrays assumed uninitialized when the on-chain count is unknown. Zero is not a
+    # convenience: of 44 pools with scanned depth and a live plan, every one needed 0 new arrays, narrow and wide
+    # ranges alike. Pools that clear the screener have volume, and their arrays around the active bin already
+    # exist. Charging one array anyway ($10.72 at SOL $150, non-refundable) would put 75 of 146 candidates over
+    # the 1.5% cost cap -- on a cost the data says does not occur. Two gaps remain: depth covers ~32% of pools,
+    # so this is validated on the busiest ones, and 3 of 63 scanned pools had ranges reaching past the +/-2
+    # arrays the ingestor scans (BINS_ARRAYS_EACH_SIDE), where new_bin_arrays returns None and lands here.
+    new_bin_array_share: float = 0.0
     impact_multiplier: float = 1.0  # price impact = swap value / pool TVL * multiplier
     max_impact: float = 0.05
     # Share of the base tokens held at close that we swap back to the quote token (see exit_cost). Closing a DLMM
