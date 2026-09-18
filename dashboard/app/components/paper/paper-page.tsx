@@ -716,8 +716,15 @@ function PositionsCard({
 }
 
 export default function PaperPage() {
-  const [profile, setProfile] = useState("moderat");
+  // Until the reader picks one, show the profile with the highest total PnL (derived, so it follows the leader).
+  const [picked, setProfile] = useState<string | null>(null);
+  const [leader, setLeader] = useState("moderat");
+  const profile = picked ?? leader;
   const { data, error } = usePaperData(profile);
+  const top = data?.profiles?.reduce((a, b) =>
+    b.equity_usd - b.start_equity_usd > a.equity_usd - a.start_equity_usd ? b : a,
+  )?.key;
+  if (!picked && top && top !== leader) setLeader(top);
   const s = data?.summary;
   const loadingProfile = !!s?.profile && s.profile.key !== profile;
   const totalPnl = s ? s.equity_usd - s.start_equity_usd : 0;
