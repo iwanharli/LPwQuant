@@ -129,7 +129,10 @@ export default function PoolTable({
   onSort: (key: SortKey) => void;
 }) {
   return (
-    <div className="max-h-[calc(100vh-18rem)] min-h-80 overflow-auto">
+    // No inner scrollbar: the table grows to its full height and the page scrolls instead, so the whole list is
+    // reachable with one scroll rather than two nested ones. Nothing forces the table wider than its container
+    // (no min-width anywhere), so this does not trade a vertical scrollbar for a horizontal one.
+    <div className="min-h-80">
       <table className="w-full border-separate border-spacing-0 text-sm">
         <thead>
           <tr>
@@ -141,7 +144,7 @@ export default function PoolTable({
                   scope="col"
                   title={c.title}
                   aria-sort={active ? (sortDesc ? "descending" : "ascending") : undefined}
-                  className={`sticky top-0 z-10 whitespace-nowrap border-b border-line bg-panel/95 px-2.5 py-3 text-[11px] font-semibold uppercase tracking-wider text-ink-3 backdrop-blur first:pl-4 last:pr-4 ${
+                  className={`sticky top-16 z-10 whitespace-nowrap border-b border-line bg-panel/95 px-2.5 py-3 text-[11px] font-semibold uppercase tracking-wider text-ink-3 backdrop-blur first:pl-4 last:pr-4 ${
                     c.align === "left" ? "text-left" : "text-right"
                   }`}
                 >

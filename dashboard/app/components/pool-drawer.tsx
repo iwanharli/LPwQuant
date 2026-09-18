@@ -23,7 +23,7 @@ import {
   usdCompact,
 } from "../lib/format";
 import { isActivePlan, type ActivePlan, type PoolRow } from "../lib/types";
-import { AlertIcon, CheckIcon, CloseIcon, CopyIcon, ExitIcon, ExternalIcon, ShieldIcon } from "./icons";
+import { AlertIcon, CandleIcon, CheckIcon, CloseIcon, CopyIcon, ExitIcon, ExternalLinkIcon, ShieldIcon } from "./icons";
 import { Delta, Meter, PlanBadge, RegimeBadge, StatusDot, TokenAvatar } from "./ui";
 
 function Section({ title, icon, children }: { title: string; icon?: ReactNode; children: ReactNode }) {
@@ -525,12 +525,26 @@ function DrawerContent({ row, onClose }: { row: PoolRow; onClose: () => void }) 
               {copied ? <CheckIcon width={12} height={12} /> : <CopyIcon width={12} height={12} />}
             </button>
           </div>
+          {/* Icon-only pair: both actions open a view of this pool, so they read as one group. Labelled for
+              screen readers and on hover, because an icon button with no text says nothing on its own. */}
           <Link
             href={`/pool/${row.address}`}
-            className="rounded-lg border border-accent/70 px-3 py-1 text-xs font-semibold text-ink transition-colors hover:bg-accent hover:text-bg"
+            aria-label="Buka grafik pool"
+            title="Buka grafik pool"
+            className="rounded-lg border border-line p-1.5 text-ink-2 transition-colors hover:border-accent/70 hover:text-ink"
           >
-            Buka grafik
+            <CandleIcon />
           </Link>
+          <a
+            href={`https://meteora.ag/dlmm/${row.address}`}
+            target="_blank"
+            rel="noreferrer"
+            aria-label="Buka pool di Meteora"
+            title="Buka pool di Meteora"
+            className="rounded-lg border border-brand-meteora/45 p-1.5 text-brand-meteora transition-colors hover:border-brand-meteora hover:bg-brand-meteora/10"
+          >
+            <ExternalLinkIcon />
+          </a>
           <button
             onClick={onClose}
             aria-label="Tutup detail"
@@ -634,16 +648,9 @@ function DrawerContent({ row, onClose }: { row: PoolRow; onClose: () => void }) 
         </Section>
       )}
 
-      <div className="mt-auto border-t border-line bg-bg/25 px-5 py-4">
-        <a
-          href={`https://meteora.ag/dlmm/${row.address}`}
-          target="_blank"
-          rel="noreferrer"
-          className="flex w-full items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2.5 text-sm font-semibold text-white shadow-[0_14px_32px_rgba(73,164,255,0.24)] transition-opacity hover:opacity-90"
-        >
-          Buka di Meteora <ExternalIcon />
-        </a>
-        <p className="mt-2 text-center text-[11px] text-ink-3">Heuristik, bukan saran finansial.</p>
+      {/* The Meteora link moved up beside the chart button; the disclaimer stays, it is not decoration. */}
+      <div className="mt-auto border-t border-line bg-bg/25 px-5 py-3">
+        <p className="text-center text-[11px] text-ink-3">Heuristik, bukan saran finansial.</p>
       </div>
     </div>
   );

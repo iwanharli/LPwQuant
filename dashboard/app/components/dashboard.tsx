@@ -84,7 +84,7 @@ export default function Dashboard() {
 
         <KpiStrip rows={all} />
 
-        <section className="max-w-full overflow-hidden rounded-2xl border border-line bg-panel/95 shadow-[0_18px_55px_rgba(0,0,0,0.24),inset_0_1px_0_rgba(255,255,255,0.04)]">
+        <section className="max-w-full overflow-x-clip rounded-2xl border border-line bg-panel/95 shadow-[0_18px_55px_rgba(0,0,0,0.24),inset_0_1px_0_rgba(255,255,255,0.04)]">
           <Toolbar
             tierFilter={tierFilter}
             onTierFilter={setTierFilter}

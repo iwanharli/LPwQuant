@@ -26,6 +26,11 @@
   --color-critical: #ef4444;
   --color-up: #35d07f;
   --color-down: #ff6b78;
+
+  /* Brand hue for the Meteora link, deliberately not --color-serious: that one means "serious risk"
+     and is what DataHealth turns when a source goes stale. A brand link wearing a status colour would
+     read as a warning and blunt the status palette everywhere else. */
+  --color-brand-meteora: #e8843c;
 }
 
 :root {
