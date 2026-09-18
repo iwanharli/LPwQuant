@@ -1,60 +1,16 @@
 "use client";
 
 import { useEffect, useState, type ReactNode } from "react";
-import { ENGINE_URL, fmtDateTime, fmtNum, fmtSignedPct, shortAddress, usd } from "../../lib/format";
-import { useConnectedWallet } from "../../lib/wallet";
+import { CLAIM_URL, ENGINE_URL, fmtDateTime, fmtNum, shortAddress, usd } from "../../lib/format";
+import { canSign, isWalletAddress, signAndSendAll, useConnectedWallet, useWalletOptions, watchAddress } from "../../lib/wallet";
 import TopBar from "../top-bar";
 import { StatusDot } from "../ui";
 import WalletButton from "../wallet-button";
 import DailyPnlChart, { type DailyPnl } from "./daily-pnl-chart";
+import PoolCard, { type Pool } from "./pool-card";
+import PositionFilters, { DEFAULT_FILTERS, applyFilters, statusCounts, type Filters } from "./position-filters";
 
 const REFRESH_MS = 60_000;
-
-type Position = {
-  address: string;
-  lower_bin: number;
-  upper_bin: number;
-  active_bin: number | null;
-  min_price: number;
-  max_price: number;
-  active_price: number | null;
-  out_of_range: boolean | null;
-  created_at: number | null;
-  value_usd: number;
-  value_sol: number;
-  amount_x: number;
-  amount_y: number;
-  unclaimed_fee_x: number;
-  unclaimed_fee_y: number;
-  unclaimed_fees_usd: number;
-  deposit_usd: number;
-  fees_usd: number;
-  pnl_usd: number;
-  pnl_pct: number;
-  pnl_sol: number;
-  pnl_sol_pct: number;
-};
-
-type Pool = {
-  address: string;
-  name: string;
-  token_x: string;
-  token_y: string;
-  token_x_icon: string | null;
-  token_y_icon: string | null;
-  bin_step: number;
-  base_fee: number;
-  value_usd: number;
-  value_sol: number;
-  unclaimed_fees_usd: number;
-  pnl_usd: number;
-  pnl_pct: number;
-  pnl_sol: number;
-  out_of_range: boolean;
-  open_positions: number;
-  fee_tvl_24h: number;
-  positions: Position[];
-};
 
 type Portfolio = {
   wallet: string;
@@ -82,13 +38,18 @@ function usePortfolio(wallet: string | undefined) {
   const [data, setData] = useState<Portfolio | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loadedFor, setLoadedFor] = useState<string | undefined>(undefined);
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     if (!wallet) return;
     let cancelled = false;
+    let first = true;
     const load = async () => {
       try {
-        const res = await fetch(`${ENGINE_URL}/api/portfolio?wallet=${wallet}`);
+        // After a claim the first load skips the engine's one-minute cache, so the fees drop right away.
+        const fresh = first && reloadKey > 0;
+        first = false;
+        const res = await fetch(`${ENGINE_URL}/api/portfolio?wallet=${wallet}${fresh ? "&fresh=true" : ""}`);
         const body = await res.json();
         if (!res.ok) throw new Error(body?.detail ?? `HTTP ${res.status}`);
         if (!cancelled) {
@@ -106,10 +67,105 @@ function usePortfolio(wallet: string | undefined) {
       cancelled = true;
       clearInterval(timer);
     };
-  }, [wallet]);
+  }, [wallet, reloadKey]);
 
   // A different wallet: do not show the previous one's numbers while the new one loads.
-  return { data: loadedFor === wallet ? data : null, error };
+  return { data: loadedFor === wallet ? data : null, error, reload: () => setReloadKey((k) => k + 1) };
+}
+
+type ClaimState =
+  | { phase: "idle" }
+  | { phase: "building" | "signing"; key: string }
+  | { phase: "done"; key: string; signatures: string[]; skipped: number }
+  | { phase: "error"; key: string; message: string };
+
+/** Claim flow: the ingestor builds and simulates unsigned transactions, the wallet shows them and the user signs. */
+function useClaim(owner: string | undefined, onDone: () => void) {
+  const [state, setState] = useState<ClaimState>({ phase: "idle" });
+  const claim = async (key: string, positions: { position: string; pool: string }[]) => {
+    if (!owner || positions.length === 0) return;
+    setState({ phase: "building", key });
+    try {
+      const res = await fetch(`${CLAIM_URL}/claim`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ owner, positions }),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body?.detail ?? `HTTP ${res.status}`);
+      const txs = (body.claims as { transactions: string[] }[]).flatMap((c) =>
+        c.transactions.map((t) => Uint8Array.from(atob(t), (ch) => ch.charCodeAt(0))),
+      );
+      if (txs.length === 0) {
+        setState({ phase: "done", key, signatures: [], skipped: body.skipped?.length ?? 0 });
+        return;
+      }
+      setState({ phase: "signing", key });
+      const signatures = await signAndSendAll(txs);
+      setState({ phase: "done", key, signatures, skipped: body.skipped?.length ?? 0 });
+      setTimeout(onDone, 4000); // give the chain and Meteora's indexer a moment before re-reading
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Gagal";
+      const rejected = /reject|cancel|denied|declined/i.test(message);
+      setState({ phase: "error", key, message: rejected ? "Dibatalkan di wallet" : message });
+    }
+  };
+  return { state, claim };
+}
+
+function ClaimButton({
+  label,
+  busyKey,
+  state,
+  disabled,
+  onClick,
+}: {
+  label: string;
+  busyKey: string;
+  state: ClaimState;
+  disabled: boolean;
+  onClick: () => void;
+}) {
+  const mine = state.phase !== "idle" && state.key === busyKey;
+  const busy = state.phase === "building" || state.phase === "signing";
+  const text = mine && state.phase === "building" ? "Menyiapkan…" : mine && state.phase === "signing" ? "Setujui di wallet…" : label;
+  return (
+    <button
+      type="button"
+      disabled={disabled || busy}
+      onClick={onClick}
+      className="rounded-lg border border-accent/40 bg-accent/10 px-3 py-1.5 text-xs font-medium text-accent transition-colors hover:bg-accent/20 disabled:cursor-not-allowed disabled:opacity-50"
+    >
+      {text}
+    </button>
+  );
+}
+
+function ClaimResult({ state }: { state: ClaimState }) {
+  if (state.phase === "done") {
+    return (
+      <p className="flex flex-wrap items-center gap-2 rounded-2xl border border-good/30 bg-good/10 px-4 py-3 text-sm text-ink-2 shadow-sm shadow-black/20">
+        <StatusDot severity="good" />
+        {state.signatures.length === 0
+          ? "Tidak ada fee untuk di-claim."
+          : `Fee di-claim lewat ${state.signatures.length} transaksi.`}
+        {state.signatures.map((sig) => (
+          <a key={sig} href={`https://solscan.io/tx/${sig}`} target="_blank" rel="noreferrer" className="font-mono text-xs text-accent hover:underline">
+            {shortAddress(sig)} ↗
+          </a>
+        ))}
+        {state.skipped > 0 && <span className="text-xs text-ink-3">{state.skipped} posisi dilewati (fee nol)</span>}
+      </p>
+    );
+  }
+  if (state.phase === "error") {
+    return (
+      <p className="flex items-center gap-2 rounded-2xl border border-critical/30 bg-critical/10 px-4 py-3 text-sm text-ink-2 shadow-sm shadow-black/20">
+        <StatusDot severity="critical" /> Claim gagal: {state.message}
+      </p>
+    );
+  }
+  return null;
 }
 
 const signedUsd = (v: number) => `${v >= 0 ? "+" : "−"}${usd.format(Math.abs(v))}`;
@@ -118,7 +174,7 @@ const tone = (v: number) => (v > 0 ? "text-up" : v < 0 ? "text-down" : "text-ink
 
 function Tile({ label, value, hint }: { label: ReactNode; value: ReactNode; hint: ReactNode }) {
   return (
-    <div className="relative min-w-0 overflow-hidden rounded-2xl border border-line bg-panel/90 px-4 py-3.5 shadow-[0_12px_32px_rgba(0,0,0,0.18),inset_0_1px_0_rgba(255,255,255,0.04)]">
+    <div className="relative min-w-0 overflow-hidden rounded-2xl border border-line bg-[#0e1217]/[0.97] backdrop-blur-sm px-4 py-3.5 shadow-[0_12px_32px_rgba(0,0,0,0.18),inset_0_1px_0_rgba(255,255,255,0.04)]">
       <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/14 to-transparent" />
       <div className="flex min-w-0 items-center gap-2 truncate text-xs font-medium text-ink-3">{label}</div>
       <div className="mt-2 text-2xl font-semibold tracking-tight tabular-nums text-ink">{value}</div>
@@ -129,7 +185,7 @@ function Tile({ label, value, hint }: { label: ReactNode; value: ReactNode; hint
 
 function Card({ title, right, children }: { title: string; right?: ReactNode; children: ReactNode }) {
   return (
-    <section className="overflow-hidden rounded-2xl border border-line bg-panel/90 shadow-[0_14px_42px_rgba(0,0,0,0.20),inset_0_1px_0_rgba(255,255,255,0.04)]">
+    <section className="overflow-hidden rounded-2xl border border-line bg-[#0e1217]/[0.97] backdrop-blur-sm shadow-[0_14px_42px_rgba(0,0,0,0.20),inset_0_1px_0_rgba(255,255,255,0.04)]">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line bg-raised/20 px-4 py-3">
         <h2 className="text-sm font-semibold text-ink">{title}</h2>
         {right}
@@ -139,167 +195,9 @@ function Card({ title, right, children }: { title: string; right?: ReactNode; ch
   );
 }
 
-function TokenPair({ pool }: { pool: Pool }) {
-  return (
-    <span className="flex shrink-0 -space-x-2">
-      {[pool.token_x_icon, pool.token_y_icon].map((src, i) =>
-        src ? (
-          // eslint-disable-next-line @next/next/no-img-element -- token icons come from many hosts
-          <img key={i} src={src} alt="" width={26} height={26} className="h-[26px] w-[26px] rounded-full border-2 border-panel bg-raised" />
-        ) : (
-          <span key={i} className="h-[26px] w-[26px] rounded-full border-2 border-panel bg-raised" />
-        ),
-      )}
-    </span>
-  );
-}
-
-/** Where the active bin sits inside the position's bins: the reader's first question about any LP position. */
-function RangeBar({ p }: { p: Position }) {
-  const span = Math.max(1, p.upper_bin - p.lower_bin);
-  const active = p.active_bin;
-  const below = active != null && active < p.lower_bin;
-  const above = active != null && active > p.upper_bin;
-  const pct = active == null ? null : Math.min(100, Math.max(0, ((active - p.lower_bin) / span) * 100));
-  const oor = below || above || p.out_of_range === true;
-  return (
-    <div className="min-w-44">
-      <div className="relative h-2 rounded-full bg-raised">
-        <div className={`absolute inset-y-0 left-0 right-0 rounded-full ${oor ? "bg-down/25" : "bg-accent/25"}`} />
-        {pct != null && (
-          <span
-            className={`absolute top-1/2 h-3.5 w-1 -translate-x-1/2 -translate-y-1/2 rounded-full ${oor ? "bg-down" : "bg-accent"}`}
-            style={{ left: `${pct}%` }}
-          />
-        )}
-      </div>
-      <div className="mt-1 flex justify-between text-[11px] tabular-nums text-ink-3">
-        <span>{fmtNum(p.min_price, p.min_price < 1 ? 8 : 4)}</span>
-        <span>{fmtNum(p.max_price, p.max_price < 1 ? 8 : 4)}</span>
-      </div>
-    </div>
-  );
-}
-
-function StatusChip({ p }: { p: Position }) {
-  const below = p.active_bin != null && p.active_bin < p.lower_bin;
-  const above = p.active_bin != null && p.active_bin > p.upper_bin;
-  const oor = below || above || p.out_of_range === true;
-  const label = !oor ? "In range" : below ? "Di bawah range" : above ? "Di atas range" : "Out of range";
-  const hint = !oor
-    ? "Harga di dalam range: posisi mengumpulkan fee"
-    : below
-      ? "Harga turun di bawah range: posisi penuh token, tidak mengumpulkan fee"
-      : "Harga naik di atas range: posisi penuh SOL/quote, tidak mengumpulkan fee";
-  return (
-    <span
-      title={hint}
-      className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-md border border-line bg-raised/70 px-2 py-0.5 text-xs font-medium text-ink"
-    >
-      <StatusDot severity={oor ? "critical" : "good"} />
-      {label}
-    </span>
-  );
-}
-
-function PoolCard({ pool }: { pool: Pool }) {
-  return (
-    <section className="overflow-hidden rounded-2xl border border-line bg-panel/90 shadow-[0_14px_42px_rgba(0,0,0,0.20),inset_0_1px_0_rgba(255,255,255,0.04)]">
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-line bg-raised/20 px-4 py-3">
-        <TokenPair pool={pool} />
-        <div className="min-w-0">
-          <div className="flex items-center gap-2 text-sm font-semibold text-ink">
-            {pool.name}
-            <span className="font-normal text-ink-3">bin step {pool.bin_step}</span>
-          </div>
-          <div className="text-xs text-ink-3">
-            {pool.open_positions} posisi · fee/TVL 24j {fmtNum(pool.fee_tvl_24h, 2)}%
-          </div>
-        </div>
-        <div className="ml-auto flex items-center gap-5 text-right tabular-nums">
-          <div>
-            <div className="text-[11px] uppercase tracking-wider text-ink-3">Nilai</div>
-            <div className="text-sm font-semibold text-ink">{usd.format(pool.value_usd)}</div>
-          </div>
-          <div>
-            <div className="text-[11px] uppercase tracking-wider text-ink-3">PnL</div>
-            <div className={`text-sm font-semibold ${tone(pool.pnl_usd)}`}>
-              {signedUsd(pool.pnl_usd)} <span className="text-xs font-normal">({fmtSignedPct(pool.pnl_pct, 1)})</span>
-            </div>
-          </div>
-          <a
-            href={`https://app.meteora.ag/dlmm/${pool.address}`}
-            target="_blank"
-            rel="noreferrer"
-            className="rounded-lg border border-brand-meteora/45 px-2.5 py-1.5 text-xs font-medium text-brand-meteora hover:bg-brand-meteora/10"
-          >
-            Meteora ↗
-          </a>
-        </div>
-      </div>
-      {pool.positions.length === 0 ? (
-        <p className="px-4 py-4 text-sm text-ink-3">Detail posisi belum tersedia dari Meteora.</p>
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[900px] text-sm tabular-nums">
-            <thead className="text-[11px] uppercase tracking-wider text-ink-3">
-              <tr className="border-b border-line">
-                <th className="px-4 py-2.5 text-left font-medium">Posisi</th>
-                <th className="px-3 py-2.5 text-right font-medium">Nilai</th>
-                <th className="px-3 py-2.5 text-left font-medium">Range harga</th>
-                <th className="px-3 py-2.5 text-left font-medium">Status</th>
-                <th className="px-3 py-2.5 text-right font-medium">Fee belum di-claim</th>
-                <th className="px-4 py-2.5 text-right font-medium">PnL</th>
-              </tr>
-            </thead>
-            <tbody>
-              {pool.positions.map((p) => (
-                <tr key={p.address} className="border-b border-line/70 last:border-b-0 hover:bg-raised/30">
-                  <td className="px-4 py-3 align-top">
-                    <div className="font-mono text-xs text-ink-2">{shortAddress(p.address)}</div>
-                    <div className="text-[11px] text-ink-3">
-                      {p.created_at ? `dibuka ${fmtDateTime(p.created_at)}` : ""}
-                    </div>
-                  </td>
-                  <td className="px-3 py-3 text-right align-top">
-                    <div className="font-medium text-ink">{usd.format(p.value_usd)}</div>
-                    <div className="text-[11px] text-ink-3">
-                      {fmtNum(p.amount_x, 2)} {pool.token_x} · {fmtNum(p.amount_y, 4)} {pool.token_y}
-                    </div>
-                  </td>
-                  <td className="px-3 py-3 align-top">
-                    <RangeBar p={p} />
-                  </td>
-                  <td className="px-3 py-3 align-top">
-                    <StatusChip p={p} />
-                  </td>
-                  <td className="px-3 py-3 text-right align-top">
-                    <div className="font-medium text-ink">{usd.format(p.unclaimed_fees_usd)}</div>
-                    <div className="text-[11px] text-ink-3">
-                      {fmtNum(p.unclaimed_fee_x, 2)} {pool.token_x} · {fmtNum(p.unclaimed_fee_y, 4)} {pool.token_y}
-                    </div>
-                  </td>
-                  <td className="px-4 py-3 text-right align-top">
-                    <div className={`font-medium ${tone(p.pnl_usd)}`}>
-                      {signedUsd(p.pnl_usd)} ({fmtSignedPct(p.pnl_pct, 1)})
-                    </div>
-                    <div className={`text-[11px] ${tone(p.pnl_sol)}`}>
-                      {signedSol(p.pnl_sol)} ({fmtSignedPct(p.pnl_sol_pct, 1)})
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </section>
-  );
-}
-
 function EmptyState() {
   return (
-    <div className="grid place-items-center rounded-2xl border border-line bg-panel/80 px-6 py-16 text-center shadow-[0_14px_42px_rgba(0,0,0,0.20)]">
+    <div className="grid place-items-center rounded-2xl border border-line bg-[#0e1217]/[0.97] backdrop-blur-sm px-6 py-16 text-center shadow-[0_14px_42px_rgba(0,0,0,0.20)]">
       <div className="max-w-md">
         <div className="text-lg font-semibold text-ink">Hubungkan wallet untuk melihat posisi LP</div>
         <p className="mt-2 text-sm leading-6 text-ink-3">
@@ -316,7 +214,22 @@ function EmptyState() {
 
 export default function PortfolioPage() {
   const connected = useConnectedWallet();
-  const { data, error } = usePortfolio(connected?.address);
+  // /portfolio?wallet=<address> opens a wallet without an extension (a link from another device, say). It never
+  // replaces a wallet connected through an extension.
+  useEffect(() => {
+    const param = new URLSearchParams(window.location.search).get("wallet");
+    if (param && isWalletAddress(param) && !connected?.wallet && connected?.address !== param) watchAddress(param);
+  }, [connected]);
+  const { data, error, reload } = usePortfolio(connected?.address);
+  const walletOptions = useWalletOptions();
+  const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
+  const visiblePools = applyFilters(data?.pools ?? [], filters);
+  const visibleCount = visiblePools.reduce((n, pool) => n + pool.positions.length, 0);
+  const signer = canSign(connected, walletOptions);
+  const { state: claimState, claim } = useClaim(connected?.address, reload);
+  const allPositions = (data?.pools ?? []).flatMap((pool) =>
+    pool.positions.filter((p) => p.unclaimed_fees_usd > 0).map((p) => ({ position: p.address, pool: pool.address })),
+  );
   const s = data?.summary;
   const today = data?.daily[data.daily.length - 1];
   const lifetime = s ? s.open_pnl_usd + s.closed_pnl_usd : 0;
@@ -356,6 +269,8 @@ export default function PortfolioPage() {
               </p>
             )}
 
+            <ClaimResult state={claimState} />
+
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
               <Tile
                 label="Nilai posisi"
@@ -375,7 +290,18 @@ export default function PortfolioPage() {
               <Tile
                 label="Fee belum di-claim"
                 value={s ? usd.format(s.unclaimed_fees_usd) : "–"}
-                hint="Sudah termasuk di PnL"
+                hint={
+                  <span className="flex items-center gap-2">
+                    <ClaimButton
+                      label={`Claim semua (${allPositions.length})`}
+                      busyKey="all"
+                      state={claimState}
+                      disabled={!signer || allPositions.length === 0}
+                      onClick={() => void claim("all", allPositions.slice(0, 20))}
+                    />
+                    <span className="truncate">{signer ? "Sudah termasuk di PnL" : "Connect lewat extension untuk claim"}</span>
+                  </span>
+                }
               />
               <Tile
                 label="PnL sepanjang waktu"
@@ -409,11 +335,41 @@ export default function PortfolioPage() {
             </Card>
 
             {data && data.pools.length === 0 && (
-              <p className="rounded-2xl border border-line bg-panel/80 px-4 py-8 text-center text-sm text-ink-3">
+              <p className="rounded-2xl border border-line bg-[#0e1217]/[0.97] backdrop-blur-sm px-4 py-8 text-center text-sm text-ink-3">
                 Tidak ada posisi DLMM terbuka di wallet ini.
               </p>
             )}
-            {data?.pools.map((pool) => <PoolCard key={pool.address} pool={pool} />)}
+            {data && data.pools.length > 0 && (
+              <PositionFilters
+                filters={filters}
+                onChange={setFilters}
+                counts={statusCounts(data.pools)}
+                shown={visibleCount}
+              />
+            )}
+            {data && data.pools.length > 0 && visiblePools.length === 0 && (
+              <p className="rounded-2xl border border-line bg-[#0e1217]/[0.97] px-4 py-8 text-center text-sm text-ink-3">
+                Tidak ada posisi yang cocok dengan filter.{" "}
+                <button type="button" onClick={() => setFilters(DEFAULT_FILTERS)} className="text-accent hover:underline">
+                  Reset filter
+                </button>
+              </p>
+            )}
+            {visiblePools.map((pool) => (
+              <PoolCard
+                key={pool.address}
+                pool={pool}
+                renderClaim={(p) => (
+                  <ClaimButton
+                    label={`Claim fee ${usd.format(p.unclaimed_fees_usd)}`}
+                    busyKey={p.address}
+                    state={claimState}
+                    disabled={!signer || p.unclaimed_fees_usd <= 0}
+                    onClick={() => void claim(p.address, [{ position: p.address, pool: pool.address }])}
+                  />
+                )}
+              />
+            ))}
           </>
         )}
       </main>

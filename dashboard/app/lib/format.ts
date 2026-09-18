@@ -1,4 +1,6 @@
 export const ENGINE_URL = process.env.NEXT_PUBLIC_ENGINE_URL ?? "http://127.0.0.1:8000";
+/** Builds unsigned claim-fee transactions (ingestor/src/claim-server.ts); never signs anything. */
+export const CLAIM_URL = process.env.NEXT_PUBLIC_CLAIM_URL ?? "http://127.0.0.1:8010";
 export const TIMEZONE = "Asia/Jakarta"; // GMT+7
 
 export const usdCompact = new Intl.NumberFormat("en-US", {

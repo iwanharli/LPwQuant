@@ -60,6 +60,9 @@ export const config = {
   binsRefreshMs: Math.max(num("BINS_REFRESH_SEC", 300), 60) * 1000,
   binsArraysEachSide: Math.max(Math.round(num("BINS_ARRAYS_EACH_SIDE", 2)), 1),
   rpcProviders: rpcProviders(),
+  // Builds unsigned claim-fee transactions for the dashboard (claim-server.ts); bound to 127.0.0.1.
+  claimPort: num("CLAIM_PORT", 8010),
+  dashboardOrigins: (process.env.DASHBOARD_ORIGIN || "http://localhost:3000,http://127.0.0.1:3000").split(","),
   wsUrl: process.env.WS_URL || (heliusKey ? `wss://mainnet.helius-rpc.com/?api-key=${heliusKey}` : ""),
   wsProviderName: process.env.WS_URL ? "custom" : "helius",
   gmgnEnabled: process.env.GMGN_ENABLED !== "false",

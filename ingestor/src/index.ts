@@ -6,6 +6,7 @@ import { BinDepthFetcher } from "./bins";
 import { JupiterFetcher } from "./jupiter";
 import { PumpFetcher } from "./pump";
 import { usage } from "./rpc";
+import { startClaimServer } from "./claim-server";
 import { GmgnFetcher } from "./gmgn";
 import { CandleFetcher, FlowFetcher } from "./market";
 import { SecurityFetcher } from "./security";
@@ -44,6 +45,7 @@ async function onTicks(ticks: PriceTick[]): Promise<void> {
 
 async function main(): Promise<void> {
   await applySchema();
+  const claimServer = config.rpcProviders.length > 0 ? startClaimServer() : null;
   const security = new SecurityFetcher();
   await security.load();
   const organic = new JupiterFetcher();
@@ -126,6 +128,7 @@ async function main(): Promise<void> {
     candles.stop();
     gmgn?.stop();
     await watcher?.close();
+    claimServer?.close();
     await flushUsage().catch((err) => console.error("[usage] final flush failed", err));
     await Promise.allSettled([pg.end(), redis.quit()]);
     process.exit(0);

@@ -28,7 +28,8 @@ export default function DailyPnlChart({ days }: { days: DailyPnl[] }) {
       },
       grid: { vertLines: { visible: false }, horzLines: { color: "rgba(38,45,56,0.6)" } },
       rightPriceScale: { borderVisible: false },
-      timeScale: { borderVisible: false },
+      // Fixed bar width: fitting one or two days to the full width draws a single slab, not a bar.
+      timeScale: { borderVisible: false, barSpacing: 28, minBarSpacing: 6, fixLeftEdge: false, rightOffset: 2 },
       handleScroll: false,
       handleScale: false,
     });
@@ -42,7 +43,8 @@ export default function DailyPnlChart({ days }: { days: DailyPnl[] }) {
         return { time: d.day as Time, value: d.pnl_usd, color: d.partial ? `${color}66` : color };
       }),
     );
-    chart.timeScale().fitContent();
+    if (days.length > 30) chart.timeScale().fitContent();
+    else chart.timeScale().scrollToRealTime();
     return () => chart.remove();
   }, [days]);
 

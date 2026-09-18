@@ -117,3 +117,59 @@ export async function disconnectWallet() {
 }
 
 export const isWalletAddress = (value: string) => /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(value.trim());
+
+type SignAndSendFeature = {
+  signAndSendTransaction: (
+    ...inputs: { account: WalletAccount; chain: string; transaction: Uint8Array }[]
+  ) => Promise<{ signature: Uint8Array }[]>;
+};
+
+const B58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+function base58(bytes: Uint8Array): string {
+  const digits = [0];
+  for (const byte of bytes) {
+    let carry = byte;
+    for (let i = 0; i < digits.length; i++) {
+      carry += digits[i] << 8;
+      digits[i] = carry % 58;
+      carry = (carry / 58) | 0;
+    }
+    while (carry) {
+      digits.push(carry % 58);
+      carry = (carry / 58) | 0;
+    }
+  }
+  let out = "";
+  for (const byte of bytes) {
+    if (byte !== 0) break;
+    out += "1";
+  }
+  return out + digits.reverse().map((d) => B58[d]).join("");
+}
+
+/** Whether the remembered address came from an installed wallet that can sign (a pasted address cannot). */
+export function canSign(current: { wallet: string | null } | null, available: WalletOption[]): boolean {
+  const option = available.find((o) => o.name === current?.wallet);
+  return !!option && "solana:signAndSendTransaction" in option.wallet.features;
+}
+
+/**
+ * Hands unsigned transactions to the wallet, which shows what they do and asks the user to approve. Returns the
+ * signatures (base58). Re-connects first to get the account object, and refuses if the wallet is now on a
+ * different account than the one the page shows, so a claim can never be signed by the wrong wallet.
+ */
+export async function signAndSendAll(transactions: Uint8Array[]): Promise<string[]> {
+  const current = readStored();
+  const option = options.find((o) => o.name === current?.wallet);
+  if (!current || !option) throw new Error("Wallet tidak terhubung lewat extension");
+  const connect = option.wallet.features["standard:connect"] as ConnectFeature;
+  const { accounts } = await connect.connect();
+  const account = accounts.find((a) => a.address === current.address);
+  if (!account) throw new Error("Akun aktif di wallet berbeda dengan yang dipantau");
+  const feature = option.wallet.features["solana:signAndSendTransaction"] as SignAndSendFeature | undefined;
+  if (!feature) throw new Error(`${option.name} tidak mendukung pengiriman transaksi`);
+  const results = await feature.signAndSendTransaction(
+    ...transactions.map((transaction) => ({ account, chain: "solana:mainnet", transaction })),
+  );
+  return results.map((r) => base58(r.signature));
+}
