@@ -12,6 +12,7 @@ from . import config
 from .backtest import default_params, run_backtest
 from .charts import MAX_HOURS, load_candles, pool_paper_positions, profile_decision
 from .freshness import check_freshness
+from . import portfolio
 from .service import Engine
 
 _tz = ZoneInfo(config.TIMEZONE)
@@ -77,6 +78,26 @@ async def pool_paper(address: str) -> dict:
     if engine.db is None:
         raise HTTPException(status_code=503, detail="engine not ready")
     return {"positions": await pool_paper_positions(engine.db, address)}
+
+
+@app.get("/api/portfolio")
+async def get_portfolio(wallet: str, fresh: bool = False, days: int = Query(30, ge=1, le=180)) -> dict:
+    """Read-only LP portfolio of a public wallet address, plus the daily profit from our own snapshots. Looking a
+    wallet up registers it for snapshots, so the daily history starts from the first visit."""
+    if engine.db is None:
+        raise HTTPException(status_code=503, detail="engine not ready")
+    if not portfolio.valid_wallet(wallet):
+        raise HTTPException(status_code=400, detail="alamat wallet tidak valid")
+    try:
+        data = await portfolio.fetch_portfolio(engine.db, wallet, fresh=fresh)
+    except Exception as err:
+        raise HTTPException(status_code=502, detail=f"Meteora API gagal: {err}") from err
+    await portfolio.add_wallet(engine.db, wallet)
+    hist = await portfolio.history(engine.db, wallet, days)
+    if not hist["series"]:
+        await portfolio.snapshot(engine.db, data)  # first visit: start the history now, not in 15 minutes
+        hist = await portfolio.history(engine.db, wallet, days)
+    return {**data, **hist}
 
 
 @app.get("/api/usage")

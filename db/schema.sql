@@ -215,3 +215,23 @@ create index if not exists alerts_sent_ts on alerts_sent (ts desc);
 -- TVL the stored fee rate was measured against (engine/app/paper.py Position.last_tvl), so a restart keeps
 -- accruing instead of skipping a cycle to re-seed it.
 alter table paper_positions add column if not exists last_tvl double precision;
+
+-- The user's own LP portfolio (engine/app/portfolio.py): public wallet addresses only, read-only.
+create table if not exists portfolio_wallets (
+  address   text primary key,
+  added_at  timestamptz not null default now()
+);
+create table if not exists portfolio_snapshots (
+  wallet              text not null,
+  ts                  timestamptz not null,
+  value_usd           double precision not null,
+  value_sol           double precision not null,
+  deposit_usd         double precision not null,
+  unclaimed_fees_usd  double precision not null,
+  open_pnl_usd        double precision not null,
+  open_pnl_sol        double precision not null,
+  closed_pnl_usd      double precision not null,
+  closed_pnl_sol      double precision not null,
+  positions           integer not null,
+  primary key (wallet, ts)
+);

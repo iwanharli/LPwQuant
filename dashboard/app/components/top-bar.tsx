@@ -4,10 +4,12 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ConnectionStatus } from "../lib/types";
 import DataHealth from "./data-health";
+import WalletButton from "./wallet-button";
 
 const NAV = [
   { href: "/", label: "Screener" },
   { href: "/paper", label: "Paper trading" },
+  { href: "/portfolio", label: "Portofolio LP" },
   { href: "/rpc", label: "Pemakaian API" },
 ];
 
@@ -75,8 +77,9 @@ export default function TopBar({
         {/* Two chips, not four: data freshness (click for per-source detail) and the socket state. The old
             "Update terakhir" line repeated the timestamp already inside the freshness panel and only appeared on
             2xl screens, and a wall clock says nothing about this system -- it now rides along as a tooltip. */}
-        <div className="ml-auto flex items-center text-xs">
+        <div className="ml-auto flex items-center gap-2 text-xs">
           <DataHealth status={status} lastMessageAt={lastMessageAt} />
+          <WalletButton />
         </div>
       </div>
     </header>
