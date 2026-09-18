@@ -125,3 +125,29 @@ def test_existing_rows_from_before_the_marker_count_as_seeded(monkeypatch):
     a = _alerter(db, monkeypatch)
     asyncio.run(a.on_refresh({"PoolAddr": ROW}))
     assert len(db.posted) == 1                  # treated as already seeded, so this is a real alert
+
+
+def test_stale_alert_fires_on_transitions_only(monkeypatch):
+    import asyncio
+
+    db = FakeDb()
+    a = _alerter(db, monkeypatch)
+    a.kinds = ("stale",)
+    reports = iter([
+        {"stale": [], "items": []},
+        {"stale": ["Snapshot pool (Meteora)"], "items": [{"label": "Snapshot pool (Meteora)", "age_sec": 900}]},
+        {"stale": ["Snapshot pool (Meteora)"], "items": [{"label": "Snapshot pool (Meteora)", "age_sec": 1200}]},
+        {"stale": [], "items": []},
+    ])
+
+    async def fake_check(_db, _now):
+        return next(reports)
+
+    import app.freshness as freshness
+    monkeypatch.setattr(freshness, "check_freshness", fake_check)
+    step = alerts.FRESHNESS_EVERY_MS
+    for i in range(4):
+        asyncio.run(a.check_freshness((i + 1) * step))
+    assert len(db.posted) == 2  # went stale once, recovered once; staying stale is not re-sent
+    assert "Data basi" in db.posted[0] and "15 mnt" in db.posted[0]
+    assert "Data pulih" in db.posted[1]

@@ -39,12 +39,23 @@ def cluster_by_hour(trades: Sequence[Trade]) -> dict[int, list[float]]:
     return dict(clusters)
 
 
+def cluster_by_pool(trades: Sequence[Trade]) -> dict[str, list[float]]:
+    """Repeated entries into one pool share its fate (paper trading entered ELON-SOL five times and lost all five),
+    so they are one observation more than five."""
+    clusters: defaultdict[str, list[float]] = defaultdict(list)
+    for t in trades:
+        clusters[t.get("address") or "?"].append(t["return_pct"])
+    return dict(clusters)
+
+
 def _quantile(sorted_values: Sequence[float], q: float) -> float:
     return sorted_values[min(len(sorted_values) - 1, max(0, math.floor(q * len(sorted_values))))]
 
 
-def bootstrap_mean_ci(trades: Sequence[Trade], n_boot: int = 2000, alpha: float = 0.05, seed: int = 7) -> dict[str, Any]:
-    clusters = list(cluster_by_hour(trades).values())
+def bootstrap_mean_ci(
+    trades: Sequence[Trade], n_boot: int = 2000, alpha: float = 0.05, seed: int = 7, by: str = "hour"
+) -> dict[str, Any]:
+    clusters = list((cluster_by_pool(trades) if by == "pool" else cluster_by_hour(trades)).values())
     mean = _mean(trades)
     if len(clusters) < 2:
         return {"mean": mean, "low": None, "high": None, "clusters": len(clusters)}
@@ -63,6 +74,23 @@ def bootstrap_mean_ci(trades: Sequence[Trade], n_boot: int = 2000, alpha: float 
         "low": _quantile(means, alpha / 2),
         "high": _quantile(means, 1 - alpha / 2),
         "clusters": len(clusters),
+    }
+
+
+def conservative_mean_ci(trades: Sequence[Trade], **kwargs: Any) -> dict[str, Any]:
+    """The wider of the entry-hour and the pool clustered intervals. Trades in one hour move together (a
+    market-wide dump) and so do repeated trades in one pool; each clustering catches one and misses the other, so
+    a verdict only counts when it survives both."""
+    by_hour = bootstrap_mean_ci(trades, by="hour", **kwargs)
+    by_pool = bootstrap_mean_ci(trades, by="pool", **kwargs)
+    lows = [c["low"] for c in (by_hour, by_pool) if c["low"] is not None]
+    highs = [c["high"] for c in (by_hour, by_pool) if c["high"] is not None]
+    return {
+        "mean": by_hour["mean"],
+        "low": min(lows) if len(lows) == 2 else None,
+        "high": max(highs) if len(highs) == 2 else None,
+        "hour_clusters": by_hour["clusters"],
+        "pool_clusters": by_pool["clusters"],
     }
 
 

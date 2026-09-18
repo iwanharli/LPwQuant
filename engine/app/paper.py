@@ -27,7 +27,7 @@ from .costs import BINS_PER_BIN_ARRAY, CostModel, entry_costs, exit_cost, resize
 from .depth import realization_factor
 from .scoring import effective_tvl
 from .recommend import DEFAULT_MIN_HOLD_HOURS, FEE_RATE_AVG_HOURS, MIN_BREAKOUT_DISTANCE_PCT, cost_gate_ok
-from .validation import bootstrap_mean_ci
+from .validation import conservative_mean_ci
 
 log = logging.getLogger("paper")
 
@@ -92,6 +92,8 @@ class PaperConfig:
     max_stop_loss_pct: float = 10.0
     # Only enter pools whose 30m ATR is at or below this (None = any volatility).
     max_atr_pct: float | None = None
+    # Only enter pools whose price keeps turning back: reversal rate over 24h at or above this (None = any).
+    min_reversal_rate: float | None = None
     # Which plan the profile trades: "base" (two-sided, as the engine recommends) or "single" (quote only).
     plan_variant: str = "base"
 
@@ -199,6 +201,29 @@ def sol_usd_from_pools(pools: Iterable[dict[str, Any]]) -> float | None:
     return None
 
 
+# Pool fees per hour as a fraction of TVL above which a reading is treated as broken data, not income. Real
+# spikes are large -- AAVE-USDC hit 32%/h during a 12.6% flash crash -- so the ceiling sits well above that, and
+# far below readings from a drained pool (CHIP-USDC implied roughly 124,000%/h).
+MAX_FEE_RATE_PER_HOUR = 0.5
+_implausible_rate_logged: set[int] = set()
+
+
+async def close_retired_positions(db, active_profiles: tuple[str, ...]) -> int:
+    """Close open positions of profiles no longer in PAPER_PROFILES. Their trader never starts again, so nothing
+    would ever mark them or close them. The engine already marked them to market on their last update, so the
+    close keeps those values and sets exit_ts to that update rather than to now."""
+    rows = await db.fetch(
+        """update paper_positions
+              set status = 'closed', exit_ts = last_update_ts, exit_price = last_price, exit_reason = 'profile_retired'
+            where status = 'open' and not (profile = any($1::text[]))
+        returning id, profile, name""",
+        list(active_profiles),
+    )
+    for r in rows:
+        log.warning("paper: closed #%s %s of retired profile %s", r["id"], r["name"], r["profile"])
+    return len(rows)
+
+
 def pool_fee_rate(pool: dict[str, Any]) -> float:
     """Pool fees over the last hour as a fraction of TVL, per hour, against the floored TVL (app.scoring)."""
     tvl = effective_tvl(pool)
@@ -222,10 +247,15 @@ def accrue(
     dt_h = max(0.0, (now_ms - pos.last_ts) / HOUR_MS)
     share_tvl = pos.last_tvl  # the TVL `last_rate` was measured against, never the current one
     if share_tvl <= 0:
-        # Restored from the database, where last_tvl is not stored. Seeding it from the current snapshot and
+        # Restored from a row written before last_tvl was stored. Seeding it from the current snapshot and
         # skipping this one cycle costs a minute of fees; pairing the stored rate with today's TVL would not.
         pos.last_tvl = tvl
-    if dt_h > 0 and pos.last_rate > 0 and share_tvl > 0 and pos.lp.in_range(pos.last_price):
+    if pos.last_rate > MAX_FEE_RATE_PER_HOUR:
+        if pos.id not in _implausible_rate_logged:
+            _implausible_rate_logged.add(pos.id)
+            log.warning("paper: #%s %s fee rate %.0f%%/h of TVL is implausible, not accruing it",
+                        pos.id, pos.name, pos.last_rate * 100)
+    elif dt_h > 0 and pos.last_rate > 0 and share_tvl > 0 and pos.lp.in_range(pos.last_price):
         realization = realization_factor(pos.lp.a + pos.lp.b + 1)
         pos.fees_y += pos.value_y * pos.last_rate * dt_h * share_tvl / (share_tvl + pos.capital_usd) * realization
     price = pool["price"]
@@ -289,10 +319,17 @@ def profile_plan(
         atr = (row.get("market") or {}).get("atr_pct")
         if atr is None or atr > cfg.max_atr_pct:
             return None
+    if cfg.min_reversal_rate is not None:
+        rev = (row.get("market") or {}).get("reversal_rate")
+        if rev is None or rev < cfg.min_reversal_rate:
+            return None
     base_size = plan.get("size_usd") or 0.0
     size = equity_usd * plan["size_pct"] / 100 if equity_usd and equity_usd > 0 and plan.get("size_pct") else base_size
     size *= cfg.size_mult
     size = max(size, cfg.position_floor_usd)
+    # Never size above the profile's starting capital, whatever equity reads. Equity is derived from marked-to-
+    # market fees, so one bad input (CHIP-USDC's $3.4M of phantom fees) once sized positions at $169k.
+    size = min(size, cfg.start_equity_usd)
     tvl = row.get("tvl") or 0.0
     if tvl > 0:
         size = min(size, tvl * cfg.max_tvl_share)
@@ -390,8 +427,11 @@ def verdict(stats: dict[str, Any], min_trades: int = MIN_TRADES_FOR_VERDICT) -> 
 
 def _trade_stats(trades: list[dict[str, Any]]) -> dict[str, Any]:
     stats = summarize(trades)
-    ci = bootstrap_mean_ci(trades) if trades else {"low": None, "high": None}
+    ci = conservative_mean_ci(trades) if trades else {"low": None, "high": None}
     stats["ci_low"], stats["ci_high"] = ci["low"], ci["high"]
+    # How many independent pools stand behind the trade count: profiles re-enter the same pool, so 50 trades can
+    # be far fewer than 50 observations. The interval above already clusters by pool; this makes it visible.
+    stats["pools"] = len({t.get("address") for t in trades})
     if trades:
         stats["mean_cost_pct"] = sum(t["cost_pct"] for t in trades) / len(trades)
         stats["mean_gross_return_pct"] = sum(t["gross_return_pct"] for t in trades) / len(trades)
@@ -427,6 +467,7 @@ class PaperTrader:
                     entry_fee_rate=r["entry_fee_rate"], exit_rules=rules, value_y=r["value_y"],
                     fees_y=r["fees_y"], last_ts=_ms(r["last_update_ts"]), last_price=r["last_price"],
                     last_rate=r["entry_fee_rate"], out_of_range_since=_ms(r["out_of_range_since"]),
+                    last_tvl=r["last_tvl"] or 0.0,
                     positions=r["positions"], cost_entry_y=r["cost_entry_y"], cost_exit_y=r["cost_exit_y"],
                     rent_sol=r["rent_sol"],
                 )
@@ -578,13 +619,13 @@ class PaperTrader:
             """
             update paper_positions set value_y = $2, fees_y = $3, last_price = $4, last_update_ts = $5,
                 out_of_range_since = $6, pnl_pct = $7, fee_pct = $8, il_pct = $9, cost_exit_y = $10,
-                cost_pct = $11, gross_pnl_pct = $12
+                cost_pct = $11, gross_pnl_pct = $12, last_tvl = $13
             where id = $1
             """,
             [
                 (p.id, p.value_y, p.fees_y, p.last_price, _dt(now_ms),
                  _dt(p.out_of_range_since) if p.out_of_range_since else None, p.pnl_pct(), p.fee_pct(), p.il_pct(),
-                 p.cost_exit_y, p.cost_pct(), p.gross_pnl_pct())
+                 p.cost_exit_y, p.cost_pct(), p.gross_pnl_pct(), p.last_tvl)
                 for p in self.open.values()
             ],
         )
@@ -642,6 +683,7 @@ class PaperTrader:
                 "max_drawdown_pct": c.max_drawdown_pct,
                 "position_floor_usd": c.position_floor_usd,
                 "max_atr_pct": c.max_atr_pct,
+                "min_reversal_rate": c.min_reversal_rate,
                 "plan_variant": c.plan_variant,
             },
         }
@@ -673,14 +715,14 @@ class PaperTrader:
 
     async def summary(self) -> dict[str, Any]:
         rows = await self.db.fetch(
-            """select tier, strategy, exit_reason, pnl_pct, fee_pct, il_pct, cost_pct,
+            """select address, tier, strategy, exit_reason, pnl_pct, fee_pct, il_pct, cost_pct,
                       coalesce(gross_pnl_pct, pnl_pct) as gross_pnl_pct, capital_usd, entry_ts, exit_ts
                from paper_positions where status = 'closed' and profile = $1""",
             self.cfg.profile,
         )
         trades = [
             {
-                "tier": r["tier"], "strategy": r["strategy"], "exit_reason": r["exit_reason"],
+                "address": r["address"], "tier": r["tier"], "strategy": r["strategy"], "exit_reason": r["exit_reason"],
                 "return_pct": r["pnl_pct"], "fee_pct": r["fee_pct"], "il_vs_hodl_pct": r["il_pct"],
                 "cost_pct": r["cost_pct"], "gross_return_pct": r["gross_pnl_pct"],
                 "cost_usd": r["capital_usd"] * r["cost_pct"] / 100,

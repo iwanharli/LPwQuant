@@ -89,3 +89,14 @@ def test_flow_features_sell_pressure():
     quiet = {"ts": 1, "windows": {"h1": {"buys": 2, "sells": 10, "buyers": 1, "sellers": 5}}}
     assert flow_features(quiet)["sell_pressure"] is False
     assert flow_features(None) is None
+
+
+def test_reversal_rate_separates_trends_from_oscillation():
+    from app.indicators import reversal_rate
+
+    zigzag = [100 + (1 if i % 2 else -1) for i in range(48)]          # turns back every candle
+    trend = [100 * 1.01 ** i for i in range(48)]                       # never turns back
+    assert reversal_rate(zigzag) == 1.0
+    assert reversal_rate(trend) == 0.0
+    assert reversal_rate([100.0] * 48) is None                         # flat: nothing to measure
+    assert reversal_rate(zigzag[:8]) is None                           # too few moves

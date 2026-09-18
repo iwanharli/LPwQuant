@@ -529,7 +529,10 @@ function ProfileCompareCard({
               </tr>
             </thead>
             <tbody>
-              {profiles.map((p) => {
+              {/* Highest total PnL first: the same equity minus starting capital shown in the PnL column. */}
+              {[...profiles]
+                .sort((a, b) => b.equity_usd - b.start_equity_usd - (a.equity_usd - a.start_equity_usd))
+                .map((p) => {
                 const total = p.equity_usd - p.start_equity_usd;
                 const pct = p.start_equity_usd > 0 ? (total / p.start_equity_usd) * 100 : 0;
                 const active = p.key === selected;
@@ -635,7 +638,10 @@ function ProfileTabs({
         <p className="text-xs text-ink-3">Ringkasan, hasil trading dan posisi di bawah ini hanya untuk profil yang dipilih.</p>
       </div>
       <div role="tablist" aria-label="Pilih profil" className="flex rounded-lg border border-line bg-bg/80 p-1 shadow-inner shadow-black/20">
-        {(profiles ?? []).map((p) => {
+        {/* Same order as the comparison table and the equity cards: highest total PnL first. */}
+        {[...(profiles ?? [])]
+          .sort((a, b) => b.equity_usd - b.start_equity_usd - (a.equity_usd - a.start_equity_usd))
+          .map((p) => {
           const active = p.key === selected;
           return (
             <button

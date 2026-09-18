@@ -8,7 +8,6 @@ import DataHealth from "./data-health";
 const NAV = [
   { href: "/", label: "Screener" },
   { href: "/paper", label: "Paper trading" },
-  { href: "/momentum", label: "Bot swap" },
   { href: "/rpc", label: "Pemakaian RPC" },
 ];
 

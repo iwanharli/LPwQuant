@@ -15,7 +15,7 @@ from . import config
 from .alerts import Alerter
 from .indicators import Candle, compute_indicators, flow_features, merge_market
 from .metrics import PriceHistory
-from .paper import PaperTrader, sol_usd_from_pools
+from .paper import PaperTrader, sol_usd_from_pools, close_retired_positions
 from .depth import Depth, depth_per_bin_y, fee_for_position_pct_day, new_bin_arrays, window_bins
 from .backtest import LpPosition
 from .costs import fixed_cost_usd, round_trip_cost_pct
@@ -107,6 +107,8 @@ class Engine:
         self.alerter = Alerter(self.db)
         if self.alerter.enabled:
             log.info("telegram alerts on for: %s", ", ".join(self.alerter.kinds))
+        if config.PAPER_ENABLED:
+            await close_retired_positions(self.db, config.PAPER_PROFILES)
         for profile in PROFILES:
             if profile.key not in config.PAPER_PROFILES:
                 continue
@@ -311,6 +313,7 @@ class Engine:
         if getattr(self, "alerter", None) is not None:
             try:
                 await self.alerter.on_refresh(self.rows)
+                await self.alerter.check_freshness(now_ms)
             except Exception:
                 log.exception("telegram alerts failed")
         self._broadcast(self.snapshot_message())

@@ -220,3 +220,14 @@ def test_restored_position_seeds_tvl_before_accruing():
     assert pos.fees_y == 0.0 and pos.last_tvl == 100_000.0
     accrue(pos, pool(1.0), 2 * MINUTE)
     assert pos.fees_y > 0
+
+
+def test_implausible_fee_rate_is_not_accrued():
+    from app.paper import MAX_FEE_RATE_PER_HOUR
+
+    pos = position(last_rate=MAX_FEE_RATE_PER_HOUR * 10)  # a drained pool's fees/TVL, not income
+    accrue(pos, pool(1.0), HOUR)
+    assert pos.fees_y == 0.0
+    real = position(last_rate=0.30)  # AAVE-USDC's real flash-crash spike was ~0.32/h: still booked
+    accrue(real, pool(1.0), HOUR)
+    assert real.fees_y > 0

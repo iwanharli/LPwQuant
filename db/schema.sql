@@ -211,3 +211,7 @@ create table if not exists alerts_sent (
   primary key (kind, address)
 );
 create index if not exists alerts_sent_ts on alerts_sent (ts desc);
+
+-- TVL the stored fee rate was measured against (engine/app/paper.py Position.last_tvl), so a restart keeps
+-- accruing instead of skipping a cycle to re-seed it.
+alter table paper_positions add column if not exists last_tvl double precision;

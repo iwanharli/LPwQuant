@@ -400,6 +400,19 @@ def _group_trades(trades: list[dict[str, Any]], key: str) -> dict[str, dict[str,
     return {k: summarize(v) for k, v in ordered}
 
 
+# Printed with every report, so a number is never read without the limits that shaped it.
+CAVEATS = {
+    "candles": [
+        "Token flags and safety are today's values applied to every entry in the window (look-ahead): filters built "
+        "on them look better here than they will live.",
+    ],
+    "snapshots": [
+        "No costs and no cost gate: returns are gross, and entries the live gate would refuse are traded.",
+        "Window is limited to how long this system has been recording.",
+    ],
+}
+
+
 def _report(source: str, hours: float, every: float, capital: float, trades, skipped, with_score: bool):
     if trades and "capital_usd" in trades[0]:
         capital = statistics.fmean(t["capital_usd"] for t in trades)
@@ -414,6 +427,7 @@ def _report(source: str, hours: float, every: float, capital: float, trades, ski
         "by_regime": _group_trades(trades, "regime"),
         "by_tier": _group_trades(trades, "tier"),
         "by_strategy": _group_trades(trades, "strategy"),
+        "caveats": CAVEATS.get(source, []),
     }
     if with_score:
         for tr in trades:
@@ -758,6 +772,8 @@ def default_params() -> PlanParams:
 
 
 def _print_report(report: dict[str, Any]) -> None:
+    for caveat in report.get("caveats") or []:
+        print(f"PERINGATAN: {caveat}")
     print(
         f"Backtest [{report['source']}] {report['hours']}h, entry tiap {report['every_minutes']} menit, "
         f"modal/trade {report['capital_per_trade']:.0f} (unit quote), {report['pools']} pool"

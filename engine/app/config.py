@@ -64,7 +64,7 @@ PAPER_NEW_BIN_ARRAY_SHARE = _num("PAPER_NEW_BIN_ARRAY_SHARE", 0.0)
 # Share of the base tokens held at close that we sell back to the quote token right away (see costs.exit_cost).
 PAPER_EXIT_SWAP_SHARE = _num("PAPER_EXIT_SWAP_SHARE", 1.0)
 PAPER_PROFILES = tuple(
-    p.strip() for p in (os.getenv("PAPER_PROFILES") or "konservatif,moderat,tenang,satu_sisi").split(",") if p.strip()
+    p.strip() for p in (os.getenv("PAPER_PROFILES") or "moderat,tenang,satu_sisi,bolak_balik").split(",") if p.strip()
 )
 
 # Telegram alerts (engine/app/alerts.py). Without a token and chat id nothing is ever sent, so leaving these
@@ -73,7 +73,7 @@ ALERTS_ENABLED = (os.getenv("ALERTS_ENABLED") or "true").lower() != "false"
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN") or ""
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID") or ""
 ALERT_KINDS = tuple(
-    k.strip() for k in (os.getenv("ALERT_KINDS") or "new_pool,gate,new_lp").split(",") if k.strip()
+    k.strip() for k in (os.getenv("ALERT_KINDS") or "new_pool,gate,new_lp,stale").split(",") if k.strip()
 )
 
 # Keys shared with the ingestor (ingestor/src/redis.ts).

@@ -24,7 +24,7 @@ def row(tier="medium", cost=0.5, fee_day=12.0, size=40.0, tvl=100_000.0, address
 
 
 def test_profiles_have_distinct_rules():
-    assert [p.key for p in PROFILES] == ["konservatif", "moderat", "tenang", "satu_sisi", "tinggi_tenang", "agresif"]
+    assert [p.key for p in PROFILES] == ["konservatif", "moderat", "tenang", "satu_sisi", "bolak_balik", "tinggi_tenang", "agresif"]
     cons, agg = PROFILE_BY_KEY["konservatif"], PROFILE_BY_KEY["agresif"]
     assert cons.min_fee_cost_ratio > agg.min_fee_cost_ratio and cons.stop_loss_mult < agg.stop_loss_mult
     assert "high" not in cons.tiers and "low" not in agg.tiers
@@ -112,3 +112,29 @@ def test_satu_sisi_profile_trades_the_single_sided_plan():
     assert profile_plan(thin, cfg, equity_usd=500.0) is None
     # Other profiles keep trading the two-sided plan.
     assert profile_plan(r, paper_config(PROFILE_BY_KEY["agresif"]), equity_usd=500.0) is not None
+
+
+def test_position_size_never_exceeds_starting_capital():
+    # Equity read $3.4M during the CHIP-USDC bug and sized positions at $169k; starting capital caps it.
+    cfg = paper_config(PROFILE_BY_KEY["moderat"])
+    r = {"address": "P", "tvl": 1e9, "fee_for_position_pct_day": 500.0,
+         "plan_base": {"action": "enter", "tier": "high", "size_usd": 100.0, "size_pct": 20.0,
+                       "exit": {"stop_loss_pct": 10.0, "out_of_range_minutes": 20.0, "fee_decay_ratio": 0.25,
+                                "max_hold_hours": 8.0, "min_hold_hours": 2.0, "breakout_below_pct": None,
+                                "breakout_above_pct": None},
+                       "round_trip_cost_pct": 0.1, "fixed_cost_usd": 0.06}}
+    plan = profile_plan(r, cfg, equity_usd=3_400_000.0)
+    assert plan is not None and plan["size_usd"] <= cfg.start_equity_usd
+
+
+def test_bolak_balik_only_enters_pools_that_keep_turning_back():
+    cfg = paper_config(PROFILE_BY_KEY["bolak_balik"])
+    assert cfg.min_reversal_rate == 0.5
+    exit_rules = {"stop_loss_pct": 10.0, "out_of_range_minutes": 20.0, "fee_decay_ratio": 0.25, "max_hold_hours": 8.0,
+                  "min_hold_hours": 2.0, "breakout_below_pct": None, "breakout_above_pct": None}
+    base = {"address": "P", "tvl": 1_000_000.0, "fee_for_position_pct_day": 500.0,
+            "plan_base": {"action": "enter", "tier": "medium", "size_usd": 100.0, "size_pct": 20.0,
+                          "exit": exit_rules, "round_trip_cost_pct": 0.1, "fixed_cost_usd": 0.06}}
+    assert profile_plan({**base, "market": {"reversal_rate": 0.62}}, cfg, equity_usd=500.0) is not None
+    assert profile_plan({**base, "market": {"reversal_rate": 0.38}}, cfg, equity_usd=500.0) is None  # trending
+    assert profile_plan({**base, "market": {}}, cfg, equity_usd=500.0) is None  # unknown is not a pass

@@ -140,6 +140,7 @@ export const PROFILE_COLORS: Record<string, string> = {
   moderat: "#d95926",
   tenang: "#199e70",
   satu_sisi: "#c98500",
+  bolak_balik: "#1f9fb8",
   tinggi_tenang: "#c0468f",
   agresif: "#9085e9",
 };

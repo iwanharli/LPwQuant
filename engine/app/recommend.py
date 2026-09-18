@@ -57,6 +57,7 @@ class PlanParams:
     pump_threshold_pct: float | None = 30.0  # avoid entries after a 1h pump this large (None = off)
     breakout_buffer_pct: float | None = 0.0  # exit beyond Donchian channel +/- buffer (None = no breakout exit)
     max_atr_pct: float | None = None  # hard cap on 30m ATR; off by default, tiers size risk instead
+    min_reversal_rate: float | None = None  # only pools whose price keeps turning back (indicators.reversal_rate)
     curve_max_atr_pct: float = 1.5  # ranging + ATR below this -> Curve
     # Position size per risk tier, as a fraction of max_position_pct.
     low_size_mult: float = 1.0
@@ -147,6 +148,10 @@ def plan_position(
         return _skip("avoid", "Tren turun kuat dan tekanan jual dominan", regime)
     if params.max_atr_pct is not None and atr is not None and atr > params.max_atr_pct:
         return _skip("avoid", f"Terlalu volatil (ATR 30m > {params.max_atr_pct:g}%)", regime)
+    if params.min_reversal_rate is not None:
+        rev = m.get("reversal_rate")
+        if rev is None or rev < params.min_reversal_rate:
+            return _skip("wait", f"Harga tidak cukup bolak-balik (berbalik < {params.min_reversal_rate:g})", regime)
 
     # Expected move over the holding horizon; take the wider of the two estimates.
     widths = []

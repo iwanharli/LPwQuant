@@ -27,7 +27,9 @@ MAX_PER_CYCLE = 5  # a quiet trickle beats a flood when many pools qualify at on
 # indistinguishable from a kind that never ran, and its first real hit would be swallowed as "seeding" --
 # which is exactly what would have happened to the first "gate" alert, the rarest and most wanted one.
 SEED_MARKER = "__seeded__"
-KINDS = ("new_pool", "gate", "new_lp")
+KINDS = ("new_pool", "gate", "new_lp", "stale")
+POOL_KINDS = ("new_pool", "gate", "new_lp")
+FRESHNESS_EVERY_MS = 5 * 60_000  # the check runs ~10 queries; data does not go stale faster than this
 
 # Mirrors the screener's LP defaults (dashboard/app/lib/filters.ts defaultFilters).
 LP_MAX_ATR_PCT = 5.0
@@ -182,6 +184,8 @@ class Alerter:
         self.chat_id = config.TELEGRAM_CHAT_ID
         self.kinds = tuple(k for k in config.ALERT_KINDS if k in KINDS)
         self.enabled = bool(config.ALERTS_ENABLED and self.token and self.chat_id and self.kinds)
+        self._stale: set[str] | None = None  # labels stale at the last check; None until the first check
+        self._fresh_checked_ms = 0
 
     async def _already_sent(self, kind: str) -> set[str]:
         rows = await self.db.fetch("select address from alerts_sent where kind = $1", kind)
@@ -203,10 +207,40 @@ class Alerter:
         if not self.enabled or self.db is None:
             return
         for kind in self.kinds:
+            if kind not in POOL_KINDS:
+                continue
             try:
                 await self._run_kind(kind, rows)
             except Exception:
                 log.exception("alert kind %s failed", kind)
+
+    async def check_freshness(self, now_ms: int) -> None:
+        """Tell the chat when a data source goes stale and when it recovers, so a dead ingestor is noticed the same
+        hour instead of the next time someone opens the dashboard. Only transitions are sent. The state lives in
+        memory: a restart while something is stale re-announces it once, which is the right side to err on."""
+        if not self.enabled or "stale" not in self.kinds or self.db is None:
+            return
+        if now_ms - self._fresh_checked_ms < FRESHNESS_EVERY_MS:
+            return
+        self._fresh_checked_ms = now_ms
+        from .freshness import check_freshness  # local: freshness imports the db layer, alerts should stay light
+
+        report = await check_freshness(self.db, now_ms)
+        stale = set(report.get("stale") or [])
+        previous, self._stale = self._stale, stale
+        went_stale = stale - (previous or set())
+        recovered = (previous or set()) - stale
+        ages = {i["label"]: i.get("age_sec") for i in report.get("items") or []}
+        if went_stale:
+            lines = ["<b>Data basi</b>"] + [
+                f"• {_esc(l)} — terakhir {'belum ada' if ages.get(l) is None else f'{ages[l] / 60:.0f} mnt lalu'}"
+                for l in sorted(went_stale)
+            ]
+            await asyncio.to_thread(_post, self.token, self.chat_id, "\n".join(lines))
+        if recovered:
+            await asyncio.to_thread(
+                _post, self.token, self.chat_id, "<b>Data pulih</b>\n" + "\n".join(f"• {_esc(l)}" for l in sorted(recovered))
+            )
 
     async def _run_kind(self, kind: str, rows: dict[str, dict[str, Any]]) -> None:
         hits = [a for a, row in rows.items() if matches(row, kind)]

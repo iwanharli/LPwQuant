@@ -56,3 +56,17 @@ def test_walk_forward_selects_on_train_and_scores_on_test():
     first_test = wf["folds"][0]["test"]
     assert first_test["trades"] == 24 and first_test["mean_return_pct"] < 0  # overfit choice fails out of sample
     assert wf["oos"]["trades"] == 48
+
+
+def test_conservative_ci_takes_the_wider_of_hour_and_pool_clustering():
+    from app.validation import conservative_mean_ci, bootstrap_mean_ci
+
+    # One pool entered many times in different hours: hour clustering sees many observations, pool sees one.
+    trades = [{"address": "ELON", "entry_ts": h * 3_600_000, "return_pct": r}
+              for h, r in enumerate([-15, -12, -18, -10, -20])]
+    trades += [{"address": f"P{i}", "entry_ts": i * 3_600_000, "return_pct": 1.0} for i in range(10)]
+    ci = conservative_mean_ci(trades, n_boot=500)
+    hour = bootstrap_mean_ci(trades, n_boot=500, by="hour")
+    pool = bootstrap_mean_ci(trades, n_boot=500, by="pool")
+    assert ci["low"] == min(hour["low"], pool["low"]) and ci["high"] == max(hour["high"], pool["high"])
+    assert ci["pool_clusters"] == 11 and ci["hour_clusters"] == 10

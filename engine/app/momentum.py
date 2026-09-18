@@ -16,6 +16,12 @@ Honest by construction:
   limit, so a rising market cannot be mistaken for a working signal.
 - Confidence intervals bootstrap by pool, not by trade: trades in one pool are not independent samples.
 
+Conclusion (Sept 2026, 30 days of candles): all 9 variants lose after costs. The one with a positive mean,
+buying after a dump, is a lottery ticket: its median trade at 8h is -2.87%, and the top 1% of trades supply 67%
+of the profit. It also looks better than it is, because pools that rugged are missing from the data and the TVL
+filter uses today's values. The swap-bot idea is closed; the dashboard page was removed. Keep this module to
+re-test if the data or the cost model changes.
+
 Usage: uv run python -m app.momentum --hours 720
 """
 
@@ -103,7 +109,10 @@ def simulate(data: CandleData, params: SwapParams) -> list[dict[str, Any]]:
             volume_24h = sum(c.volume for c in candles[max(0, i - day) : i])
             if volume_24h < MIN_UNIVERSE_VOLUME_24H:
                 continue  # same universe floor as the LP backtest, applied as of this moment
-            market = h.market_at(address, times[i])
+            key = (address, times[i])  # shared across variants: nine variants used to recompute every indicator
+            if key not in data.market_cache:
+                data.market_cache[key] = h.market_at(address, times[i])
+            market = data.market_cache[key]
             if not signal_fires(params.signal, market, closes, i):
                 continue
             entry = closes[i]
