@@ -1,6 +1,7 @@
 import { pg } from "./db";
 import type { PoolSnapshot } from "./meteora";
 import { redis } from "./redis";
+import { apiFetch } from "./rpc";
 
 export const SECURITY_KEY = "security:latest"; // hash: mint -> TokenSecurity JSON (read by engine)
 
@@ -131,7 +132,7 @@ export class SecurityFetcher {
     while (!this.stopped && this.queue.length > 0) {
       const mint = this.queue[0];
       try {
-        const res = await fetch(`${REPORT_URL}/${mint}/report`, { signal: AbortSignal.timeout(30_000) });
+        const res = await apiFetch("rugcheck", "report", `${REPORT_URL}/${mint}/report`, { signal: AbortSignal.timeout(30_000) });
         if (res.status === 429) {
           console.warn("[security] rugcheck rate limited, backing off");
           await sleep(RATE_LIMIT_BACKOFF_MS);

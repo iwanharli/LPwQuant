@@ -47,7 +47,10 @@ def test_message_has_the_numbers_and_escapes_html():
     assert "MEME-SOL" in text and "PoolAddr" in text
     assert "Holders 24" in text and "Top10 21.0%" in text
     assert "Mint AKTIF" in text and "Freeze mati" in text
-    assert "meteora.ag/dlmm/PoolAddr" in text
+    assert "Perhatikan" in text and "mint authority masih aktif" in text
+    assert "app.meteora.ag/dlmm/PoolAddr" in str(alerts.buttons("PoolAddr"))
+    clean = {**ROW, "security": {**ROW["security"], "mint_authority": False}}
+    assert "Tidak ada tanda bahaya" in alerts.message(clean, "new_lp")
     nasty = alerts.message({**ROW, "name": "<script>&"}, "new_pool")
     assert "<script>" not in nasty and "&lt;script&gt;&amp;" in nasty
 
@@ -86,7 +89,7 @@ def _alerter(db, monkeypatch, sent_ok=True):
     monkeypatch.setattr(alerts.config, "ALERTS_ENABLED", True)
     monkeypatch.setattr(alerts.config, "ALERT_KINDS", ("gate",))
     a = alerts.Alerter(db)
-    monkeypatch.setattr(alerts, "_post", lambda token, chat, text: (db.posted.append(text), sent_ok)[1])
+    monkeypatch.setattr(alerts, "_post", lambda token, chat, text, markup=None: (db.posted.append(text), sent_ok)[1])
     return a
 
 
@@ -151,3 +154,24 @@ def test_stale_alert_fires_on_transitions_only(monkeypatch):
     assert len(db.posted) == 2  # went stale once, recovered once; staying stale is not re-sent
     assert "Data basi" in db.posted[0] and "15 mnt" in db.posted[0]
     assert "Data pulih" in db.posted[1]
+
+
+def test_flags_are_readable_and_the_info_button_round_trips():
+    text = alerts.message(ROW, "new_pool")
+    assert "new_pool" not in text and "🟡 Pool baru" in text and "🔵 Unverified" in text
+    markup = alerts.buttons("PoolAddr", ROW["flags"])
+    data = markup["inline_keyboard"][-1][0]["callback_data"]
+    assert len(data.encode()) <= 64
+    assert alerts.flag_info.decode(data) == ["new_pool", "unverified"]
+    assert len(alerts.buttons("PoolAddr", [])["inline_keyboard"]) == 1  # no flags, no info button
+
+
+def test_bot_answers_only_its_own_chat():
+    tap = {"callback_query": {"id": "9", "data": "fi:1", "message": {"chat": {"id": 5}}}}
+    text, callback_id = alerts.reply_for(tap, "5")
+    assert "Mint aktif" in text and callback_id == "9"
+    assert alerts.reply_for(tap, "6") is None
+    command = {"message": {"chat": {"id": 5}, "text": "/flags"}}
+    assert "Daftar flag" in alerts.reply_for(command, "5")[0]
+    assert len(alerts.flag_info.glossary()) < 4096  # Telegram's message limit
+    assert alerts.reply_for({"message": {"chat": {"id": 5}, "text": "halo"}}, "5") is None

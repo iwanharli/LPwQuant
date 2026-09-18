@@ -2,6 +2,7 @@ import { pg } from "./db";
 import type { PoolSnapshot } from "./meteora";
 import { redis } from "./redis";
 import { baseMint } from "./security";
+import { apiFetch } from "./rpc";
 
 export const ORGANIC_KEY = "jupiter:latest"; // hash: mint -> TokenOrganic JSON (read by engine)
 
@@ -115,7 +116,7 @@ export class JupiterFetcher {
       for (let i = 0; i < mints.length && !this.stopped; i += BATCH) {
         const chunk = mints.slice(i, i + BATCH);
         try {
-          const res = await fetch(`${SEARCH_URL}?query=${chunk.join(",")}`, {
+          const res = await apiFetch("jupiter", "assets/search", `${SEARCH_URL}?query=${chunk.join(",")}`, {
             headers: { Accept: "application/json" },
             signal: AbortSignal.timeout(30_000),
           });

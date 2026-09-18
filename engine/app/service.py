@@ -12,7 +12,7 @@ import asyncpg
 import redis.asyncio as aioredis
 
 from . import config
-from .alerts import Alerter
+from .alerts import Alerter, serve_commands
 from .indicators import Candle, compute_indicators, flow_features, merge_market
 from .metrics import PriceHistory
 from .paper import PaperTrader, sol_usd_from_pools, close_retired_positions
@@ -122,6 +122,12 @@ class Engine:
             asyncio.create_task(self._consume_pools(), name="consume_pools"),
             asyncio.create_task(self._consume_prices(), name="consume_prices"),
         ]
+        if self.alerter.enabled:
+            self._tasks.append(
+                asyncio.create_task(
+                    serve_commands(config.TELEGRAM_BOT_TOKEN, config.TELEGRAM_CHAT_ID), name="telegram_commands"
+                )
+            )
         log.info("engine started with %d pools", len(self.pools))
 
     async def stop(self) -> None:

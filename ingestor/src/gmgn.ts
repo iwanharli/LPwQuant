@@ -5,6 +5,7 @@ import { sleep } from "./market";
 import type { PoolSnapshot } from "./meteora";
 import { redis } from "./redis";
 import { baseMint } from "./security";
+import { apiFetch } from "./rpc";
 
 const HOST = "https://openapi.gmgn.ai";
 export const GMGN_KEY = "gmgn:latest"; // hash: token mint -> TokenInsights JSON (read by engine)
@@ -47,7 +48,7 @@ export async function gmgnGet<T>(subPath: string, params: Record<string, string 
     timestamp: String(Math.floor(Date.now() / 1000)),
     client_id: randomUUID(),
   });
-  const res = await fetch(`${HOST}${subPath}?${query}`, {
+  const res = await apiFetch("gmgn", subPath, `${HOST}${subPath}?${query}`, {
     headers: { "X-APIKEY": config.gmgnApiKey, "Content-Type": "application/json", "User-Agent": "quant-ingestor" },
     signal: AbortSignal.timeout(30_000),
   });

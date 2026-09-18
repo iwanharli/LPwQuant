@@ -3,6 +3,7 @@ import { pg } from "./db";
 import type { PoolSnapshot } from "./meteora";
 import { redis } from "./redis";
 import { baseMint } from "./security";
+import { apiFetch } from "./rpc";
 
 export const CANDLE_TIMEFRAME = "30m";
 export const CANDLE_MS = 30 * 60_000;
@@ -36,7 +37,7 @@ export async function fetchCandles(address: string, startMs: number, endMs: numb
   const url =
     `${config.meteoraApi}/pools/${address}/ohlcv?timeframe=${CANDLE_TIMEFRAME}` +
     `&start_time=${Math.floor(startMs / 1000)}&end_time=${Math.floor(endMs / 1000)}`;
-  const res = await fetch(url, { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(30_000) });
+  const res = await apiFetch("meteora", "ohlcv", url, { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(30_000) });
   if (res.status === 429) throw new RateLimitedError("meteora ohlcv rate limited");
   if (!res.ok) throw new Error(`HTTP ${res.status}: ${(await res.text()).slice(0, 120)}`);
   const body = (await res.json()) as {
@@ -200,7 +201,7 @@ export class FlowFetcher {
     try {
       for (let i = 0; i < addresses.length; i += FLOW_BATCH) {
         const chunk = addresses.slice(i, i + FLOW_BATCH);
-        const res = await fetch(`${GECKO_MULTI_URL}/${chunk.join(",")}`, {
+        const res = await apiFetch("geckoterminal", "pools/multi", `${GECKO_MULTI_URL}/${chunk.join(",")}`, {
           headers: { Accept: "application/json" },
           signal: AbortSignal.timeout(30_000),
         });

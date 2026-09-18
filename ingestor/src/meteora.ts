@@ -1,4 +1,5 @@
 import { config } from "./config";
+import { apiFetch } from "./rpc";
 
 export type Window = "30m" | "1h" | "2h" | "4h" | "12h" | "24h";
 export type Windowed = Record<Window, number>;
@@ -103,7 +104,7 @@ function toSnapshot(p: ApiPool, ts: number): PoolSnapshot {
 
 /** One pool by address, regardless of the screener's volume/TVL filters (e.g. pools with open paper positions). */
 export async function fetchPool(address: string): Promise<PoolSnapshot | null> {
-  const res = await fetch(`${config.meteoraApi}/pools/${address}`, { signal: AbortSignal.timeout(20_000) });
+  const res = await apiFetch("meteora", "pool", `${config.meteoraApi}/pools/${address}`, { signal: AbortSignal.timeout(20_000) });
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(`Meteora API ${res.status}: ${(await res.text()).slice(0, 120)}`);
   return toSnapshot((await res.json()) as ApiPool, Date.now());
@@ -117,7 +118,7 @@ export interface PoolPage {
 /** One raw page of the full pool list (used by backfill to find pools regardless of current activity). */
 export async function fetchPoolPage(page: number, pageSize = 1000): Promise<PoolPage> {
   const url = `${config.meteoraApi}/pools?page=${page}&page_size=${pageSize}`;
-  const res = await fetch(url, { signal: AbortSignal.timeout(60_000) });
+  const res = await apiFetch("meteora", "pools", url, { signal: AbortSignal.timeout(60_000) });
   if (!res.ok) throw new Error(`Meteora API ${res.status}: ${(await res.text()).slice(0, 200)}`);
   const body = (await res.json()) as { pages: number; data: ApiPool[] };
   const ts = Date.now();
@@ -134,7 +135,7 @@ export async function fetchPoolPage(page: number, pageSize = 1000): Promise<Pool
 /** Top pools by 24h volume that pass the TVL/volume floor. */
 export async function fetchPools(): Promise<PoolSnapshot[]> {
   const url = `${config.meteoraApi}/pools?page=1&page_size=${config.fetchLimit}&sort_by=volume_24h:desc`;
-  const res = await fetch(url, { signal: AbortSignal.timeout(30_000) });
+  const res = await apiFetch("meteora", "pools", url, { signal: AbortSignal.timeout(30_000) });
   if (!res.ok) throw new Error(`Meteora API ${res.status}: ${(await res.text()).slice(0, 200)}`);
   const body = (await res.json()) as { data: ApiPool[] };
   const ts = Date.now();

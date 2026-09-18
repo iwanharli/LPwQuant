@@ -17,7 +17,7 @@ import urllib.parse
 import urllib.request
 from typing import Any
 
-from . import config
+from . import config, flag_info
 
 log = logging.getLogger("alerts")
 
@@ -107,10 +107,57 @@ def _esc(text: str) -> str:
 
 
 TITLES = {
-    "new_pool": "Pool DLMM baru",
-    "new_lp": "Pool baru lolos filter LP",
-    "gate": "Kandidat lolos gate",
+    "new_pool": "🆕 Pool DLMM baru",
+    "new_lp": "🌱 Pool baru lolos filter LP",
+    "gate": "🎯 Kandidat lolos gate",
 }
+
+WHY = {
+    "new_pool": "Pool ini baru dibuat {age}. Belum tentu layak LP: cek dulu keamanan dan sebaran holder di bawah.",
+    "new_lp": "Pool baru ({age}) yang sudah lolos filter LP bawaan: harga cukup tenang, holder tidak terlalu "
+    "terkonsentrasi, dan TVL cukup dalam.",
+    "gate": "Perkiraan fee dalam {gate_h} jam sudah menutup {ratio}× biaya masuk-keluar, jadi rencana posisinya "
+    "layak dipertimbangkan.",
+}
+
+
+def _ok(bad: bool) -> str:
+    return "⚠️" if bad else "✅"
+
+
+def _age_text(age: float | None) -> str:
+    if age is None:
+        return "umurnya tidak diketahui"
+    if age < 1:
+        return f"{age * 60:.0f} menit lalu"
+    if age < 48:
+        return f"{age:.1f} jam lalu"
+    return f"{age / 24:.0f} hari lalu"
+
+
+def concerns(row: dict[str, Any]) -> list[str]:
+    """Plain-language warnings from the same fields the message shows, worst first."""
+    security = row.get("security") or {}
+    organic = row.get("organic") or {}
+    tags = ((row.get("insights") or {}).get("tags")) or {}
+    out: list[str] = []
+    if security.get("mint_authority"):
+        out.append("mint authority masih aktif (supply bisa ditambah)")
+    if security.get("freeze_authority"):
+        out.append("freeze authority aktif (token bisa dibekukan)")
+    top10 = top10_pct(row)
+    if top10 is not None and top10 > LP_MAX_TOP10_PCT:
+        out.append(f"10 holder teratas memegang {top10:.0f}%")
+    bundled = _num((tags.get("bundler") or {}).get("holding_pct"))
+    if bundled is not None and bundled >= 20:
+        out.append(f"{bundled:.0f}% supply dibeli lewat bundle")
+    atr = atr_pct(row)
+    if atr is not None and atr > LP_MAX_ATR_PCT:
+        out.append(f"harga bergejolak (ATR {atr:.1f}% per 30 menit), rawan IL")
+    tvl = _num(row.get("tvl"))
+    if tvl is not None and tvl < LP_MIN_TVL_USD:
+        out.append(f"TVL tipis ({_usd(tvl)})")
+    return out
 
 
 def message(row: dict[str, Any], kind: str) -> str:
@@ -120,52 +167,84 @@ def message(row: dict[str, Any], kind: str) -> str:
     tags = ((row.get("insights") or {}).get("tags")) or {}
     plan = row.get("plan_base") or {}
     age = _num(row.get("pool_age_hours"))
+    why = WHY.get(kind, "").format(
+        age=_age_text(age), gate_h=f"{config.FEE_GATE_HOURS:g}", ratio=f"{config.MIN_FEE_COST_RATIO:g}"
+    )
+    warn = concerns(row)
+    verdict = (
+        "⚠️ <b>Perhatikan:</b> " + _esc("; ".join(warn)) + "."
+        if warn
+        else "✅ Tidak ada tanda bahaya dari data yang dicek."
+    )
     lines = [
-        f"<b>{_esc(TITLES.get(kind, kind))}</b> · {_esc(str(row.get('name') or '?'))}",
-        f"<code>{_esc(str(row.get('address') or ''))}</code>",
+        f"<b>{_esc(TITLES.get(kind, kind))}</b>",
+        f"<b>{_esc(str(row.get('name') or '?'))}</b>",
         "",
+        _esc(why),
+        verdict,
+        "",
+        "📊 <b>Pasar</b>",
         f"MC {_usd(_num(row.get('market_cap')))} · TVL {_usd(_num(row.get('tvl')))} · "
         f"Vol24j {_usd(_num(row.get('volume_24h')))}",
-        f"Holders {row.get('holders', '–')} · Top10 {_pct(top10_pct(row))} · "
-        f"Umur {'–' if age is None else f'{age:.1f}j'}",
-        f"ATR30m {_pct(atr_pct(row), 2)} · Fee/TVL24j {_pct(_num(row.get('fee_tvl_pct_24h')), 2)} · "
+        f"Fee/TVL24j {_pct(_num(row.get('fee_tvl_pct_24h')), 2)} · ATR30m {_pct(atr_pct(row), 2)} · "
         f"Skor {row.get('score', '–')}",
+        "",
+        "🛡 <b>Keamanan</b>",
+        f"{_ok(bool(security.get('mint_authority')))} Mint {'AKTIF' if security.get('mint_authority') else 'mati'} · "
+        f"{_ok(bool(security.get('freeze_authority')))} Freeze {'AKTIF' if security.get('freeze_authority') else 'mati'} · "
+        f"LP locked {_pct(_num(security.get('lp_locked_pct')), 0)}",
     ]
-    org_score = _num(organic.get("organic_score"))
-    lines.append(
-        f"Organic {'–' if org_score is None else f'{org_score:.0f}'} ({organic.get('organic_label') or '–'})"
-        f" · Verified {'ya' if organic.get('verified') else 'tidak'}"
-    )
-    lines.append(
-        f"Mint {'AKTIF' if security.get('mint_authority') else 'mati'} · "
-        f"Freeze {'AKTIF' if security.get('freeze_authority') else 'mati'} · "
-        f"LP locked {_pct(_num(security.get('lp_locked_pct')), 0)}"
-    )
-    bundler, sniper = tags.get("bundler") or {}, tags.get("sniper") or {}
-    lines.append(
-        f"Bundled {_pct(_num(bundler.get('holding_pct')))} · Snipers {_pct(_num(sniper.get('holding_pct')))} · "
-        f"Bot holders {_pct(_num(organic.get('bot_holders_pct')))}"
-    )
     risks = [r for r in (security.get("risks") or []) if isinstance(r, str)][:4]
     if risks:
-        lines.append("Risiko: " + _esc(", ".join(risks)))
-    flags = [f for f in (row.get("flags") or [])][:6]
-    if flags:
-        lines.append("Flag: " + _esc(", ".join(flags)))
+        lines.append("RugCheck: " + _esc(", ".join(risks)))
+    org_score = _num(organic.get("organic_score"))
+    bundler, sniper = tags.get("bundler") or {}, tags.get("sniper") or {}
+    lines += [
+        "",
+        "👥 <b>Holder</b>",
+        f"Holders {row.get('holders', '–')} · Top10 {_pct(top10_pct(row))} · "
+        f"Organic {'–' if org_score is None else f'{org_score:.0f}'} ({organic.get('organic_label') or '–'})"
+        f" · Verified {'ya' if organic.get('verified') else 'tidak'}",
+        f"Bundled {_pct(_num(bundler.get('holding_pct')))} · Snipers {_pct(_num(sniper.get('holding_pct')))} · "
+        f"Bot holders {_pct(_num(organic.get('bot_holders_pct')))}",
+    ]
     if kind == "gate" and plan:
-        lines.append(
-            f"Rencana: {plan.get('strategy')} {plan.get('range_low_pct')}%..{plan.get('range_high_pct')}% · "
+        lines += [
+            "",
+            "📐 <b>Rencana posisi</b>",
+            f"{plan.get('strategy')} {plan.get('range_low_pct')}%..{plan.get('range_high_pct')}% · "
             f"biaya {_pct(_num(plan.get('round_trip_cost_pct')), 2)} · "
-            f"fee {_pct(_num(row.get('fee_for_position_pct_day')), 2)}/hari"
-        )
-    lines.append(f"https://meteora.ag/dlmm/{row.get('address')}")
+            f"fee {_pct(_num(row.get('fee_for_position_pct_day')), 2)}/hari",
+        ]
+    flags = flag_info.sort_flags([f for f in (row.get("flags") or []) if isinstance(f, str)])
+    if flags:
+        shown = " · ".join(flag_info.chip(f) for f in flags[:8])
+        more = f" · +{len(flags) - 8}" if len(flags) > 8 else ""
+        lines += ["", "🏷 <b>Flag</b>", _esc(shown + more)]
+    lines += ["", f"<code>{_esc(str(row.get('address') or ''))}</code>"]
     return "\n".join(lines)
 
 
-def _post(token: str, chat_id: str, text: str) -> bool:
-    payload = urllib.parse.urlencode(
-        {"chat_id": chat_id, "text": text, "parse_mode": "HTML", "disable_web_page_preview": "true"}
-    ).encode()
+def buttons(address: str, flags: list[str] | None = None) -> dict[str, Any]:
+    """Link buttons under a pool alert (tapping beats copying an address on a phone), plus an Info flag button
+    that the bot answers with the explanation of this pool's flags."""
+    rows: list[list[dict[str, str]]] = [
+        [
+            {"text": "🌊 Meteora", "url": f"https://app.meteora.ag/dlmm/{address}"},
+            {"text": "📈 DexScreener", "url": f"https://dexscreener.com/solana/{address}"},
+        ]
+    ]
+    data = flag_info.encode(flags or [])
+    if data != "fi:":
+        rows.append([{"text": "ℹ️ Info flag", "callback_data": data}])
+    return {"inline_keyboard": rows}
+
+
+def _post(token: str, chat_id: str, text: str, markup: dict[str, Any] | None = None) -> bool:
+    fields = {"chat_id": chat_id, "text": text, "parse_mode": "HTML", "disable_web_page_preview": "true"}
+    if markup:
+        fields["reply_markup"] = json.dumps(markup)
+    payload = urllib.parse.urlencode(fields).encode()
     request = urllib.request.Request(API_URL.format(token=token), data=payload)
     try:
         with urllib.request.urlopen(request, timeout=15) as response:
@@ -232,14 +311,19 @@ class Alerter:
         recovered = (previous or set()) - stale
         ages = {i["label"]: i.get("age_sec") for i in report.get("items") or []}
         if went_stale:
-            lines = ["<b>Data basi</b>"] + [
+            lines = [
+                "🔴 <b>Data basi</b>",
+                "Sumber berikut berhenti mengirim data. Skor dan rencana posisi untuk pool terkait tidak bisa "
+                "dipercaya sampai pulih; cek apakah ingestor masih berjalan.",
+                "",
+            ] + [
                 f"• {_esc(l)} — terakhir {'belum ada' if ages.get(l) is None else f'{ages[l] / 60:.0f} mnt lalu'}"
                 for l in sorted(went_stale)
             ]
             await asyncio.to_thread(_post, self.token, self.chat_id, "\n".join(lines))
         if recovered:
             await asyncio.to_thread(
-                _post, self.token, self.chat_id, "<b>Data pulih</b>\n" + "\n".join(f"• {_esc(l)}" for l in sorted(recovered))
+                _post, self.token, self.chat_id, "🟢 <b>Data pulih</b>\nSumber berikut kembali mengirim data:\n\n" + "\n".join(f"• {_esc(l)}" for l in sorted(recovered))
             )
 
     async def _run_kind(self, kind: str, rows: dict[str, dict[str, Any]]) -> None:
@@ -258,11 +342,76 @@ class Alerter:
             return
         delivered: list[str] = []
         for address in fresh[:MAX_PER_CYCLE]:
-            if await asyncio.to_thread(_post, self.token, self.chat_id, message(rows[address], kind)):
+            if await asyncio.to_thread(
+                _post, self.token, self.chat_id, message(rows[address], kind),
+                buttons(address, rows[address].get("flags") or []),
+            ):
                 delivered.append(address)
         await self._remember(kind, delivered)
         if delivered:
             log.info("alerts: sent %d %s", len(delivered), kind)
+
+
+HELP_TEXT = (
+    "🤖 <b>Quant LP bot</b>\n"
+    "Bot ini mengirim alert pool DLMM dari engine.\n\n"
+    "/flags — daftar semua flag dan artinya\n"
+    "Tombol <b>ℹ️ Info flag</b> di bawah alert menjelaskan flag pool itu."
+)
+
+
+def _call(token: str, method: str, fields: dict[str, Any], timeout: float = 15) -> Any:
+    payload = urllib.parse.urlencode(fields).encode()
+    request = urllib.request.Request(f"https://api.telegram.org/bot{token}/{method}", data=payload)
+    with urllib.request.urlopen(request, timeout=timeout) as response:
+        return json.load(response).get("result")
+
+
+def reply_for(update: dict[str, Any], chat_id: str) -> tuple[str, str | None] | None:
+    """(text, callback id to acknowledge) for an update from our chat, or None to ignore it. Anyone can message a
+    public bot; only the configured chat gets answers."""
+    callback = update.get("callback_query")
+    if callback:
+        if str(((callback.get("message") or {}).get("chat") or {}).get("id")) != chat_id:
+            return None
+        keys = flag_info.decode(str(callback.get("data") or ""))
+        return flag_info.explain(keys), str(callback.get("id"))
+    msg = update.get("message") or {}
+    if str((msg.get("chat") or {}).get("id")) != chat_id:
+        return None
+    command = str(msg.get("text") or "").split("@")[0].split(" ")[0].lower()
+    if command == "/flags":
+        return flag_info.glossary(), None
+    if command in ("/start", "/help"):
+        return HELP_TEXT, None
+    return None
+
+
+async def serve_commands(token: str, chat_id: str) -> None:
+    """Long-poll Telegram for /flags, /help and Info flag button taps. getUpdates holds the request up to 25s, so
+    this costs one idle request per 25s."""
+    offset = 0
+    while True:
+        try:
+            updates = await asyncio.to_thread(
+                _call, token, "getUpdates",
+                {"offset": offset, "timeout": 25, "allowed_updates": json.dumps(["message", "callback_query"])},
+                35,
+            )
+            for update in updates or []:
+                offset = max(offset, int(update["update_id"]) + 1)
+                answer = reply_for(update, chat_id)
+                if not answer:
+                    continue
+                text, callback_id = answer
+                if callback_id:
+                    await asyncio.to_thread(_call, token, "answerCallbackQuery", {"callback_query_id": callback_id})
+                await asyncio.to_thread(_post, token, chat_id, text)
+        except asyncio.CancelledError:
+            raise
+        except Exception as err:  # network blips must not end the loop
+            log.warning("telegram polling failed: %s", err)
+            await asyncio.sleep(10)
 
 
 def _get_me(token: str) -> dict[str, Any] | None:
@@ -299,7 +448,7 @@ def main() -> None:
     if not args.send:
         print("Tambahkan --send untuk mengirim pesan uji ke chat tersebut.")
         return
-    ok = _post(token, chat_id, "<b>Uji koneksi</b>\nAlert quant engine siap.")
+    ok = _post(token, chat_id, "✅ <b>Uji koneksi</b>\nAlert quant engine siap mengirim pesan.")
     print("Pesan uji terkirim." if ok else "Gagal mengirim. Pastikan chat id benar dan bot sudah Anda ajak bicara.")
 
 

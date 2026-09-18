@@ -8,7 +8,7 @@ import DataHealth from "./data-health";
 const NAV = [
   { href: "/", label: "Screener" },
   { href: "/paper", label: "Paper trading" },
-  { href: "/rpc", label: "Pemakaian RPC" },
+  { href: "/rpc", label: "Pemakaian API" },
 ];
 
 export default function TopBar({

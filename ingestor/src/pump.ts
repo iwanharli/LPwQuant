@@ -2,6 +2,7 @@ import { pg } from "./db";
 import type { PoolSnapshot } from "./meteora";
 import { redis } from "./redis";
 import { baseMint } from "./security";
+import { apiFetch } from "./rpc";
 
 export const PUMP_KEY = "pump:latest"; // hash: mint -> PumpToken JSON (read by engine)
 
@@ -121,7 +122,7 @@ export class PumpFetcher {
   }
 
   private async get<T>(url: string): Promise<{ status: number; body: T | null }> {
-    const res = await fetch(url, { headers: HEADERS, signal: AbortSignal.timeout(20_000) });
+    const res = await apiFetch("pump.fun", "coins", url, { headers: HEADERS, signal: AbortSignal.timeout(20_000) });
     if (!res.ok) return { status: res.status, body: null };
     return { status: res.status, body: (await res.json()) as T };
   }
