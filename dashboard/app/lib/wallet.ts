@@ -2,7 +2,7 @@
 
 import { getWallets } from "@wallet-standard/app";
 import type { Wallet, WalletAccount } from "@wallet-standard/base";
-import { useSyncExternalStore } from "react";
+import { useEffect, useSyncExternalStore } from "react";
 
 /**
  * Read-only wallet connection through the Wallet Standard, which Jupiter, Phantom, Solflare, Backpack and the other
@@ -172,4 +172,13 @@ export async function signAndSendAll(transactions: Uint8Array[]): Promise<string
     ...transactions.map((transaction) => ({ account, chain: "solana:mainnet", transaction })),
   );
   return results.map((r) => base58(r.signature));
+}
+
+/** ?wallet=<address> opens a wallet without an extension (a link from another device, say). It never replaces a
+ * wallet connected through an extension. */
+export function useWalletParam(connected: { address: string; wallet: string | null } | null) {
+  useEffect(() => {
+    const param = new URLSearchParams(window.location.search).get("wallet");
+    if (param && isWalletAddress(param) && !connected?.wallet && connected?.address !== param) watchAddress(param);
+  }, [connected]);
 }

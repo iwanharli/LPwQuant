@@ -1,13 +1,14 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { CLAIM_URL, ENGINE_URL, fmtDateTime, fmtTime, fmtNum, shortAddress, usd } from "../../lib/format";
-import { canSign, isWalletAddress, signAndSendAll, useConnectedWallet, useWalletOptions, watchAddress } from "../../lib/wallet";
+import { canSign, signAndSendAll, useConnectedWallet, useWalletOptions, useWalletParam } from "../../lib/wallet";
 import TopBar from "../top-bar";
 import { StatusDot } from "../ui";
 import WalletButton from "../wallet-button";
 import DailyPnlChart, { type DailyPnl } from "./daily-pnl-chart";
 import PoolCard, { type Pool } from "./pool-card";
+import PortfolioTabs from "./portfolio-tabs";
 import PositionFilters, { DEFAULT_FILTERS, applyFilters, statusCounts, type Filters } from "./position-filters";
 
 const REFRESH_MS = 20_000;
@@ -86,13 +87,22 @@ type Review = { items: ClaimItem[]; claims: BuiltClaim[]; skipped: string[]; bui
 
 type ClaimState =
   | { phase: "idle" }
-  | { phase: "building" | "signing"; key: string }
+  | { phase: "building"; key: string; items: ClaimItem[] }
+  | { phase: "signing"; key: string }
   | { phase: "review"; key: string; review: Review }
   | { phase: "done"; key: string; signatures: string[]; skipped: number }
   | { phase: "error"; key: string; message: string };
 
 // A transaction carries a recent blockhash that expires after ~60-90s; past this, rebuild before signing.
 const REBUILD_AFTER_MS = 45_000;
+
+function friendlyError(err: unknown): string {
+  const message = err instanceof Error ? err.message : "Gagal";
+  if (/reject|cancel|denied|declined/i.test(message)) return "Dibatalkan di wallet";
+  if (/429|too many requests|rate limit/i.test(message)) return "RPC sedang sibuk (rate limit). Coba lagi sebentar lagi.";
+  if (/failed to fetch|networkerror/i.test(message)) return "Ingestor tidak bisa dihubungi. Pastikan ingestor berjalan.";
+  return message;
+}
 
 async function buildClaims(owner: string, items: ClaimItem[]): Promise<Review> {
   const res = await fetch(`${CLAIM_URL}/claim`, {
@@ -111,19 +121,23 @@ async function buildClaims(owner: string, items: ClaimItem[]): Promise<Review> {
  */
 function useClaim(owner: string | undefined, onDone: () => void) {
   const [state, setState] = useState<ClaimState>({ phase: "idle" });
+  const cancelRef = useRef<() => void>(() => undefined);
 
   const prepare = async (key: string, items: ClaimItem[]) => {
     if (!owner || items.length === 0) return;
-    setState({ phase: "building", key });
+    setState({ phase: "building", key, items });
+    let cancelled = false;
+    cancelRef.current = () => (cancelled = true);
     try {
       const review = await buildClaims(owner, items);
+      if (cancelled) return; // closed while the transactions were still being built
       if (review.claims.length === 0) {
         setState({ phase: "done", key, signatures: [], skipped: review.skipped.length });
         return;
       }
       setState({ phase: "review", key, review });
     } catch (err) {
-      setState({ phase: "error", key, message: err instanceof Error ? err.message : "Gagal" });
+      if (!cancelled) setState({ phase: "error", key, message: friendlyError(err) });
     }
   };
 
@@ -139,24 +153,38 @@ function useClaim(owner: string | undefined, onDone: () => void) {
       setState({ phase: "done", key, signatures, skipped: review.skipped.length });
       setTimeout(onDone, 4000); // give the chain and Meteora's indexer a moment before re-reading
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Gagal";
-      const rejected = /reject|cancel|denied|declined/i.test(message);
-      setState({ phase: "error", key, message: rejected ? "Dibatalkan di wallet" : message });
+      setState({ phase: "error", key, message: friendlyError(err) });
     }
   };
 
-  const cancel = () => setState({ phase: "idle" });
+  const cancel = useCallback(() => {
+    cancelRef.current();
+    setState({ phase: "idle" });
+  }, []);
   return { state, prepare, confirm, cancel };
 }
 
-function ClaimReview({ review, onConfirm, onCancel }: { review: Review; onConfirm: () => void; onCancel: () => void }) {
-  const byPosition = new Map(review.items.map((i) => [i.position, i]));
-  const txCount = review.claims.reduce((n, c) => n + c.transactions.length, 0);
-  const feeSol = review.claims.reduce((n, c) => n + c.network_fee_lamports, 0) / 1e9;
-  const usdTotal = review.claims.reduce((n, c) => n + (byPosition.get(c.position)?.usd ?? 0), 0);
+function ClaimReview({
+  review,
+  building,
+  onConfirm,
+  onCancel,
+}: {
+  review: Review | null;
+  /** Positions being built, shown while `review` is still null. */
+  building?: ClaimItem[];
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  const items = review?.items ?? building ?? [];
+  const byPosition = new Map(items.map((i) => [i.position, i]));
+  const claims = review?.claims ?? [];
+  const txCount = claims.reduce((n, c) => n + c.transactions.length, 0);
+  const feeSol = claims.reduce((n, c) => n + c.network_fee_lamports, 0) / 1e9;
+  const usdTotal = claims.reduce((n, c) => n + (byPosition.get(c.position)?.usd ?? 0), 0);
   // Same token claimed from several positions: one total per token, so two-token fees read at a glance.
   const totals = new Map<string, number>();
-  for (const c of review.claims) {
+  for (const c of claims) {
     const item = byPosition.get(c.position);
     if (!item) continue;
     if (c.fee_x_ui > 0) totals.set(item.tokenX, (totals.get(item.tokenX) ?? 0) + c.fee_x_ui);
@@ -185,8 +213,25 @@ function ClaimReview({ review, onConfirm, onCancel }: { review: Review; onConfir
           <p className="mt-0.5 text-xs text-ink-3">Periksa dulu. Setelah lanjut, Jupiter akan menampilkan simulasinya lagi.</p>
         </div>
 
+        {!review && (
+          <div className="px-5 py-4">
+            <div className="flex items-center gap-3 rounded-xl border border-line bg-black/25 px-3.5 py-3 text-sm text-ink-2">
+              <span className="h-4 w-4 animate-spin rounded-full border-2 border-accent/30 border-t-accent" aria-hidden />
+              Menyiapkan dan mensimulasikan {items.length} transaksi…
+            </div>
+            <ul className="mt-2 space-y-1 text-xs text-ink-3">
+              {items.map((i) => (
+                <li key={i.position} className="flex justify-between">
+                  <span>{i.poolName.replace("-", "/")}</span>
+                  <span className="tabular-nums">≈ {usd.format(i.usd)}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {review && (
         <div className="max-h-[50vh] space-y-2 overflow-y-auto px-5 py-4">
-          {review.claims.map((c) => {
+          {claims.map((c) => {
             const item = byPosition.get(c.position);
             return (
               <div key={c.position} className="rounded-xl border border-line bg-black/25 px-3.5 py-3">
@@ -209,7 +254,9 @@ function ClaimReview({ review, onConfirm, onCancel }: { review: Review; onConfir
             );
           })}
         </div>
+        )}
 
+        {review && (
         <div className="space-y-1.5 border-t border-line bg-black/20 px-5 py-4 text-sm tabular-nums">
           <div className="flex items-start justify-between gap-4">
             <span className="text-ink-3">Total diterima</span>
@@ -230,10 +277,11 @@ function ClaimReview({ review, onConfirm, onCancel }: { review: Review; onConfir
             <span className="text-ink-3">Biaya jaringan</span>
             <span className="text-ink-2">≈ {fmtNum(feeSol, 6)} SOL</span>
           </div>
-          {review.skipped.length > 0 && (
+          {review && review.skipped.length > 0 && (
             <div className="text-xs text-ink-3">{review.skipped.length} posisi dilewati karena fee-nya nol.</div>
           )}
         </div>
+        )}
 
         <div className="flex justify-end gap-2 border-t border-line px-5 py-3.5">
           <button
@@ -246,8 +294,9 @@ function ClaimReview({ review, onConfirm, onCancel }: { review: Review; onConfir
           <button
             type="button"
             onClick={onConfirm}
+            disabled={!review}
             autoFocus
-            className="rounded-lg border border-accent/50 bg-accent/15 px-4 py-2 text-sm font-medium text-accent hover:bg-accent/25"
+            className="rounded-lg border border-accent/50 bg-accent/15 px-4 py-2 text-sm font-medium text-accent hover:bg-accent/25 disabled:cursor-wait disabled:opacity-50"
           >
             Lanjut ke wallet
           </button>
@@ -411,12 +460,7 @@ function EmptyState() {
 
 export default function PortfolioPage() {
   const connected = useConnectedWallet();
-  // /portfolio?wallet=<address> opens a wallet without an extension (a link from another device, say). It never
-  // replaces a wallet connected through an extension.
-  useEffect(() => {
-    const param = new URLSearchParams(window.location.search).get("wallet");
-    if (param && isWalletAddress(param) && !connected?.wallet && connected?.address !== param) watchAddress(param);
-  }, [connected]);
+  useWalletParam(connected);
   const { data, error, reload, reloadKey } = usePortfolio(connected?.address);
   const walletOptions = useWalletOptions();
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
@@ -462,6 +506,8 @@ export default function PortfolioPage() {
           )}
         </div>
 
+        <PortfolioTabs />
+
         {!connected ? (
           <EmptyState />
         ) : (
@@ -478,8 +524,13 @@ export default function PortfolioPage() {
             )}
 
             <ClaimResult state={claimState} />
-            {claimState.phase === "review" && (
-              <ClaimReview review={claimState.review} onConfirm={() => void confirm()} onCancel={cancel} />
+            {(claimState.phase === "review" || claimState.phase === "building") && (
+              <ClaimReview
+                review={claimState.phase === "review" ? claimState.review : null}
+                building={claimState.phase === "building" ? claimState.items : undefined}
+                onConfirm={() => void confirm()}
+                onCancel={cancel}
+              />
             )}
 
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">

@@ -99,7 +99,7 @@ function useBins(pool: string, position: string, open: boolean, refreshKey: numb
       }
     };
     void load();
-    const timer = setInterval(load, 30_000);
+    const timer = setInterval(load, 60_000);
     return () => {
       cancelled = true;
       clearInterval(timer);
