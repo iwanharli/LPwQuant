@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, type ReactNode } from "react";
-import { CLAIM_URL, ENGINE_URL, fmtDateTime, fmtNum, shortAddress, usd } from "../../lib/format";
+import { CLAIM_URL, ENGINE_URL, fmtDateTime, fmtTime, fmtNum, shortAddress, usd } from "../../lib/format";
 import { canSign, isWalletAddress, signAndSendAll, useConnectedWallet, useWalletOptions, watchAddress } from "../../lib/wallet";
 import TopBar from "../top-bar";
 import { StatusDot } from "../ui";
@@ -10,7 +10,7 @@ import DailyPnlChart, { type DailyPnl } from "./daily-pnl-chart";
 import PoolCard, { type Pool } from "./pool-card";
 import PositionFilters, { DEFAULT_FILTERS, applyFilters, statusCounts, type Filters } from "./position-filters";
 
-const REFRESH_MS = 60_000;
+const REFRESH_MS = 20_000;
 
 type Portfolio = {
   wallet: string;
@@ -70,39 +70,73 @@ function usePortfolio(wallet: string | undefined) {
   }, [wallet, reloadKey]);
 
   // A different wallet: do not show the previous one's numbers while the new one loads.
-  return { data: loadedFor === wallet ? data : null, error, reload: () => setReloadKey((k) => k + 1) };
+  return { data: loadedFor === wallet ? data : null, error, reload: () => setReloadKey((k) => k + 1), reloadKey };
 }
+
+export type ClaimItem = { position: string; pool: string; poolName: string; tokenX: string; tokenY: string; usd: number };
+type BuiltClaim = {
+  position: string;
+  pool: string;
+  fee_x_ui: number;
+  fee_y_ui: number;
+  transactions: string[];
+  network_fee_lamports: number;
+};
+type Review = { items: ClaimItem[]; claims: BuiltClaim[]; skipped: string[]; builtAt: number };
 
 type ClaimState =
   | { phase: "idle" }
   | { phase: "building" | "signing"; key: string }
+  | { phase: "review"; key: string; review: Review }
   | { phase: "done"; key: string; signatures: string[]; skipped: number }
   | { phase: "error"; key: string; message: string };
 
-/** Claim flow: the ingestor builds and simulates unsigned transactions, the wallet shows them and the user signs. */
+// A transaction carries a recent blockhash that expires after ~60-90s; past this, rebuild before signing.
+const REBUILD_AFTER_MS = 45_000;
+
+async function buildClaims(owner: string, items: ClaimItem[]): Promise<Review> {
+  const res = await fetch(`${CLAIM_URL}/claim`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ owner, positions: items.map(({ position, pool }) => ({ position, pool })) }),
+  });
+  const body = await res.json();
+  if (!res.ok) throw new Error(body?.detail ?? `HTTP ${res.status}`);
+  return { items, claims: body.claims, skipped: body.skipped ?? [], builtAt: Date.now() };
+}
+
+/**
+ * Claim flow: the ingestor builds and simulates unsigned transactions, the page shows what each one claims and
+ * waits for the user to confirm, and only then does the wallet see them (and ask again, with its own simulation).
+ */
 function useClaim(owner: string | undefined, onDone: () => void) {
   const [state, setState] = useState<ClaimState>({ phase: "idle" });
-  const claim = async (key: string, positions: { position: string; pool: string }[]) => {
-    if (!owner || positions.length === 0) return;
+
+  const prepare = async (key: string, items: ClaimItem[]) => {
+    if (!owner || items.length === 0) return;
     setState({ phase: "building", key });
     try {
-      const res = await fetch(`${CLAIM_URL}/claim`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ owner, positions }),
-      });
-      const body = await res.json();
-      if (!res.ok) throw new Error(body?.detail ?? `HTTP ${res.status}`);
-      const txs = (body.claims as { transactions: string[] }[]).flatMap((c) =>
-        c.transactions.map((t) => Uint8Array.from(atob(t), (ch) => ch.charCodeAt(0))),
-      );
-      if (txs.length === 0) {
-        setState({ phase: "done", key, signatures: [], skipped: body.skipped?.length ?? 0 });
+      const review = await buildClaims(owner, items);
+      if (review.claims.length === 0) {
+        setState({ phase: "done", key, signatures: [], skipped: review.skipped.length });
         return;
       }
-      setState({ phase: "signing", key });
+      setState({ phase: "review", key, review });
+    } catch (err) {
+      setState({ phase: "error", key, message: err instanceof Error ? err.message : "Gagal" });
+    }
+  };
+
+  const confirm = async () => {
+    if (state.phase !== "review" || !owner) return;
+    const { key } = state;
+    let { review } = state;
+    setState({ phase: "signing", key });
+    try {
+      if (Date.now() - review.builtAt > REBUILD_AFTER_MS) review = await buildClaims(owner, review.items);
+      const txs = review.claims.flatMap((c) => c.transactions.map((t) => Uint8Array.from(atob(t), (ch) => ch.charCodeAt(0))));
       const signatures = await signAndSendAll(txs);
-      setState({ phase: "done", key, signatures, skipped: body.skipped?.length ?? 0 });
+      setState({ phase: "done", key, signatures, skipped: review.skipped.length });
       setTimeout(onDone, 4000); // give the chain and Meteora's indexer a moment before re-reading
     } catch (err) {
       const message = err instanceof Error ? err.message : "Gagal";
@@ -110,7 +144,117 @@ function useClaim(owner: string | undefined, onDone: () => void) {
       setState({ phase: "error", key, message: rejected ? "Dibatalkan di wallet" : message });
     }
   };
-  return { state, claim };
+
+  const cancel = () => setState({ phase: "idle" });
+  return { state, prepare, confirm, cancel };
+}
+
+function ClaimReview({ review, onConfirm, onCancel }: { review: Review; onConfirm: () => void; onCancel: () => void }) {
+  const byPosition = new Map(review.items.map((i) => [i.position, i]));
+  const txCount = review.claims.reduce((n, c) => n + c.transactions.length, 0);
+  const feeSol = review.claims.reduce((n, c) => n + c.network_fee_lamports, 0) / 1e9;
+  const usdTotal = review.claims.reduce((n, c) => n + (byPosition.get(c.position)?.usd ?? 0), 0);
+  // Same token claimed from several positions: one total per token, so two-token fees read at a glance.
+  const totals = new Map<string, number>();
+  for (const c of review.claims) {
+    const item = byPosition.get(c.position);
+    if (!item) continue;
+    if (c.fee_x_ui > 0) totals.set(item.tokenX, (totals.get(item.tokenX) ?? 0) + c.fee_x_ui);
+    if (c.fee_y_ui > 0) totals.set(item.tokenY, (totals.get(item.tokenY) ?? 0) + c.fee_y_ui);
+  }
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onCancel();
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onCancel]);
+
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/65 px-4 backdrop-blur-sm" onClick={onCancel}>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="claim-review-title"
+        onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-lg overflow-hidden rounded-2xl border border-line bg-[#0e1217] shadow-[0_24px_64px_rgba(0,0,0,0.6)]"
+      >
+        <div className="border-b border-line px-5 py-4">
+          <h2 id="claim-review-title" className="text-base font-semibold text-ink">
+            Rincian claim fee
+          </h2>
+          <p className="mt-0.5 text-xs text-ink-3">Periksa dulu. Setelah lanjut, Jupiter akan menampilkan simulasinya lagi.</p>
+        </div>
+
+        <div className="max-h-[50vh] space-y-2 overflow-y-auto px-5 py-4">
+          {review.claims.map((c) => {
+            const item = byPosition.get(c.position);
+            return (
+              <div key={c.position} className="rounded-xl border border-line bg-black/25 px-3.5 py-3">
+                <div className="flex items-center justify-between gap-3 text-sm">
+                  <span className="font-medium text-ink">{item?.poolName.replace("-", "/") ?? "Posisi"}</span>
+                  <span className="font-mono text-[11px] text-ink-3">{shortAddress(c.position)}</span>
+                </div>
+                <div className="mt-2 grid grid-cols-2 gap-2 text-sm tabular-nums">
+                  <div className="rounded-lg bg-raised/40 px-2.5 py-1.5">
+                    <div className="text-[11px] text-ink-3">{item?.tokenX}</div>
+                    <div className={c.fee_x_ui > 0 ? "text-ink" : "text-ink-3"}>+{fmtNum(c.fee_x_ui, c.fee_x_ui < 1 ? 6 : 4)}</div>
+                  </div>
+                  <div className="rounded-lg bg-raised/40 px-2.5 py-1.5">
+                    <div className="text-[11px] text-ink-3">{item?.tokenY}</div>
+                    <div className={c.fee_y_ui > 0 ? "text-ink" : "text-ink-3"}>+{fmtNum(c.fee_y_ui, c.fee_y_ui < 1 ? 6 : 4)}</div>
+                  </div>
+                </div>
+                {item && <div className="mt-1.5 text-right text-[11px] text-ink-3">≈ {usd.format(item.usd)}</div>}
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="space-y-1.5 border-t border-line bg-black/20 px-5 py-4 text-sm tabular-nums">
+          <div className="flex items-start justify-between gap-4">
+            <span className="text-ink-3">Total diterima</span>
+            <span className="text-right text-ink">
+              {[...totals.entries()].map(([token, amount]) => (
+                <span key={token} className="block">
+                  +{fmtNum(amount, amount < 1 ? 6 : 4)} {token}
+                </span>
+              ))}
+              <span className="block text-xs text-ink-3">≈ {usd.format(usdTotal)}</span>
+            </span>
+          </div>
+          <div className="flex justify-between gap-4">
+            <span className="text-ink-3">Transaksi</span>
+            <span className="text-ink-2">{txCount}×, disetujui di wallet</span>
+          </div>
+          <div className="flex justify-between gap-4">
+            <span className="text-ink-3">Biaya jaringan</span>
+            <span className="text-ink-2">≈ {fmtNum(feeSol, 6)} SOL</span>
+          </div>
+          {review.skipped.length > 0 && (
+            <div className="text-xs text-ink-3">{review.skipped.length} posisi dilewati karena fee-nya nol.</div>
+          )}
+        </div>
+
+        <div className="flex justify-end gap-2 border-t border-line px-5 py-3.5">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="rounded-lg border border-line px-4 py-2 text-sm text-ink-2 hover:border-line-strong hover:text-ink"
+          >
+            Batal
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            autoFocus
+            className="rounded-lg border border-accent/50 bg-accent/15 px-4 py-2 text-sm font-medium text-accent hover:bg-accent/25"
+          >
+            Lanjut ke wallet
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function ClaimButton({
@@ -183,15 +327,68 @@ function Tile({ label, value, hint }: { label: ReactNode; value: ReactNode; hint
   );
 }
 
-function Card({ title, right, children }: { title: string; right?: ReactNode; children: ReactNode }) {
+function Card({
+  title,
+  right,
+  collapsedRight,
+  defaultOpen = true,
+  children,
+}: {
+  title: string;
+  right?: ReactNode;
+  /** Shown in the header while collapsed, in place of `right`. */
+  collapsedRight?: ReactNode;
+  defaultOpen?: boolean;
+  children: ReactNode;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
   return (
     <section className="overflow-hidden rounded-2xl border border-line bg-[#0e1217]/[0.97] backdrop-blur-sm shadow-[0_14px_42px_rgba(0,0,0,0.20),inset_0_1px_0_rgba(255,255,255,0.04)]">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line bg-raised/20 px-4 py-3">
-        <h2 className="text-sm font-semibold text-ink">{title}</h2>
-        {right}
-      </div>
-      {children}
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        className={`flex w-full flex-wrap items-center justify-between gap-3 bg-raised/20 px-4 py-3 text-left transition-colors hover:bg-raised/40 ${open ? "border-b border-line" : ""}`}
+      >
+        <span className="flex items-center gap-2">
+          <svg viewBox="0 0 20 20" width={14} height={14} className={`text-ink-3 transition-transform ${open ? "" : "-rotate-90"}`} aria-hidden>
+            <path d="m5 7.5 5 5 5-5" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+          <h2 className="text-sm font-semibold text-ink">{title}</h2>
+        </span>
+        {open ? right : (collapsedRight ?? right)}
+      </button>
+      {open && children}
     </section>
+  );
+}
+
+/** Manual refresh: skips the engine and ingestor caches once. Spins until data newer than the click arrives. */
+function RefreshButton({ onClick, fetchedAt }: { onClick: () => void; fetchedAt: number }) {
+  const [clickedAt, setClickedAt] = useState<number | null>(null);
+  const busy = clickedAt != null && fetchedAt < clickedAt;
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        setClickedAt(Date.now());
+        onClick();
+      }}
+      disabled={busy}
+      className="inline-flex h-9 items-center gap-2 rounded-lg border border-line bg-[#0e1217]/[0.97] px-3 text-sm font-medium text-ink-2 shadow-sm shadow-black/20 transition-colors hover:border-line-strong hover:text-ink disabled:opacity-70"
+    >
+      <svg viewBox="0 0 20 20" width={15} height={15} className={busy ? "animate-spin" : ""} aria-hidden>
+        <path
+          d="M16 10a6 6 0 1 1-1.8-4.3M16 3.5v3.2h-3.2"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={1.8}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+      {busy ? "Memuat…" : "Refresh"}
+    </button>
   );
 }
 
@@ -220,15 +417,23 @@ export default function PortfolioPage() {
     const param = new URLSearchParams(window.location.search).get("wallet");
     if (param && isWalletAddress(param) && !connected?.wallet && connected?.address !== param) watchAddress(param);
   }, [connected]);
-  const { data, error, reload } = usePortfolio(connected?.address);
+  const { data, error, reload, reloadKey } = usePortfolio(connected?.address);
   const walletOptions = useWalletOptions();
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
   const visiblePools = applyFilters(data?.pools ?? [], filters);
   const visibleCount = visiblePools.reduce((n, pool) => n + pool.positions.length, 0);
   const signer = canSign(connected, walletOptions);
-  const { state: claimState, claim } = useClaim(connected?.address, reload);
+  const { state: claimState, prepare, confirm, cancel } = useClaim(connected?.address, reload);
+  const claimItem = (pool: Pool, p: Pool["positions"][number]): ClaimItem => ({
+    position: p.address,
+    pool: pool.address,
+    poolName: pool.name,
+    tokenX: pool.token_x,
+    tokenY: pool.token_y,
+    usd: p.unclaimed_fees_usd,
+  });
   const allPositions = (data?.pools ?? []).flatMap((pool) =>
-    pool.positions.filter((p) => p.unclaimed_fees_usd > 0).map((p) => ({ position: p.address, pool: pool.address })),
+    pool.positions.filter((p) => p.unclaimed_fees_usd > 0).map((p) => claimItem(pool, p)),
   );
   const s = data?.summary;
   const today = data?.daily[data.daily.length - 1];
@@ -247,9 +452,12 @@ export default function PortfolioPage() {
             </p>
           </div>
           {data && (
-            <div className="text-right text-xs text-ink-3">
-              <div className="font-mono text-ink-2">{shortAddress(data.wallet)}</div>
-              diperbarui {fmtDateTime(data.fetched_at)}
+            <div className="flex items-center gap-3">
+              <div className="text-right text-xs text-ink-3">
+                <div className="font-mono text-ink-2">{shortAddress(data.wallet)}</div>
+                diperbarui {fmtTime(data.fetched_at)} · otomatis tiap {REFRESH_MS / 1000} dtk
+              </div>
+              <RefreshButton onClick={reload} fetchedAt={data.fetched_at} />
             </div>
           )}
         </div>
@@ -270,6 +478,9 @@ export default function PortfolioPage() {
             )}
 
             <ClaimResult state={claimState} />
+            {claimState.phase === "review" && (
+              <ClaimReview review={claimState.review} onConfirm={() => void confirm()} onCancel={cancel} />
+            )}
 
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
               <Tile
@@ -297,7 +508,7 @@ export default function PortfolioPage() {
                       busyKey="all"
                       state={claimState}
                       disabled={!signer || allPositions.length === 0}
-                      onClick={() => void claim("all", allPositions.slice(0, 20))}
+                      onClick={() => void prepare("all", allPositions.slice(0, 20))}
                     />
                     <span className="truncate">{signer ? "Sudah termasuk di PnL" : "Connect lewat extension untuk claim"}</span>
                   </span>
@@ -312,6 +523,16 @@ export default function PortfolioPage() {
 
             <Card
               title="Keuntungan per hari"
+              defaultOpen={false}
+              collapsedRight={
+                today ? (
+                  <span className="flex items-center gap-3 text-xs tabular-nums">
+                    <span className="text-ink-3">Hari ini</span>
+                    <span className={`font-medium ${tone(today.pnl_usd)}`}>{signedUsd(today.pnl_usd)}</span>
+                    <span className="text-ink-3">· {data?.daily.length} hari tercatat</span>
+                  </span>
+                ) : undefined
+              }
               right={
                 <span className="text-xs text-ink-3">
                   {data?.tracking_since ? `Dipantau sejak ${fmtDateTime(data.tracking_since)} WIB` : ""}
@@ -359,13 +580,14 @@ export default function PortfolioPage() {
               <PoolCard
                 key={pool.address}
                 pool={pool}
+                refreshKey={reloadKey}
                 renderClaim={(p) => (
                   <ClaimButton
                     label={`Claim fee ${usd.format(p.unclaimed_fees_usd)}`}
                     busyKey={p.address}
                     state={claimState}
                     disabled={!signer || p.unclaimed_fees_usd <= 0}
-                    onClick={() => void claim(p.address, [{ position: p.address, pool: pool.address }])}
+                    onClick={() => void prepare(p.address, [claimItem(pool, p)])}
                   />
                 )}
               />

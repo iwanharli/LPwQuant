@@ -23,7 +23,10 @@ type BuiltClaim = {
   pool: string;
   fee_x: string; // raw token units, as the program counts them
   fee_y: string;
+  fee_x_ui: number; // display units, from the mint's decimals
+  fee_y_ui: number;
   transactions: string[]; // base64, unsigned
+  network_fee_lamports: number; // from the simulation-time fee calculator, before any priority fee
 };
 
 let connection: Connection | null = null;
@@ -68,6 +71,7 @@ export async function buildClaims(req: ClaimRequest): Promise<{ claims: BuiltCla
       const txs: Transaction[] = await dlmm.claimSwapFee({ owner, position });
       const { blockhash, lastValidBlockHeight } = await conn.getLatestBlockhash("confirmed");
       const encoded: string[] = [];
+      let networkFee = 0;
       for (const tx of txs) {
         tx.feePayer = owner;
         tx.recentBlockhash = blockhash;
@@ -77,9 +81,19 @@ export async function buildClaims(req: ClaimRequest): Promise<{ claims: BuiltCla
           const log = (sim.value.logs ?? []).slice(-3).join(" | ");
           throw new Error(`simulasi gagal untuk ${address}: ${JSON.stringify(sim.value.err)} ${log}`);
         }
+        networkFee += (await conn.getFeeForMessage(tx.compileMessage(), "confirmed")).value ?? 5000;
         encoded.push(tx.serialize({ requireAllSignatures: false, verifySignatures: false }).toString("base64"));
       }
-      claims.push({ position: address, pool, fee_x: feeX.toString(), fee_y: feeY.toString(), transactions: encoded });
+      claims.push({
+        position: address,
+        pool,
+        fee_x: feeX.toString(),
+        fee_y: feeY.toString(),
+        fee_x_ui: Number(feeX.toString()) / 10 ** dlmm.tokenX.mint.decimals,
+        fee_y_ui: Number(feeY.toString()) / 10 ** dlmm.tokenY.mint.decimals,
+        transactions: encoded,
+        network_fee_lamports: networkFee,
+      });
     }
   }
   return { claims, skipped };
@@ -91,14 +105,14 @@ type BinsResponse = {
   upper_bin: number;
   bins: { bin: number; price: number; x: number; y: number }[];
 };
-const BINS_CACHE_MS = 60_000;
+const BINS_CACHE_MS = 20_000;
 const binsCache = new Map<string, { at: number; value: BinsResponse }>();
 
 /** Liquidity of one position per bin (display units), for the portfolio page's bin chart. Read-only. */
-export async function positionBins(pool: string, position: string): Promise<BinsResponse> {
+export async function positionBins(pool: string, position: string, fresh = false): Promise<BinsResponse> {
   const key = `${pool}:${position}`;
   const hit = binsCache.get(key);
-  if (hit && Date.now() - hit.at < BINS_CACHE_MS) return hit.value;
+  if (hit && !fresh && Date.now() - hit.at < BINS_CACHE_MS) return hit.value;
   const dlmm = await DLMM.create(rpc(), new PublicKey(pool));
   const [pos, active] = await Promise.all([dlmm.getPosition(new PublicKey(position)), dlmm.getActiveBin()]);
   const dx = 10 ** dlmm.tokenX.mint.decimals;
@@ -150,7 +164,7 @@ export function startClaimServer(port = config.claimPort, allowed = config.dashb
       const position = url.searchParams.get("position") ?? "";
       if (!BASE58.test(pool) || !BASE58.test(position)) return send(res, 400, { detail: "alamat tidak valid" }, origin);
       try {
-        return send(res, 200, await positionBins(pool, position), origin);
+        return send(res, 200, await positionBins(pool, position, url.searchParams.get("fresh") === "1"), origin);
       } catch (err) {
         return send(res, 502, { detail: err instanceof Error ? err.message : "gagal membaca bin" }, origin);
       }

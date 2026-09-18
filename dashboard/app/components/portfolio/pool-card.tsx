@@ -76,15 +76,18 @@ const SEVERITY_CHIP = {
 } as const;
 const SEVERITY_BAR = { good: "bg-good", warning: "bg-warning", critical: "bg-critical", info: "bg-ink-3" } as const;
 
-function useBins(pool: string, position: string, open: boolean) {
+function useBins(pool: string, position: string, open: boolean, refreshKey: number) {
   const [data, setData] = useState<Bins | null>(null);
   const [failed, setFailed] = useState(false);
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
+    let first = refreshKey > 0; // a manual refresh skips the ingestor's cache once
     const load = async () => {
       try {
-        const res = await fetch(`${CLAIM_URL}/bins?pool=${pool}&position=${position}`);
+        const fresh = first ? "&fresh=1" : "";
+        first = false;
+        const res = await fetch(`${CLAIM_URL}/bins?pool=${pool}&position=${position}${fresh}`);
         if (!res.ok) throw new Error(String(res.status));
         const body = (await res.json()) as Bins;
         if (!cancelled) {
@@ -96,12 +99,12 @@ function useBins(pool: string, position: string, open: boolean) {
       }
     };
     void load();
-    const timer = setInterval(load, 60_000);
+    const timer = setInterval(load, 30_000);
     return () => {
       cancelled = true;
       clearInterval(timer);
     };
-  }, [pool, position, open]);
+  }, [pool, position, open, refreshKey]);
   return { data, failed };
 }
 
@@ -204,13 +207,15 @@ function PositionBlock({
   pool,
   p,
   claimButton,
+  refreshKey,
 }: {
   pool: Pool;
   p: Position;
   claimButton: React.ReactNode;
+  refreshKey: number;
 }) {
   const [open, setOpen] = useState(true);
-  const { data: bins, failed } = useBins(pool.address, p.address, open);
+  const { data: bins, failed } = useBins(pool.address, p.address, open, refreshKey);
   const active = bins?.active_bin ?? p.active_bin;
   const st = rangeStatus(p, active);
   const span = p.upper_bin - p.lower_bin + 1;
@@ -310,9 +315,11 @@ function PositionBlock({
 export default function PoolCard({
   pool,
   renderClaim,
+  refreshKey = 0,
 }: {
   pool: Pool;
   renderClaim: (p: Position) => React.ReactNode;
+  refreshKey?: number;
 }) {
   return (
     <section className="overflow-hidden rounded-2xl border border-line bg-[#0e1217]/[0.97] backdrop-blur-sm shadow-[0_14px_42px_rgba(0,0,0,0.20),inset_0_1px_0_rgba(255,255,255,0.04)]">
@@ -343,7 +350,7 @@ export default function PoolCard({
       {pool.positions.length === 0 ? (
         <p className="px-4 py-4 text-sm text-ink-3">Detail posisi belum tersedia dari Meteora.</p>
       ) : (
-        pool.positions.map((p) => <PositionBlock key={p.address} pool={pool} p={p} claimButton={renderClaim(p)} />)
+        pool.positions.map((p) => <PositionBlock key={p.address} pool={pool} p={p} claimButton={renderClaim(p)} refreshKey={refreshKey} />)
       )}
     </section>
   );

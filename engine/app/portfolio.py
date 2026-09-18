@@ -27,7 +27,7 @@ from . import config
 log = logging.getLogger("portfolio")
 
 SNAPSHOT_EVERY_MS = 15 * 60_000
-CACHE_MS = 60_000  # the page polls every minute; Meteora's own data refreshes about as often
+CACHE_MS = 15_000  # the page polls every 20s; the cache only absorbs several open tabs
 MAX_POOLS = 60
 _WALLET = re.compile(r"^[1-9A-HJ-NP-Za-km-z]{32,44}$")  # base58 public key
 _cache: dict[str, tuple[int, dict[str, Any]]] = {}
