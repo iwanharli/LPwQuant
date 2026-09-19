@@ -15,8 +15,10 @@ import { Connection, Keypair, PublicKey, type Transaction } from "@solana/web3.j
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { config } from "./config";
 import { apiFetch, createFailoverFetch } from "./rpc";
+import { WalletHistory } from "./wallet-history";
 
 const MAX_POSITIONS = 20;
+let history: WalletHistory | null = null;
 const BASE58 = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 
 type ClaimRequest = { owner: string; positions: { position: string; pool: string }[] };
@@ -642,6 +644,19 @@ export function startClaimServer(port = config.claimPort, allowed = config.dashb
         return send(res, 200, { owner, suggestions: await swapSuggestions(owner) }, origin);
       } catch (err) {
         return send(res, 502, { detail: err instanceof Error ? err.message : "gagal mengambil quote" }, origin);
+      }
+    }
+    if (req.method === "GET" && url.pathname === "/history/sync") {
+      // On demand (a Refresh on the net-result page): read the wallet's newest transactions now instead of waiting
+      // for the 5-minute sync, so a position closed a minute ago is counted with its exit.
+      const owner = url.searchParams.get("owner") ?? "";
+      if (!BASE58.test(owner)) return send(res, 400, { detail: "alamat wallet tidak valid" }, origin);
+      try {
+        history ??= new WalletHistory();
+        const added = (await history.sync(owner)) + (await history.syncTokenAccounts(owner));
+        return send(res, 200, { added }, origin);
+      } catch (err) {
+        return send(res, 502, { detail: err instanceof Error ? err.message : "sync gagal" }, origin);
       }
     }
     if (req.method === "GET" && url.pathname === "/prices") {

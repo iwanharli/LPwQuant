@@ -40,6 +40,7 @@ type NetPnl = {
   costs: { network: number; pool_fees: number; total: number; other_dex_swaps: number; unpriced_fees: number; costs_known_txs: number; transactions: number };
   checks: { unassigned_transactions: number; multi_token_transactions: number; positions_indexed: number; lp_transactions_matched: number };
   coins: Coin[];
+  computed_at?: number;
 };
 
 const money = (v: number) => `${v >= 0 ? "+" : "−"}${usd.format(Math.abs(v))}`;
@@ -66,7 +67,7 @@ function CoinRow({ c }: { c: Coin }) {
         type="button"
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
-        className="grid w-full grid-cols-[1fr_auto_auto] items-center gap-4 px-4 py-3 text-left transition-colors hover:bg-white/[0.025] sm:grid-cols-[1.3fr_1fr_1fr_1fr_1fr_auto_auto]"
+        className="grid w-full grid-cols-[minmax(0,1fr)_6.5rem_14px] items-center gap-x-4 px-4 py-3 text-left transition-colors hover:bg-white/[0.025] sm:grid-cols-[minmax(0,1fr)_6.5rem_6.5rem_6.5rem_5rem_6.5rem_14px]"
       >
         <span className="min-w-0">
           <span className="block truncate text-sm font-semibold text-ink">{c.symbol}</span>
@@ -92,7 +93,7 @@ function CoinRow({ c }: { c: Coin }) {
           <span className="text-[10px] uppercase tracking-wider text-ink-3">biaya</span>
         </span>
         <span className="text-right tabular-nums">
-          <span className={`block text-base font-semibold ${tone(c.net)}`}>{money(c.net)}</span>
+          <span className={`block text-sm font-semibold ${tone(c.net)}`}>{money(c.net)}</span>
           <span className="text-[10px] uppercase tracking-wider text-ink-3">bersih</span>
         </span>
         <svg viewBox="0 0 20 20" width={14} height={14} className={`text-ink-3 transition-transform ${open ? "rotate-90" : ""}`} aria-hidden>
@@ -143,7 +144,7 @@ function CoinRow({ c }: { c: Coin }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {c.positions.map((p) => (
+                  {[...c.positions].sort((a, b) => (b.closed_at ?? 0) - (a.closed_at ?? 0)).map((p) => (
                     <tr key={p.position} className="border-t border-white/[0.04]">
                       <td className="py-1.5 text-ink-2">
                         {p.opened_at ? fmtDateTime(p.opened_at) : "–"} → {p.closed_at ? fmtDateTime(p.closed_at) : <span className="text-accent">masih terbuka</span>}
@@ -176,16 +177,25 @@ function CoinRow({ c }: { c: Coin }) {
   );
 }
 
+/** The "Terbaru" order: the coin with the most recently closed position first; coins with only open positions
+ * follow, newest opened first. */
+function lastActivity(c: Coin): number {
+  const closed = Math.max(0, ...c.positions.map((p) => p.closed_at ?? 0));
+  if (closed) return closed;
+  return -1 / Math.max(1, ...c.positions.map((p) => p.opened_at ?? 0));
+}
+
 /** Net result per coin and per position, reconciled with the wallet's total P/L. */
 export default function NetPnl({ wallet }: { wallet: string }) {
   const [data, setData] = useState<NetPnl | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [sort, setSort] = useState<"worst" | "best" | "name">("worst");
+  const [sort, setSort] = useState<"recent" | "worst" | "best" | "name">("recent");
+  const [reloadKey, setReloadKey] = useState(0);
   const [filter, setFilter] = useState<"all" | "lp" | "swap">("all");
 
   useEffect(() => {
     let cancelled = false;
-    fetch(`${ENGINE_URL}/api/portfolio/netpnl?wallet=${wallet}`)
+    fetch(`${ENGINE_URL}/api/portfolio/netpnl?wallet=${wallet}${reloadKey ? "&fresh=true" : ""}`)
       .then(async (r) => {
         const b = await r.json();
         if (!r.ok) throw new Error(b?.detail ?? `HTTP ${r.status}`);
@@ -196,7 +206,7 @@ export default function NetPnl({ wallet }: { wallet: string }) {
     return () => {
       cancelled = true;
     };
-  }, [wallet]);
+  }, [wallet, reloadKey]);
 
   if (error) return <p className="rounded-2xl border border-line bg-[#0e1217]/[0.97] px-4 py-8 text-sm text-ink-3">{error}</p>;
   if (!data)
@@ -209,7 +219,15 @@ export default function NetPnl({ wallet }: { wallet: string }) {
   const b = data.buckets;
   const coins = data.coins
     .filter((c) => (filter === "all" ? true : filter === "lp" ? c.positions.length > 0 : c.positions.length === 0))
-    .sort((x, y) => (sort === "worst" ? x.net - y.net : sort === "best" ? y.net - x.net : x.symbol.localeCompare(y.symbol)));
+    .sort((x, y) =>
+      sort === "recent"
+        ? lastActivity(y) - lastActivity(x)
+        : sort === "worst"
+          ? x.net - y.net
+          : sort === "best"
+            ? y.net - x.net
+            : x.symbol.localeCompare(y.symbol),
+    );
   const lpCoins = data.coins.filter((c) => c.positions.length > 0);
   const swapOnly = data.coins.filter((c) => c.positions.length === 0);
   const sum = (cs: Coin[]) => cs.reduce((n, c) => n + c.net, 0);
@@ -231,9 +249,23 @@ export default function NetPnl({ wallet }: { wallet: string }) {
             <h2 className="text-sm font-semibold text-ink">Hasil bersih: dari mana saja</h2>
             <p className="mt-0.5 text-xs text-ink-3">Setiap transaksi dihitung sekali. Jumlah semua baris = total untung/rugi di tab Ringkasan.</p>
           </div>
-          <div className="text-right">
-            <div className={`text-2xl font-semibold tabular-nums ${tone(data.total_pl_usd)}`}>{money(data.total_pl_usd)}</div>
-            <div className="text-[11px] text-ink-3">total sejak modal disetor</div>
+          <div className="flex items-center gap-4">
+            <div className="text-right">
+              <div className={`text-2xl font-semibold tabular-nums ${tone(data.total_pl_usd)}`}>{money(data.total_pl_usd)}</div>
+              <div className="text-[11px] text-ink-3">
+                total sejak modal disetor{data.computed_at ? ` · dihitung ${fmtDateTime(data.computed_at)}` : ""}
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setData(null);
+                setReloadKey((k) => k + 1);
+              }}
+              className="h-9 rounded-lg border border-line px-3 text-sm text-ink-2 hover:border-line-strong hover:text-ink"
+            >
+              Refresh
+            </button>
           </div>
         </div>
         <div className="divide-y divide-white/[0.04]">
@@ -280,6 +312,7 @@ export default function NetPnl({ wallet }: { wallet: string }) {
             ))}
             <select value={sort} onChange={(e) => setSort(e.target.value as typeof sort)} aria-label="Urutkan"
               className="h-7 rounded-full border border-line bg-bg/50 px-3 text-xs text-ink-2 focus:outline-none">
+              <option value="recent">Terbaru</option>
               <option value="worst">Rugi terbesar dulu</option>
               <option value="best">Untung terbesar dulu</option>
               <option value="name">Nama</option>

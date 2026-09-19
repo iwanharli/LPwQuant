@@ -134,9 +134,25 @@ def _deltas(row) -> list[dict[str, Any]]:
     return row["deltas"] if isinstance(row["deltas"], list) else json.loads(row["deltas"] or "[]")
 
 
+async def _data_version(db, wallet: str) -> tuple:
+    """Changes whenever a transaction arrives or is updated (costs filled, reclassified): the cache must not outlive
+    it, or a position closed a minute ago shows its entry but not its exit."""
+    r = await db.fetchrow(
+        """select count(*) as n, max(ts) as last, count(network_fee_lamports) as costed,
+                  (select count(*) from portfolio_positions_index where wallet = $1 and status = 'open') as open
+           from portfolio_activity where wallet = $1""",
+        wallet,
+    )
+    return (r["n"], r["last"], r["costed"], r["open"])
+
+
 async def compute(db, wallet: str, fresh: bool = False) -> dict[str, Any]:
+    if fresh:
+        # Pull the newest transactions first (the ingestor syncs every 5 minutes otherwise).
+        await asyncio.to_thread(_get_json, f"{config.CLAIM_SERVER_URL}/history/sync?{urllib.parse.urlencode({'owner': wallet})}")
+    version = await _data_version(db, wallet)
     hit = _cache.get(wallet)
-    if hit and not fresh and time.time() - hit[0] < CACHE_S:
+    if hit and not fresh and time.time() - hit[0] < CACHE_S and hit[1].get("_version") == version:
         return hit[1]
     await sync_positions(db, wallet)
 
@@ -291,6 +307,8 @@ async def compute(db, wallet: str, fresh: bool = False) -> dict[str, Any]:
                    "lp_transactions_matched": sum(1 for s in sig_pos)},
         "coins": out_coins,
     }
+    result["_version"] = version
+    result["computed_at"] = int(time.time() * 1000)
     _cache[wallet] = (time.time(), result)
     return result
 
