@@ -35,7 +35,7 @@ export default function Dashboard() {
         matchesFilters(p, filters) &&
         (!binStep || p.bin_step === binStep) &&
         (!hideExcluded || p.plan.action !== "avoid") &&
-        (!q || p.name.toLowerCase().includes(q) || p.address.toLowerCase().includes(q)),
+        (!q || p.name.toLowerCase().includes(q) || p.address.toLowerCase().includes(q) || (p.base_mint ?? "").toLowerCase().includes(q)),
     );
   }, [all, query, filters, binStep, hideExcluded]);
 

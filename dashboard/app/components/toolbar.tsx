@@ -101,7 +101,7 @@ export default function Toolbar({
             value={query}
             onChange={(e) => onQuery(e.target.value)}
             onKeyDown={(e) => e.key === "Escape" && (onQuery(""), e.currentTarget.blur())}
-            placeholder="Cari pair, token atau alamat pool"
+            placeholder="Cari pair, token, alamat token atau pool"
             aria-label="Cari pool"
             className="h-11 w-full rounded-xl border border-line bg-bg/70 pl-10 pr-12 text-sm text-ink placeholder:text-ink-3 outline-none transition-colors focus:border-accent/70 focus:bg-bg/90"
           />
