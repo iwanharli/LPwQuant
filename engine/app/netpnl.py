@@ -38,7 +38,6 @@ log = logging.getLogger("netpnl")
 SOL = "So11111111111111111111111111111111111111112"
 USDC = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
 QUOTES = {SOL, USDC}
-SWAP_WINDOW_AFTER_S = 30 * 60
 CACHE_S = 300
 _cache: dict[str, tuple[float, dict[str, Any]]] = {}
 
@@ -325,6 +324,19 @@ async def compute(db, wallet: str, fresh: bool = False) -> dict[str, Any]:
     return result
 
 
+def _nearest(ps: list[dict[str, Any]], ts: float) -> str:
+    """The position a swap at `ts` belongs to: the one open at that moment, else the one whose open or close is
+    closest in time (a buy just before opening, a sell just after closing). Positions opened back to back no longer
+    swallow each other's swaps, as a fixed window after each close did."""
+    def distance(p: dict[str, Any]) -> float:
+        opened = p["opened_at"].timestamp() if p["opened_at"] else float("-inf")
+        closed = p["closed_at"].timestamp() if p["closed_at"] else float("inf")
+        if opened <= ts <= closed:
+            return 0.0
+        return opened - ts if ts < opened else ts - closed
+    return min(ps, key=lambda p: (distance(p), -(p["opened_at"].timestamp() if p["opened_at"] else 0)))["position"]
+
+
 def _split_positions(c: dict[str, Any], positions: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """A coin's net over its positions.
 
@@ -332,12 +344,10 @@ def _split_positions(c: dict[str, Any], positions: list[dict[str, Any]]) -> list
     of one position and into another without selling it): the first looks like a big loss, the last like a big gain.
     So each position starts from Meteora's own PnL, which values tokens at the moment they enter and leave the
     position, and the coin's result outside LP (coin net - sum of Meteora PnL: swap costs, tokens that lost value
-    after leaving, what is still held) is shared out by the swap volume around each position -- swaps from the
-    previous position's close up to this one's close + SWAP_WINDOW_AFTER_S. Positions add up to the coin exactly."""
+    after leaving, what is still held) is shared out by the swap volume around each position (see _nearest). Positions add up to the coin exactly."""
     if not positions:
         return []
     ps = sorted(positions, key=lambda p: (p["closed_at"] or datetime.max.replace(tzinfo=timezone.utc)))
-    ends = [(p["closed_at"].timestamp() + SWAP_WINDOW_AFTER_S) if p["closed_at"] else float("inf") for p in ps]
     volume = {p["position"]: 0.0 for p in ps}
     count = {p["position"]: 0 for p in ps}
     cost_lp = {p["position"]: 0.0 for p in ps}
@@ -346,7 +356,7 @@ def _split_positions(c: dict[str, Any], positions: list[dict[str, Any]]) -> list
         if t.get("position") in cost_lp:
             cost_lp[t["position"]] += t.get("cost", 0.0)  # the position's own transactions, by signature
             continue
-        target = next((p["position"] for p, end in zip(ps, ends) if t["ts"] <= end), ps[-1]["position"])
+        target = _nearest(ps, t["ts"])
         cost_swaps[target] += t.get("cost", 0.0)
         if t["kind"] != "swap":
             continue
