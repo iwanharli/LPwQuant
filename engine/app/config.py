@@ -44,7 +44,8 @@ FEE_GATE_HOURS = _num("FEE_GATE_HOURS", 1)
 MAX_ROUND_TRIP_COST_PCT = _num("MAX_ROUND_TRIP_COST_PCT", 1.5)
 # Cap on the plan stop-loss after the profile multiplier: positions were held to -16% before another rule closed them.
 MAX_STOP_LOSS_PCT = _num("MAX_STOP_LOSS_PCT", 10)
-SOL_USD_FALLBACK = _num("SOL_USD_FALLBACK", 150)  # backtest tx/rent costs; live uses the SOL pool price
+SOL_USD_FALLBACK = _num("SOL_USD_FALLBACK", 150)
+USD_IDR_FALLBACK = _num("USD_IDR", 16400)  # rupiah per dollar when the FX feed is unreachable  # backtest tx/rent costs; live uses the SOL pool price
 
 # Paper trading (app/paper.py). No transactions are ever sent.
 PAPER_ENABLED = (os.getenv("PAPER_ENABLED") or "true").lower() != "false"

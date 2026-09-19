@@ -12,7 +12,7 @@ from . import config
 from .backtest import default_params, run_backtest
 from .charts import MAX_HOURS, load_candles, pool_paper_positions, profile_decision
 from .freshness import check_freshness
-from . import busy_hours, portfolio
+from . import busy_hours, ledger, portfolio
 from .service import Engine
 
 _tz = ZoneInfo(config.TIMEZONE)
@@ -220,6 +220,43 @@ async def new_pools(max_age_hours: float = Query(1.0, gt=0, le=24), min_tvl: flo
         })
     out.sort(key=lambda r: r["pool_age_hours"])
     return {"updated_at": engine.updated_at, "pools": out}
+
+
+@app.get("/api/portfolio/ledger")
+async def get_ledger(wallet: str) -> dict:
+    """Capital, net worth and where the difference came from (LP, gacha, trading), in dollars and rupiah."""
+    _wallet_or_400(wallet)
+    try:
+        return await ledger.summary(engine.db, wallet)
+    except Exception as err:
+        raise HTTPException(status_code=502, detail=f"gagal menghitung: {err}") from err
+
+
+@app.post("/api/portfolio/capital")
+async def post_capital(entry: dict) -> dict:
+    """Capital the user remembers putting in (or taking out: negative), in rupiah or dollars."""
+    wallet = str(entry.get("wallet") or "")
+    _wallet_or_400(wallet)
+    idr, usd_ = entry.get("amount_idr"), entry.get("amount_usd")
+    if not isinstance(idr, (int, float)) and not isinstance(usd_, (int, float)):
+        raise HTTPException(status_code=400, detail="isi jumlah dalam rupiah atau USD")
+    ts = None
+    if entry.get("date"):
+        try:
+            ts = datetime.fromisoformat(str(entry["date"])).replace(tzinfo=ZoneInfo(config.TIMEZONE))
+        except ValueError as err:
+            raise HTTPException(status_code=400, detail="tanggal tidak valid") from err
+    await ledger.add_capital(engine.db, wallet, idr if isinstance(idr, (int, float)) else None,
+                             usd_ if isinstance(usd_, (int, float)) else None, (entry.get("note") or None), ts)
+    return {"ok": True}
+
+
+@app.post("/api/portfolio/capital/delete")
+async def delete_capital(entry: dict) -> dict:
+    wallet = str(entry.get("wallet") or "")
+    _wallet_or_400(wallet)
+    await ledger.delete_capital(engine.db, wallet, int(entry.get("id") or 0))
+    return {"ok": True}
 
 
 @app.get("/api/usage")

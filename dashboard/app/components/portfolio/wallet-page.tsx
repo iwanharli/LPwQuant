@@ -14,7 +14,6 @@ import TopBar from "../top-bar";
 import { StatusDot } from "../ui";
 import WalletButton from "../wallet-button";
 import PortfolioHeader from "./portfolio-header";
-import PortfolioTabs from "./portfolio-tabs";
 import SwapSuggestions from "./swap-suggestions";
 
 const REFRESH_MS = 30_000;
@@ -258,7 +257,8 @@ export default function WalletPage() {
       <TopBar />
       <main className="mx-auto w-full min-w-0 max-w-full flex-1 space-y-5 overflow-x-hidden px-4 py-6 sm:px-6 lg:py-7 2xl:px-8">
         <PortfolioHeader
-          subtitle="Koin di luar posisi LP."
+          title="Wallet"
+          subtitle="Koin di wallet kamu, di luar posisi LP."
           right={
             data && (
               <>
@@ -279,8 +279,6 @@ export default function WalletPage() {
             )
           }
         />
-
-        <PortfolioTabs />
 
         {!connected ? (
           <div className="grid place-items-center rounded-2xl border border-line bg-[#0e1217]/[0.97] px-6 py-16 text-center">

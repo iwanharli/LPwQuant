@@ -278,3 +278,38 @@ create table if not exists portfolio_networth_snapshots (
   total_usd   double precision not null,
   primary key (wallet, ts)
 );
+
+-- What the chain needs to tell deposits, gacha refunds and plain transfers apart (wallet-history.ts).
+alter table portfolio_activity add column if not exists programs text[];       -- programs invoked
+alter table portfolio_activity add column if not exists signed boolean;        -- did the wallet sign it
+alter table portfolio_activity add column if not exists counterparty text;     -- the other side of a transfer
+
+-- Where each extra account (the wallet's token accounts) was last read up to: incoming USDC lands on the token
+-- account, not the wallet address, so the wallet's own signature list never shows a top-up.
+create table if not exists portfolio_sync_cursor (
+  wallet     text not null,
+  account    text not null,
+  signature  text not null,
+  primary key (wallet, account)
+);
+
+-- Capital put in or taken out, as the user remembers it (a QRIS top-up in rupiah) or as detected on chain.
+create table if not exists portfolio_capital (
+  id          bigserial primary key,
+  wallet      text not null,
+  ts          timestamptz not null,
+  amount_idr  double precision,          -- what was paid, when entered by hand in rupiah
+  amount_usd  double precision not null, -- deposit > 0, withdrawal < 0
+  source      text not null,             -- manual | chain
+  signature   text unique,               -- chain entries: the transaction
+  note        text
+);
+create index if not exists portfolio_capital_wallet on portfolio_capital (wallet, ts);
+
+-- Guard alerts already sent (one per wallet, day and threshold).
+create table if not exists portfolio_guard_sent (
+  wallet  text not null,
+  day     date not null,
+  key     text not null,
+  primary key (wallet, day, key)
+);

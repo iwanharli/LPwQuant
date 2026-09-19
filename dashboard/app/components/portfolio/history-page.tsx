@@ -24,10 +24,14 @@ const KIND: Record<string, { label: string; dot: string }> = {
   limit_order_place: { label: "Pasang limit order", dot: "bg-[#8b6cf6]" },
   limit_order_cancel: { label: "Batal/tarik order", dot: "bg-[#8b6cf6]" },
   swap: { label: "Swap", dot: "bg-[#3ec6e0]" },
+  rebalance: { label: "Rebalance", dot: "bg-teal-300" },
+  deposit: { label: "Setoran", dot: "bg-sky-300" },
+  withdraw: { label: "Penarikan", dot: "bg-orange-300" },
+  gacha: { label: "Gacha", dot: "bg-fuchsia-300" },
   transfer: { label: "Transfer", dot: "bg-ink-3" },
   other: { label: "Lainnya", dot: "bg-ink-3" },
 };
-const FILTERS = ["all", "claim", "swap", "add_liquidity", "remove_liquidity", "limit_order_place", "limit_order_cancel", "transfer"];
+const FILTERS = ["all", "claim", "swap", "add_liquidity", "remove_liquidity", "rebalance", "deposit", "gacha", "limit_order_place", "limit_order_cancel", "transfer"];
 
 function usePolled<T>(url: string | null): T | null {
   const [data, setData] = useState<{ url: string; value: T } | null>(null);

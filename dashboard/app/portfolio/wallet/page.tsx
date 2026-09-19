@@ -1,11 +1,6 @@
-import type { Metadata } from "next";
-import WalletPage from "../../components/portfolio/wallet-page";
+import { redirect } from "next/navigation";
 
-export const metadata: Metadata = {
-  title: "Wallet · Portofolio LP · Quant",
-  description: "Koin di wallet kamu, di luar posisi LP",
-};
-
+// The wallet page moved out of the portfolio tabs; old links and bookmarks land on its new address.
 export default function Page() {
-  return <WalletPage />;
+  redirect("/wallet");
 }

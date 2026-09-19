@@ -210,6 +210,9 @@ async def snapshot_loop(db) -> None:
                     await snapshot(db, data)
                     await snapshot_positions(db, data)
                     await snapshot_networth(db, wallet, data)
+                    from . import ledger  # local: ledger imports this module
+
+                    await ledger.guard(db, wallet)
                 except Exception as err:
                     log.warning("portfolio snapshot failed for %s…: %s", wallet[:4], err)
         except asyncio.CancelledError:
@@ -362,7 +365,8 @@ async def fetch_orders(db, wallet: str, fresh: bool = False) -> dict[str, Any]:
 # ---- History ---------------------------------------------------------------------------------------------------
 
 ACTIVITY_KINDS = {
-    "claim", "add_liquidity", "remove_liquidity", "limit_order_place", "limit_order_cancel", "swap", "transfer", "other",
+    "claim", "add_liquidity", "remove_liquidity", "rebalance", "limit_order_place", "limit_order_cancel", "swap",
+    "deposit", "withdraw", "gacha", "transfer", "other",
 }
 _SIGNATURE = re.compile(r"^[1-9A-HJ-NP-Za-km-z]{64,90}$")
 
@@ -440,18 +444,35 @@ async def list_activity(
     before_ts = before_sig = None
     if before:
         before_ts, before_sig = before
+    # Gacha refunds are stored as deposits and relabelled below, so a gacha filter has to fetch deposits too.
+    kinds = ["gacha", "deposit", "withdraw"] if kind == "gacha" else ([kind] if kind else None)
     rows = await db.fetch(
         """select signature, ts, kind, source, ok, pool, sol_delta, deltas, note from portfolio_activity
-           where wallet = $1 and ($2::text is null or kind = $2)
+           where wallet = $1 and ($2::text[] is null or kind = any($2))
              and ($4::bigint is null or (ts, signature) < (to_timestamp($4 / 1000.0), $5::text))
            order by ts desc, signature desc limit $3""",
-        wallet, kind, limit, before_ts, before_sig,
+        wallet, kinds, limit, before_ts, before_sig,
     )
-    return [
-        {**dict(r), "ts": int(r["ts"].timestamp() * 1000),
-         "deltas": r["deltas"] if isinstance(r["deltas"], list) else json.loads(r["deltas"] or "[]")}
-        for r in rows
+    # A card sold back arrives as a plain USDC deposit minutes after the pack was paid for: show it as gacha, with
+    # the same rule the ledger counts it by (engine/app/ledger.py).
+    gacha_times = [
+        r["ts"] for r in await db.fetch("select ts from portfolio_activity where wallet = $1 and kind = 'gacha'", wallet)
     ]
+    out = []
+    for r in rows:
+        item = {**dict(r), "ts": int(r["ts"].timestamp() * 1000),
+                "deltas": r["deltas"] if isinstance(r["deltas"], list) else json.loads(r["deltas"] or "[]")}
+        if r["kind"] in ("deposit", "withdraw"):
+            from .ledger import gacha_related  # local: ledger imports this module
+
+            usdc = sum(d["amount"] for d in item["deltas"] if d.get("symbol") == "USDC")
+            if gacha_related(r["ts"], usdc, gacha_times):
+                item["kind"] = "gacha"
+                item["note"] = item.get("note") or ("Bayar pack" if usdc < 0 else "Kartu dijual kembali")
+        if kind == "gacha" and item["kind"] != "gacha":
+            continue  # a real deposit fetched only because refunds share its kind
+        out.append(item)
+    return out
 
 
 async def networth_history(db, wallet: str, days: int = 30) -> list[dict[str, Any]]:

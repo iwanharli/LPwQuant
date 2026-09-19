@@ -1,0 +1,377 @@
+"use client";
+
+import { useEffect, useState, type ReactNode } from "react";
+import { ENGINE_URL, fmtDateTime, fmtNum, usd } from "../../lib/format";
+import { useConnectedWallet, useWalletParam } from "../../lib/wallet";
+import TopBar from "../top-bar";
+import WalletButton from "../wallet-button";
+import PortfolioHeader from "./portfolio-header";
+import PortfolioTabs from "./portfolio-tabs";
+
+type Day = { day: string; networth: number; change: number; new_money: number; lp: number; gacha: number; trading: number; partial: boolean };
+type Ledger = {
+  fx: { usd_idr: number };
+  capital: {
+    usd: number;
+    idr: number;
+    entries: { id: number; ts: number; amount_idr: number | null; amount_usd: number; source: string; note: string | null }[];
+    chain_deposits_usd: number;
+    chain_withdrawals_usd: number;
+  };
+  networth: { usd: number; idr: number; at: number | null; wallet_usd: number | null; lp_usd: number | null; orders_usd: number | null };
+  pl: { usd: number; idr: number; pct: number | null };
+  breakdown: { lp: number; gacha: number; trading: number };
+  fx_idr: number;
+  days: Day[];
+};
+
+const rp = (v: number) => `Rp${fmtNum(Math.abs(v) / 1e6, 1)} jt`;
+const signedRp = (v: number) => `${v >= 0 ? "+" : "−"}${rp(v)}`;
+const signedUsd = (v: number) => `${v >= 0 ? "+" : "−"}${usd.format(Math.abs(v))}`;
+const tone = (v: number) => (v > 0.005 ? "text-emerald-300" : v < -0.005 ? "text-rose-300" : "text-ink-2");
+
+function useLedger(wallet: string | undefined) {
+  const [data, setData] = useState<Ledger | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [key, setKey] = useState(0);
+  useEffect(() => {
+    if (!wallet) return;
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const res = await fetch(`${ENGINE_URL}/api/portfolio/ledger?wallet=${wallet}`);
+        const body = await res.json();
+        if (!res.ok) throw new Error(body?.detail ?? `HTTP ${res.status}`);
+        if (!cancelled) {
+          setData(body as Ledger);
+          setError(null);
+        }
+      } catch (err) {
+        if (!cancelled) setError(err instanceof Error ? err.message : "Gagal memuat");
+      }
+    };
+    void load();
+    const timer = setInterval(load, 60_000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [wallet, key]);
+  return { data, error, reload: () => setKey((k) => k + 1) };
+}
+
+function Card({ title, right, children }: { title: string; right?: ReactNode; children: ReactNode }) {
+  return (
+    <section className="overflow-hidden rounded-2xl border border-line bg-[#0e1217]/[0.97] backdrop-blur-sm">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line bg-raised/20 px-4 py-3">
+        <h2 className="text-sm font-semibold text-ink">{title}</h2>
+        {right}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+const SOURCES = [
+  {
+    key: "lp" as const,
+    label: "LP (posisi Meteora)",
+    hint: "Fee dikurangi IL dari semua posisi, menurut Meteora.",
+    color: "bg-emerald-400",
+  },
+  {
+    key: "trading" as const,
+    label: "Trading & token di luar LP",
+    hint: "Beli-jual memecoin, token yang jatuh setelah keluar dari LP, biaya swap. Dihitung sebagai sisa.",
+    color: "bg-rose-400",
+  },
+  {
+    key: "gacha" as const,
+    label: "Gacha",
+    hint: "Pack yang dibayar dikurangi uang yang kembali saat kartu dijual lagi.",
+    color: "bg-amber-400",
+  },
+];
+
+function Breakdown({ l }: { l: Ledger }) {
+  const max = Math.max(...SOURCES.map((s) => Math.abs(l.breakdown[s.key])), 1);
+  const rate = l.fx.usd_idr;
+  return (
+    <div className="divide-y divide-white/[0.05]">
+      {SOURCES.map((s) => {
+        const v = l.breakdown[s.key];
+        return (
+          <div key={s.key} className="grid gap-2 px-4 py-4 sm:grid-cols-[1.2fr_2fr_auto] sm:items-center sm:gap-6">
+            <div>
+              <div className="text-sm font-medium text-ink">{s.label}</div>
+              <div className="text-xs leading-5 text-ink-3">{s.hint}</div>
+            </div>
+            {/* Bars grow from a centre line: gains to the right, losses to the left. */}
+            <div className="flex h-3 items-center">
+              <div className="flex h-full w-1/2 justify-end">
+                {v < 0 && <div className={`h-full rounded-l-full ${s.color} opacity-80`} style={{ width: `${(Math.abs(v) / max) * 100}%` }} />}
+              </div>
+              <div className="h-5 w-px bg-white/20" />
+              <div className="flex h-full w-1/2">
+                {v > 0 && <div className={`h-full rounded-r-full ${s.color} opacity-80`} style={{ width: `${(v / max) * 100}%` }} />}
+              </div>
+            </div>
+            <div className="text-right tabular-nums">
+              <div className={`text-lg font-semibold ${tone(v)}`}>{signedRp(v * rate)}</div>
+              <div className="text-xs text-ink-3">{signedUsd(v)}</div>
+            </div>
+          </div>
+        );
+      })}
+      {Math.abs(l.fx_idr) >= 50_000 && (
+        <div className="grid gap-2 px-4 py-3 sm:grid-cols-[1.2fr_2fr_auto] sm:items-center sm:gap-6">
+          <div>
+            <div className="text-sm font-medium text-ink-2">Selisih kurs</div>
+            <div className="text-xs leading-5 text-ink-3">
+              {l.fx_idr > 0 ? "Rupiah melemah sejak top-up: dolar yang tersisa bernilai lebih banyak dalam rupiah." : "Rupiah menguat sejak top-up."}
+            </div>
+          </div>
+          <div />
+          <div className={`text-right text-sm font-medium tabular-nums ${tone(l.fx_idr)}`}>{signedRp(l.fx_idr)}</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Today({ d, rate }: { d: Day; rate: number }) {
+  const outsideLp = d.trading + d.gacha;
+  const bad = outsideLp < -1;
+  const items = [
+    { label: "LP", v: d.lp },
+    { label: "Trading & token", v: d.trading },
+    { label: "Gacha", v: d.gacha },
+  ];
+  return (
+    <div className={`rounded-2xl border px-4 py-4 ${bad ? "border-rose-400/30 bg-rose-500/[0.06]" : "border-emerald-400/25 bg-emerald-500/[0.05]"}`}>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <div className="text-xs uppercase tracking-wider text-ink-3">Hari ini{d.partial ? " (sejak mulai dipantau)" : ""}</div>
+          <div className={`mt-1 text-2xl font-semibold tabular-nums ${tone(d.change - d.new_money)}`}>
+            {signedUsd(d.change - d.new_money)} <span className="text-base font-normal">({signedRp((d.change - d.new_money) * rate)})</span>
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {items.map((i) => (
+            <span key={i.label} className="rounded-full border border-white/[0.08] bg-black/20 px-3 py-1 text-xs tabular-nums">
+              <span className="text-ink-3">{i.label} </span>
+              <span className={`font-medium ${tone(i.v)}`}>{signedUsd(i.v)}</span>
+            </span>
+          ))}
+        </div>
+      </div>
+      <p className="mt-3 text-sm leading-6 text-ink-2">
+        {bad
+          ? `Di luar LP hari ini sudah ${signedUsd(outsideLp)}. Dari data kamu sendiri, bagian inilah yang menghabiskan modal: sebaiknya berhenti trading dan gacha dulu hari ini.`
+          : "Di luar LP hari ini tidak minus. Pertahankan: biarkan modal bekerja di LP saja."}
+      </p>
+    </div>
+  );
+}
+
+function Days({ days }: { days: Day[] }) {
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[640px] text-sm tabular-nums">
+        <thead className="text-[11px] uppercase tracking-wider text-ink-3">
+          <tr className="border-b border-line">
+            <th className="px-4 py-2.5 text-left font-medium">Hari</th>
+            <th className="px-3 py-2.5 text-right font-medium">LP</th>
+            <th className="px-3 py-2.5 text-right font-medium">Trading & token</th>
+            <th className="px-3 py-2.5 text-right font-medium">Gacha</th>
+            <th className="px-3 py-2.5 text-right font-medium">Setoran</th>
+            <th className="px-4 py-2.5 text-right font-medium">Kekayaan akhir hari</th>
+          </tr>
+        </thead>
+        <tbody>
+          {[...days].reverse().map((d) => (
+            <tr key={d.day} className="border-b border-line/60 last:border-b-0">
+              <td className="px-4 py-2.5 text-ink-2">
+                {new Intl.DateTimeFormat("id-ID", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" }).format(new Date(`${d.day}T00:00:00Z`))}
+                {d.partial && <span className="ml-1 text-[10px] text-ink-3">(sebagian)</span>}
+              </td>
+              <td className={`px-3 py-2.5 text-right ${tone(d.lp)}`}>{signedUsd(d.lp)}</td>
+              <td className={`px-3 py-2.5 text-right ${tone(d.trading)}`}>{signedUsd(d.trading)}</td>
+              <td className={`px-3 py-2.5 text-right ${tone(d.gacha)}`}>{Math.abs(d.gacha) < 0.005 ? "–" : signedUsd(d.gacha)}</td>
+              <td className="px-3 py-2.5 text-right text-ink-3">{Math.abs(d.new_money) < 0.5 ? "–" : signedUsd(d.new_money)}</td>
+              <td className="px-4 py-2.5 text-right text-ink">{usd.format(d.networth)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function CapitalForm({ wallet, onSaved }: { wallet: string; onSaved: () => void }) {
+  const [amount, setAmount] = useState("");
+  const [date, setDate] = useState("");
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const save = async () => {
+    const idr = Number(amount.replace(/[^\d-]/g, ""));
+    if (!idr) {
+      setError("Isi jumlah dalam rupiah");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(`${ENGINE_URL}/api/portfolio/capital`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ wallet, amount_idr: idr, date: date || undefined, note: note || undefined }),
+      });
+      if (!res.ok) throw new Error((await res.json())?.detail ?? `HTTP ${res.status}`);
+      setAmount("");
+      setNote("");
+      onSaved();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Gagal menyimpan");
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="flex flex-wrap items-end gap-2">
+      <label className="flex flex-col gap-1 text-xs text-ink-3">
+        Jumlah (Rp, negatif = tarik)
+        <input value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="36.000.000" inputMode="numeric"
+          className="h-9 w-40 rounded-lg border border-line bg-bg/50 px-3 text-sm text-ink focus:border-accent/50 focus:outline-none" />
+      </label>
+      <label className="flex flex-col gap-1 text-xs text-ink-3">
+        Tanggal
+        <input type="date" value={date} onChange={(e) => setDate(e.target.value)}
+          className="h-9 rounded-lg border border-line bg-bg/50 px-3 text-sm text-ink focus:border-accent/50 focus:outline-none" />
+      </label>
+      <label className="flex min-w-40 flex-1 flex-col gap-1 text-xs text-ink-3">
+        Catatan
+        <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Top-up QRIS"
+          className="h-9 rounded-lg border border-line bg-bg/50 px-3 text-sm text-ink focus:border-accent/50 focus:outline-none" />
+      </label>
+      <button type="button" disabled={busy} onClick={() => void save()}
+        className="h-9 rounded-lg border border-accent/45 bg-accent/10 px-4 text-sm font-medium text-accent hover:bg-accent/20 disabled:opacity-50">
+        Simpan
+      </button>
+      {error && <span className="basis-full text-xs text-rose-300">{error}</span>}
+    </div>
+  );
+}
+
+export default function SummaryPage() {
+  const connected = useConnectedWallet();
+  useWalletParam(connected);
+  const { data: l, error, reload } = useLedger(connected?.address);
+  const today = l?.days[l.days.length - 1];
+  const manual = l?.capital.entries.filter((e) => e.source === "manual") ?? [];
+
+  return (
+    <div className="flex min-h-screen min-w-0 flex-col overflow-x-hidden">
+      <TopBar />
+      <main className="mx-auto w-full min-w-0 max-w-full flex-1 space-y-5 overflow-x-hidden px-4 py-6 sm:px-6 lg:py-7 2xl:px-8">
+        <PortfolioHeader subtitle="Modal, kekayaan sekarang, dan dari mana untung-ruginya." />
+        <PortfolioTabs />
+
+        {!connected ? (
+          <div className="grid place-items-center rounded-2xl border border-line bg-[#0e1217]/[0.97] px-6 py-16 text-center">
+            <div className="text-lg font-semibold text-ink">Hubungkan wallet untuk melihat ringkasan</div>
+            <div className="mt-5"><WalletButton /></div>
+          </div>
+        ) : !l ? (
+          <p className="rounded-2xl border border-line bg-[#0e1217]/[0.97] px-4 py-10 text-sm text-ink-3">{error ?? "Menghitung…"}</p>
+        ) : (
+          <>
+            {/* The one number that matters, in rupiah first: what went in, what is left. */}
+            <section className="relative overflow-hidden rounded-3xl border border-line bg-gradient-to-br from-[#12161d] via-[#0e1217] to-[#0b0e13] px-6 py-6">
+              <div className={`pointer-events-none absolute -right-24 -top-24 h-72 w-72 rounded-full blur-3xl ${l.pl.usd >= 0 ? "bg-emerald-500/10" : "bg-rose-500/10"}`} />
+              <div className="relative grid gap-6 lg:grid-cols-[1fr_auto_1fr_auto_1.2fr] lg:items-center">
+                <div>
+                  <div className="text-xs uppercase tracking-wider text-ink-3">Modal disetor</div>
+                  <div className="mt-1 text-3xl font-semibold tabular-nums tracking-tight text-ink">{rp(l.capital.idr)}</div>
+                  <div className="text-xs text-ink-3">
+                    {manual.length ? "catatan kamu" : "terdeteksi dari top-up"} · {usd.format(l.capital.usd)} USDC masuk
+                  </div>
+                </div>
+                <div className="hidden text-2xl text-ink-3 lg:block">→</div>
+                <div>
+                  <div className="text-xs uppercase tracking-wider text-ink-3">Kekayaan sekarang</div>
+                  <div className="mt-1 text-3xl font-semibold tabular-nums tracking-tight text-ink">{rp(l.networth.idr)}</div>
+                  <div className="text-xs text-ink-3">
+                    {usd.format(l.networth.usd)} · LP {usd.format(l.networth.lp_usd ?? 0)} · wallet {usd.format(l.networth.wallet_usd ?? 0)}
+                  </div>
+                </div>
+                <div className="hidden h-14 w-px bg-white/10 lg:block" />
+                <div>
+                  <div className="text-xs uppercase tracking-wider text-ink-3">Untung / rugi</div>
+                  <div className={`mt-1 text-4xl font-bold tabular-nums tracking-tight ${tone(l.pl.usd)}`}>{signedRp(l.pl.idr)}</div>
+                  <div className={`text-sm tabular-nums ${tone(l.pl.usd)}`}>
+                    {signedUsd(l.pl.usd)}
+                    {l.pl.pct != null && ` · ${l.pl.pct >= 0 ? "+" : ""}${fmtNum(l.pl.pct, 1)}%`}
+                  </div>
+                </div>
+              </div>
+              <div className="relative mt-4 text-[11px] text-ink-3">
+                Kurs Rp{new Intl.NumberFormat("id-ID").format(Math.round(l.fx.usd_idr))}/USD · kekayaan per {l.networth.at ? fmtDateTime(l.networth.at) : "–"} WIB
+              </div>
+            </section>
+
+            {today && <Today d={today} rate={l.fx.usd_idr} />}
+
+            <Card title="Dari mana untung-ruginya" right={<span className="text-xs text-ink-3">Sejak modal disetor</span>}>
+              <Breakdown l={l} />
+            </Card>
+
+            <Card title="Per hari" right={<span className="text-xs text-ink-3">Sejak kekayaan mulai dicatat · USD</span>}>
+              {l.days.length ? <Days days={l.days} /> : <p className="px-4 py-6 text-sm text-ink-3">Belum ada data harian.</p>}
+            </Card>
+
+            <Card title="Modal">
+              <div className="space-y-4 px-4 py-4">
+                <div className="grid gap-3 text-sm sm:grid-cols-2">
+                  <div className="rounded-xl border border-white/[0.06] bg-black/20 px-4 py-3">
+                    <div className="text-xs text-ink-3">Setoran terdeteksi di chain (top-up USDC)</div>
+                    <div className="mt-1 font-semibold tabular-nums text-ink">
+                      {usd.format(l.capital.chain_deposits_usd)} <span className="font-normal text-ink-3">≈ {rp(l.capital.chain_deposits_usd * l.fx.usd_idr)}</span>
+                    </div>
+                  </div>
+                  <div className="rounded-xl border border-white/[0.06] bg-black/20 px-4 py-3">
+                    <div className="text-xs text-ink-3">Penarikan ke luar</div>
+                    <div className="mt-1 font-semibold tabular-nums text-ink">{usd.format(Math.abs(l.capital.chain_withdrawals_usd))}</div>
+                  </div>
+                </div>
+                {manual.length > 0 && (
+                  <ul className="space-y-1 text-sm">
+                    {manual.map((e) => (
+                      <li key={e.id} className="flex items-center justify-between gap-3 rounded-lg px-2 py-1.5 hover:bg-white/[0.03]">
+                        <span className="text-ink-2">
+                          {fmtDateTime(e.ts)} · {e.amount_idr != null ? signedRp(e.amount_idr) : signedUsd(e.amount_usd)}
+                          {e.note && <span className="text-ink-3"> · {e.note}</span>}
+                        </span>
+                        <button type="button" className="text-xs text-ink-3 hover:text-rose-300"
+                          onClick={() => void fetch(`${ENGINE_URL}/api/portfolio/capital/delete`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ wallet: connected.address, id: e.id }) }).then(reload)}>
+                          hapus
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                <p className="text-xs leading-5 text-ink-3">
+                  {manual.length
+                    ? "Modal dihitung dari catatan kamu. Setoran di chain setelah catatan terakhir ditambahkan otomatis."
+                    : "Modal dihitung dari top-up USDC yang terdeteksi. Isi catatan sendiri hanya kalau angkanya berbeda (misalnya ada biaya top-up); catatan kamu akan menggantikan angka terdeteksi."}
+                </p>
+                <CapitalForm wallet={connected.address} onSaved={reload} />
+              </div>
+            </Card>
+          </>
+        )}
+      </main>
+    </div>
+  );
+}

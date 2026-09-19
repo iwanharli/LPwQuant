@@ -91,7 +91,7 @@ function group(items: Activity[]): Entry[] {
   const out: Entry[] = [];
   for (const a of items) {
     const last = out[out.length - 1];
-    const groupable = a.kind !== "transfer" && a.kind !== "other";
+    const groupable = a.kind !== "transfer" && a.kind !== "other" && a.kind !== "deposit" && a.kind !== "withdraw";
     if (last && groupable && last.kind === a.kind && last.items[last.items.length - 1].ts - a.ts <= GROUP_GAP_MS) {
       last.items.push(a);
       continue;
@@ -161,6 +161,20 @@ function describe(e: Entry, info: Record<string, TokenInfo>): { title: string; v
         from && to ? `Swap ${amt(from.amount)} ${from.symbol} → ${amt(to.amount)} ${to.symbol}` : n > 1 ? `${n} swap` : "Swap";
       return { title, value: sum(outs.length ? outs : ins), tone: "neutral" };
     }
+    case "rebalance":
+      return { title: n > 1 ? `Rebalance ${n} posisi` : `Rebalance posisi${pair ? ` ${pair}` : ""}`, value: sum(outs.length ? outs : ins), tone: "neutral" };
+    case "deposit":
+      return { title: `Setoran ${ins.map((d) => d.symbol).slice(0, 2).join(" & ")}`, value: sum(ins), tone: "gain" };
+    case "withdraw":
+      return { title: `Tarik ke luar ${outs.map((d) => d.symbol).slice(0, 2).join(" & ")}`, value: sum(outs), tone: "cost" };
+    case "gacha": {
+      const paid = sum(outs) ?? 0;
+      const back = sum(ins) ?? 0;
+      if (outs.length && !ins.length) return { title: n > 1 ? `Beli ${n} pack gacha` : "Beli pack gacha", value: paid, tone: "cost" };
+      if (ins.length && !outs.length) return { title: n > 1 ? `${n} kartu dijual kembali` : "Kartu dijual kembali", value: back, tone: "gain" };
+      const net = back - paid;
+      return { title: `Gacha ${n}× · bersih`, value: Math.abs(net), tone: net >= 0 ? "gain" : "cost" };
+    }
     case "transfer":
       return ins.length && !outs.length
         ? { title: `Terima ${ins.map((d) => d.symbol).slice(0, 2).join(" & ")}`, value: sum(ins), tone: "gain" }
@@ -178,6 +192,10 @@ const KIND_STYLE: Record<string, { tile: string; glyph: ReactNode; label: string
   add_liquidity: { tile: "from-lime-300/25 to-lime-400/5 text-lime-200 ring-lime-300/25", label: "Buka posisi", glyph: <path d="M12 5v14M5 12h14" /> },
   limit_order_place: { tile: "from-violet-400/25 to-violet-500/5 text-violet-300 ring-violet-400/25", label: "Limit order", glyph: <path d="M5 17 10 12l3 3 6-7M15 8h4v4" /> },
   limit_order_cancel: { tile: "from-violet-400/20 to-violet-500/5 text-violet-300 ring-violet-400/20", label: "Tarik order", glyph: <path d="M6 6l12 12M18 6 6 18" /> },
+  rebalance: { tile: "from-teal-400/20 to-teal-500/5 text-teal-300 ring-teal-400/20", label: "Rebalance", glyph: <path d="M4 12a8 8 0 0 1 14-5.3M20 12a8 8 0 0 1-14 5.3M18 3v4h-4M6 21v-4h4" /> },
+  deposit: { tile: "from-sky-400/25 to-sky-500/5 text-sky-300 ring-sky-400/25", label: "Setoran", glyph: <path d="M12 4v12m0 0-4-4m4 4 4-4M4 20h16" /> },
+  withdraw: { tile: "from-orange-400/25 to-orange-500/5 text-orange-300 ring-orange-400/25", label: "Penarikan", glyph: <path d="M12 20V8m0 0-4 4m4-4 4 4M4 4h16" /> },
+  gacha: { tile: "from-fuchsia-400/25 to-fuchsia-500/5 text-fuchsia-300 ring-fuchsia-400/25", label: "Gacha", glyph: <path d="M5 8h14v11H5zM3 5h18v3H3zM12 5v14M12 5c-2-3-5-2-5 0h5zm0 0c2-3 5-2 5 0h-5z" /> },
   swap: { tile: "from-cyan-400/25 to-cyan-500/5 text-cyan-300 ring-cyan-400/25", label: "Swap", glyph: <path d="M7 7h11l-3-3M17 17H6l3 3" /> },
   transfer: { tile: "from-slate-400/20 to-slate-500/5 text-slate-300 ring-slate-400/20", label: "Transfer", glyph: <path d="M5 12h14m0 0-5-5m5 5-5 5" /> },
   other: { tile: "from-slate-400/15 to-slate-500/5 text-slate-400 ring-slate-400/15", label: "Lainnya", glyph: <path d="M6 12h.01M12 12h.01M18 12h.01" /> },
