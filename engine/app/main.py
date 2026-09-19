@@ -12,7 +12,7 @@ from . import config
 from .backtest import default_params, run_backtest
 from .charts import MAX_HOURS, load_candles, pool_paper_positions, profile_decision
 from .freshness import check_freshness
-from . import busy_hours, ledger, portfolio
+from . import busy_hours, ledger, limit_recs, portfolio
 from .service import Engine
 
 _tz = ZoneInfo(config.TIMEZONE)
@@ -257,6 +257,15 @@ async def delete_capital(entry: dict) -> dict:
     _wallet_or_400(wallet)
     await ledger.delete_capital(engine.db, wallet, int(entry.get("id") or 0))
     return {"ok": True}
+
+
+@app.get("/api/limit-order/recommendations")
+async def limit_order_recommendations() -> dict:
+    """Safe, busy, sideways pools with buy/sell/stop levels from their own ATR and a 48-hour replay of that rule."""
+    if engine.db is None:
+        raise HTTPException(status_code=503, detail="engine not ready")
+    recs = await limit_recs.recommendations(engine.db, engine.sorted_rows())
+    return {"updated_at": engine.updated_at, "pools": recs, "stats": limit_recs.summary_stats(recs)}
 
 
 @app.get("/api/usage")

@@ -77,19 +77,23 @@ async def _flows(db, wallet: str, sol_usd: float) -> dict[str, list[tuple[dateti
     rows = [
         dict(r)
         for r in await db.fetch(
-            """select ts, kind, sol_delta, deltas from portfolio_activity
+            """select ts, kind, sol_delta, deltas, signature from portfolio_activity
                where wallet = $1 and ok and kind in ('deposit', 'withdraw', 'gacha') order by ts""",
             wallet,
         )
     ]
     gacha_times = [r["ts"] for r in rows if r["kind"] == "gacha"]
     out: dict[str, list[tuple[datetime, float]]] = {"deposit": [], "withdraw": [], "gacha": []}
+    events: list[dict[str, Any]] = []
     for r in rows:
         usd = _money(r, sol_usd)
         if r["kind"] in ("deposit", "withdraw") and gacha_related(r["ts"], usd, gacha_times):
             out["gacha"].append((r["ts"], usd))
         else:
             out[r["kind"]].append((r["ts"], usd))
+            if r["kind"] != "gacha":
+                events.append({"ts": int(r["ts"].timestamp() * 1000), "usd": usd, "kind": r["kind"], "signature": r["signature"]})
+    out["events"] = events  # type: ignore[assignment]  # capital moves on chain, for the page's timeline
     return out
 
 
@@ -215,7 +219,8 @@ async def summary(db, wallet: str) -> dict[str, Any]:
     gacha = sum(usd for _, usd in flows["gacha"])
     return {
         "fx": {"usd_idr": rate},
-        "capital": {"usd": capital_usd, "idr": capital_idr, "entries": entries,
+        "capital": {"usd": capital_usd, "idr": capital_idr, "entries": entries, "chain_events": flows["events"],
+                    "basis": "manual" if manual_idr else "chain",
                     "chain_deposits_usd": chain_deposits, "chain_withdrawals_usd": chain_withdrawals},
         "networth": {"usd": networth, "idr": networth * rate, "at": int(nw["ts"].timestamp() * 1000) if nw else None,
                      "wallet_usd": nw["wallet_usd"] if nw else None, "lp_usd": nw["lp_usd"] if nw else None,

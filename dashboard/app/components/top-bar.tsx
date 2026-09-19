@@ -12,7 +12,6 @@ const NAV = [
   { href: "/paper", label: "Paper trading" },
   { href: "/portfolio", label: "Portofolio LP" },
   { href: "/wallet", label: "Wallet" },
-  { href: "/rpc", label: "Pemakaian API" },
 ];
 
 export default function TopBar({
@@ -81,6 +80,22 @@ export default function TopBar({
             2xl screens, and a wall clock says nothing about this system -- it now rides along as a tooltip. */}
         <div className="ml-auto flex items-center gap-2 text-xs">
           <DataHealth status={status} lastMessageAt={lastMessageAt} />
+          {/* API usage is a check-up page, not a daily destination: an icon rather than a menu item. */}
+          <Link
+            href="/rpc"
+            title="Pemakaian API"
+            aria-label="Pemakaian API"
+            aria-current={pathname.startsWith("/rpc") ? "page" : undefined}
+            className={`grid h-9 w-9 place-items-center rounded-lg border transition-colors ${
+              pathname.startsWith("/rpc")
+                ? "border-accent/50 bg-accent/10 text-accent"
+                : "border-line bg-panel/60 text-ink-3 hover:border-line-strong hover:text-ink"
+            }`}
+          >
+            <svg viewBox="0 0 20 20" width={16} height={16} fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" aria-hidden>
+              <path d="M3 16.5h14M5.5 13V9.5M10 13V5M14.5 13v-6" />
+            </svg>
+          </Link>
           <WalletButton />
         </div>
       </div>

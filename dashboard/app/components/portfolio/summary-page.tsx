@@ -5,19 +5,14 @@ import { ENGINE_URL, fmtDateTime, fmtNum, usd } from "../../lib/format";
 import { useConnectedWallet, useWalletParam } from "../../lib/wallet";
 import TopBar from "../top-bar";
 import WalletButton from "../wallet-button";
+import CapitalButtons, { type Capital } from "./capital-card";
 import PortfolioHeader from "./portfolio-header";
 import PortfolioTabs from "./portfolio-tabs";
 
 type Day = { day: string; networth: number; change: number; new_money: number; lp: number; gacha: number; trading: number; partial: boolean };
 type Ledger = {
   fx: { usd_idr: number };
-  capital: {
-    usd: number;
-    idr: number;
-    entries: { id: number; ts: number; amount_idr: number | null; amount_usd: number; source: string; note: string | null }[];
-    chain_deposits_usd: number;
-    chain_withdrawals_usd: number;
-  };
+  capital: Capital;
   networth: { usd: number; idr: number; at: number | null; wallet_usd: number | null; lp_usd: number | null; orders_usd: number | null };
   pl: { usd: number; idr: number; pct: number | null };
   breakdown: { lp: number; gacha: number; trading: number };
@@ -208,62 +203,6 @@ function Days({ days }: { days: Day[] }) {
   );
 }
 
-function CapitalForm({ wallet, onSaved }: { wallet: string; onSaved: () => void }) {
-  const [amount, setAmount] = useState("");
-  const [date, setDate] = useState("");
-  const [note, setNote] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const save = async () => {
-    const idr = Number(amount.replace(/[^\d-]/g, ""));
-    if (!idr) {
-      setError("Isi jumlah dalam rupiah");
-      return;
-    }
-    setBusy(true);
-    setError(null);
-    try {
-      const res = await fetch(`${ENGINE_URL}/api/portfolio/capital`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ wallet, amount_idr: idr, date: date || undefined, note: note || undefined }),
-      });
-      if (!res.ok) throw new Error((await res.json())?.detail ?? `HTTP ${res.status}`);
-      setAmount("");
-      setNote("");
-      onSaved();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Gagal menyimpan");
-    } finally {
-      setBusy(false);
-    }
-  };
-  return (
-    <div className="flex flex-wrap items-end gap-2">
-      <label className="flex flex-col gap-1 text-xs text-ink-3">
-        Jumlah (Rp, negatif = tarik)
-        <input value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="36.000.000" inputMode="numeric"
-          className="h-9 w-40 rounded-lg border border-line bg-bg/50 px-3 text-sm text-ink focus:border-accent/50 focus:outline-none" />
-      </label>
-      <label className="flex flex-col gap-1 text-xs text-ink-3">
-        Tanggal
-        <input type="date" value={date} onChange={(e) => setDate(e.target.value)}
-          className="h-9 rounded-lg border border-line bg-bg/50 px-3 text-sm text-ink focus:border-accent/50 focus:outline-none" />
-      </label>
-      <label className="flex min-w-40 flex-1 flex-col gap-1 text-xs text-ink-3">
-        Catatan
-        <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Top-up QRIS"
-          className="h-9 rounded-lg border border-line bg-bg/50 px-3 text-sm text-ink focus:border-accent/50 focus:outline-none" />
-      </label>
-      <button type="button" disabled={busy} onClick={() => void save()}
-        className="h-9 rounded-lg border border-accent/45 bg-accent/10 px-4 text-sm font-medium text-accent hover:bg-accent/20 disabled:opacity-50">
-        Simpan
-      </button>
-      {error && <span className="basis-full text-xs text-rose-300">{error}</span>}
-    </div>
-  );
-}
-
 export default function SummaryPage() {
   const connected = useConnectedWallet();
   useWalletParam(connected);
@@ -275,7 +214,14 @@ export default function SummaryPage() {
     <div className="flex min-h-screen min-w-0 flex-col overflow-x-hidden">
       <TopBar />
       <main className="mx-auto w-full min-w-0 max-w-full flex-1 space-y-5 overflow-x-hidden px-4 py-6 sm:px-6 lg:py-7 2xl:px-8">
-        <PortfolioHeader subtitle="Modal, kekayaan sekarang, dan dari mana untung-ruginya." />
+        <PortfolioHeader
+          subtitle="Modal, kekayaan sekarang, dan dari mana untung-ruginya."
+          right={
+            connected && l ? (
+              <CapitalButtons wallet={connected.address} capital={l.capital} rate={l.fx.usd_idr} onChange={reload} />
+            ) : undefined
+          }
+        />
         <PortfolioTabs />
 
         {!connected ? (
@@ -331,44 +277,6 @@ export default function SummaryPage() {
               {l.days.length ? <Days days={l.days} /> : <p className="px-4 py-6 text-sm text-ink-3">Belum ada data harian.</p>}
             </Card>
 
-            <Card title="Modal">
-              <div className="space-y-4 px-4 py-4">
-                <div className="grid gap-3 text-sm sm:grid-cols-2">
-                  <div className="rounded-xl border border-white/[0.06] bg-black/20 px-4 py-3">
-                    <div className="text-xs text-ink-3">Setoran terdeteksi di chain (top-up USDC)</div>
-                    <div className="mt-1 font-semibold tabular-nums text-ink">
-                      {usd.format(l.capital.chain_deposits_usd)} <span className="font-normal text-ink-3">≈ {rp(l.capital.chain_deposits_usd * l.fx.usd_idr)}</span>
-                    </div>
-                  </div>
-                  <div className="rounded-xl border border-white/[0.06] bg-black/20 px-4 py-3">
-                    <div className="text-xs text-ink-3">Penarikan ke luar</div>
-                    <div className="mt-1 font-semibold tabular-nums text-ink">{usd.format(Math.abs(l.capital.chain_withdrawals_usd))}</div>
-                  </div>
-                </div>
-                {manual.length > 0 && (
-                  <ul className="space-y-1 text-sm">
-                    {manual.map((e) => (
-                      <li key={e.id} className="flex items-center justify-between gap-3 rounded-lg px-2 py-1.5 hover:bg-white/[0.03]">
-                        <span className="text-ink-2">
-                          {fmtDateTime(e.ts)} · {e.amount_idr != null ? signedRp(e.amount_idr) : signedUsd(e.amount_usd)}
-                          {e.note && <span className="text-ink-3"> · {e.note}</span>}
-                        </span>
-                        <button type="button" className="text-xs text-ink-3 hover:text-rose-300"
-                          onClick={() => void fetch(`${ENGINE_URL}/api/portfolio/capital/delete`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ wallet: connected.address, id: e.id }) }).then(reload)}>
-                          hapus
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-                <p className="text-xs leading-5 text-ink-3">
-                  {manual.length
-                    ? "Modal dihitung dari catatan kamu. Setoran di chain setelah catatan terakhir ditambahkan otomatis."
-                    : "Modal dihitung dari top-up USDC yang terdeteksi. Isi catatan sendiri hanya kalau angkanya berbeda (misalnya ada biaya top-up); catatan kamu akan menggantikan angka terdeteksi."}
-                </p>
-                <CapitalForm wallet={connected.address} onSaved={reload} />
-              </div>
-            </Card>
           </>
         )}
       </main>

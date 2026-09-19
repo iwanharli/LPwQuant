@@ -400,7 +400,7 @@ export async function limitOrderPools(mint: string): Promise<LoPool[]> {
     }));
 }
 
-type PlaceRequest = { owner: string; pool: string; amount: number; start_pct: number; end_pct: number; bins: number };
+type PlaceRequest = { owner: string; pool: string; amount: number; start_pct: number; end_pct: number; bins: number; side?: "buy" | "sell" };
 
 function parsePlace(body: unknown): PlaceRequest {
   const r = body as PlaceRequest;
@@ -408,6 +408,8 @@ function parsePlace(body: unknown): PlaceRequest {
   if (!(r.amount > 0)) throw new Error("jumlah harus lebih dari 0");
   if (!(r.start_pct > 0) || !(r.end_pct >= r.start_pct) || r.end_pct > 500) throw new Error("rentang harga tidak valid");
   if (!Number.isInteger(r.bins) || r.bins < 1 || r.bins > MAX_ORDER_BINS) throw new Error(`jumlah bin 1-${MAX_ORDER_BINS}`);
+  if (r.side && r.side !== "buy" && r.side !== "sell") throw new Error("side harus buy atau sell");
+  if (r.side === "buy" && r.end_pct >= 90) throw new Error("rentang beli terlalu jauh");
   return r;
 }
 
@@ -418,18 +420,31 @@ async function placeNow(r: PlaceRequest) {
   const active = await dlmm.getActiveBin();
   const price = Number(active.pricePerToken);
   const step = dlmm.lbPair.binStep;
-  // Sell side: bins strictly above the active bin, from start_pct to end_pct above the current price.
-  const lo = Math.max(active.binId + 1, dlmm.getBinIdFromPrice(Number(dlmm.toPricePerLamport(price * (1 + r.start_pct / 100))), true));
-  const hi = Math.max(lo, dlmm.getBinIdFromPrice(Number(dlmm.toPricePerLamport(price * (1 + r.end_pct / 100))), false));
+  // Sell (ask): token X in bins above the price, start_pct..end_pct above it. Buy (bid): the quote token Y in bins
+  // below the price, start_pct..end_pct below it. Either way strictly off the active bin, which would fill at once.
+  const buying = r.side === "buy";
+  const binAt = (pct: number, min: boolean) => dlmm.getBinIdFromPrice(Number(dlmm.toPricePerLamport(price * (1 + pct / 100))), min);
+  const lo = buying
+    ? binAt(-r.end_pct, true)
+    : Math.max(active.binId + 1, binAt(r.start_pct, true));
+  const hi = buying
+    ? Math.min(active.binId - 1, Math.max(lo, binAt(-r.start_pct, false)))
+    : Math.max(lo, binAt(r.end_pct, false));
+  if (hi < lo) throw new Error("rentang harga terlalu dekat dengan harga sekarang");
   const count = Math.min(r.bins, hi - lo + 1);
   const ids = Array.from({ length: count }, (_, i) => (count === 1 ? lo : Math.round(lo + ((hi - lo) * i) / (count - 1))));
   const unique = [...new Set(ids)];
 
-  const decimalsX = dlmm.tokenX.mint.decimals;
+  const side = buying ? dlmm.tokenY : dlmm.tokenX;
+  const decimalsX = side.mint.decimals; // decimals of the token being deposited
   // Token-2022 coins with a transfer fee (GP charges ~3%) cost the amount plus the fee to deposit, so an order for
   // the whole balance fails. Cap the order at what the balance can actually cover after the fee.
-  const { feeBps, maxFee } = await transferFee(conn, dlmm.tokenX.publicKey);
-  const balance = await tokenBalance(conn, owner, dlmm.tokenX.publicKey, dlmm.tokenX.owner);
+  const { feeBps, maxFee } = await transferFee(conn, side.publicKey);
+  // Native SOL sits in the wallet, not a token account; the SDK wraps what the order needs.
+  const balance =
+    side.publicKey.toBase58() === SOL_MINT
+      ? BigInt(Math.max(0, (await conn.getBalance(owner)) - 10_000_000)) // keep 0.01 SOL for fees and rent
+      : await tokenBalance(conn, owner, side.publicKey, side.owner);
   const affordable = feeBps > 0 ? (balance * BigInt(10_000 - feeBps)) / 10_000n : balance;
   const capped = maxFee != null && balance - affordable > maxFee ? balance - maxFee : affordable;
   const requested = BigInt(Math.floor(r.amount * 10 ** decimalsX));
@@ -451,7 +466,7 @@ async function placeNow(r: PlaceRequest) {
     payer: owner,
     sender: owner,
     limitOrder: orderKey.publicKey,
-    params: { isAskSide: true, relativeBin: null, bins },
+    params: { isAskSide: !buying, relativeBin: null, bins },
   });
   const { blockhash, lastValidBlockHeight } = await conn.getLatestBlockhash("confirmed");
   tx.feePayer = owner;
@@ -469,9 +484,10 @@ async function placeNow(r: PlaceRequest) {
   const plan = bins.map((b) => {
     const amt = Number(b.amount.toString()) / 10 ** decimalsX;
     const p = binPrice(b.id);
-    return { bin: b.id, price: p, amount: amt, output: amt * p };
+    return { bin: b.id, price: p, amount: amt, output: buying ? amt / p : amt * p };
   });
   return {
+    side: buying ? "buy" : "sell",
     amount: Number(total) / 10 ** decimalsX,
     amount_adjusted: total < requested,
     transfer_fee_bps: feeBps,
