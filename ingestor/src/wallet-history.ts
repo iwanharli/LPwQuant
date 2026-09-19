@@ -10,6 +10,7 @@ import { Connection, PublicKey, type ParsedTransactionWithMeta } from "@solana/w
 import { config } from "./config";
 import { pg } from "./db";
 import { apiFetch, createFailoverFetch } from "./rpc";
+import { costsOf, type TxCosts } from "./tx-costs";
 
 const EVERY_MS = 5 * 60_000;
 const FIRST_SYNC_LIMIT = 150; // how far back a newly watched wallet is read
@@ -245,7 +246,7 @@ export class WalletHistory {
   }
 
   private async store(owner: string, sigs: { signature: string; blockTime?: number | null; err: unknown }[]): Promise<number> {
-    const records: { sig: string; ts: number; ok: boolean; kind: string; ix: string[]; progs: string[]; ch: Changes }[] = [];
+    const records: { sig: string; ts: number; ok: boolean; kind: string; ix: string[]; progs: string[]; ch: Changes; cost: TxCosts }[] = [];
     for (const s of sigs) {
       const tx = await withRetry(() =>
         this.connection.getParsedTransaction(s.signature, { maxSupportedTransactionVersion: 0 }),
@@ -262,6 +263,7 @@ export class WalletHistory {
         ix: instructionNames(logs),
         progs: programsOf(logs),
         ch,
+        cost: await costsOf(tx),
       });
     }
     await nameMints(records.flatMap((r) => r.ch.deltas.map((d) => d.mint)));
@@ -269,14 +271,17 @@ export class WalletHistory {
       const deltas: Delta[] = r.ch.deltas.map((d) => ({ ...d, symbol: symbols.get(d.mint) ?? `${d.mint.slice(0, 4)}…` }));
       await pg.query(
         `insert into portfolio_activity
-           (signature, wallet, ts, kind, source, ok, sol_delta, deltas, instructions, programs, signed, counterparty)
-         values ($1, $2, to_timestamp($3 / 1000.0), $4, 'chain', $5, $6, $7::jsonb, $8, $9, $10, $11)
+           (signature, wallet, ts, kind, source, ok, sol_delta, deltas, instructions, programs, signed, counterparty,
+            network_fee_lamports, pool_fees, other_dex_swap)
+         values ($1, $2, to_timestamp($3 / 1000.0), $4, 'chain', $5, $6, $7::jsonb, $8, $9, $10, $11, $12, $13::jsonb, $14)
          on conflict (signature) do update set
            ts = excluded.ts, ok = excluded.ok, sol_delta = excluded.sol_delta, deltas = excluded.deltas,
            instructions = excluded.instructions, programs = excluded.programs, signed = excluded.signed,
-           counterparty = excluded.counterparty,
+           counterparty = excluded.counterparty, network_fee_lamports = excluded.network_fee_lamports,
+           pool_fees = excluded.pool_fees, other_dex_swap = excluded.other_dex_swap,
            kind = case when portfolio_activity.source = 'app' then portfolio_activity.kind else excluded.kind end`,
-        [r.sig, owner, r.ts, r.kind, r.ok, r.ch.sol, JSON.stringify(deltas), r.ix, r.progs, r.ch.signed, r.ch.counterparty],
+        [r.sig, owner, r.ts, r.kind, r.ok, r.ch.sol, JSON.stringify(deltas), r.ix, r.progs, r.ch.signed, r.ch.counterparty,
+         r.cost.networkFeeLamports, JSON.stringify(r.cost.poolFees), r.cost.otherDexSwap],
       );
     }
     console.log(`[history] ${owner.slice(0, 4)}…: ${records.length} transaksi baru`);

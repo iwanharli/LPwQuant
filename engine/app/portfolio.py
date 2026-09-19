@@ -130,6 +130,8 @@ def _fetch(wallet: str) -> tuple[dict[str, Any], int, int]:
             {
                 "address": address,
                 "name": f"{item.get('tokenX') or '?'}-{item.get('tokenY') or '?'}",
+                "mint_x": item.get("tokenXMint"),
+                "mint_y": item.get("tokenYMint"),
                 "token_x": item.get("tokenX"),
                 "token_y": item.get("tokenY"),
                 "token_x_icon": item.get("tokenXIcon"),
@@ -549,6 +551,8 @@ def _closed_pools(wallet: str) -> list[dict[str, Any]]:
                 "name": f"{p.get('tokenX') or '?'}/{p.get('tokenY') or '?'}",
                 "token_x": p.get("tokenX"),
                 "token_y": p.get("tokenY"),
+                "mint_x": p.get("tokenXMint"),
+                "mint_y": p.get("tokenYMint"),
                 "token_x_icon": p.get("tokenXIcon"),
                 "token_y_icon": p.get("tokenYIcon"),
                 "bin_step": int(_f(p.get("binStep"))),

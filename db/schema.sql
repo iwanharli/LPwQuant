@@ -313,3 +313,67 @@ create table if not exists portfolio_guard_sent (
   key     text not null,
   primary key (wallet, day, key)
 );
+
+-- Paper limit orders (engine/app/paper_lo.py): the recommended buy-low / sell-high rule run on live prices, no
+-- transactions. One row per order from placement to close.
+create table if not exists paper_lo_orders (
+  id           bigserial primary key,
+  pool         text not null,
+  name         text not null,
+  quote        text not null,          -- SOL | USDC
+  opened_at    timestamptz not null,
+  status       text not null,          -- waiting | holding | closed | expired
+  step_pct     double precision not null,
+  buy_price    double precision not null,
+  sell_price   double precision not null,
+  stop_price   double precision not null,
+  size_quote   double precision not null,  -- quote spent on the buy (0.5 SOL, or its USDC value)
+  sol_usd      double precision,           -- SOL price at placement, for USDC orders' SOL figures
+  filled_at    timestamptz,
+  qty          double precision,           -- tokens bought
+  closed_at    timestamptz,
+  exit_price   double precision,
+  exit_reason  text,                       -- target | stop | time | expired
+  pnl_quote    double precision,
+  pnl_sol      double precision,
+  replay_pct   double precision            -- the 48h replay the pick was made on, to compare with what happened
+);
+create index if not exists paper_lo_status on paper_lo_orders (status);
+
+-- Every LP position of a watched wallet and its events (Meteora /positions/{addr}/historical), cached: the events'
+-- signatures tie each LP transaction to its position and pool, which a transaction's balance changes cannot.
+create table if not exists portfolio_positions_index (
+  position    text primary key,
+  wallet      text not null,
+  pool        text not null,
+  mint_x      text,
+  mint_y      text,
+  symbol_x    text,
+  symbol_y    text,
+  opened_at   timestamptz,
+  closed_at   timestamptz,
+  status      text not null,              -- open | closed
+  meteora_pnl_usd double precision,
+  fees_usd    double precision,
+  deposit_usd double precision,
+  events_fetched_at timestamptz
+);
+create index if not exists portfolio_positions_index_wallet on portfolio_positions_index (wallet);
+create table if not exists portfolio_position_events (
+  signature   text not null,
+  position    text not null,
+  pool        text not null,
+  event_type  text not null,              -- add | remove | claim_fee | ...
+  ts          timestamptz not null,
+  amount_x    double precision,
+  amount_y    double precision,
+  usd         double precision,
+  primary key (signature, position, event_type)
+);
+create index if not exists portfolio_position_events_sig on portfolio_position_events (signature);
+
+-- Costs of each transaction: network + priority fee, and the pool fee paid on Meteora DLMM swaps (from the program's
+-- Swap events: amount in the input token). Swaps through other DEXes have no decodable fee and are counted as such.
+alter table portfolio_activity add column if not exists network_fee_lamports bigint;
+alter table portfolio_activity add column if not exists pool_fees jsonb;          -- [{mint, amount}] in display units
+alter table portfolio_activity add column if not exists other_dex_swap boolean;   -- a swap hop outside Meteora

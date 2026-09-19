@@ -10,6 +10,7 @@ import WalletButton from "../wallet-button";
 import DailyPnlChart, { type DailyPnl } from "./daily-pnl-chart";
 import PoolCard, { type Pool } from "./pool-card";
 import { ClosedOrders, ClosedPositions } from "./closed-history";
+import NetPnl from "./net-pnl";
 import PortfolioHeader from "./portfolio-header";
 import PortfolioTabs from "./portfolio-tabs";
 import PositionFilters, { DEFAULT_FILTERS, applyFilters, statusCounts, type Filters } from "./position-filters";
@@ -502,13 +503,14 @@ function RangeNotice({
   );
 }
 
-type View = "open" | "closed" | "orders";
+type View = "open" | "closed" | "net" | "orders";
 
 /** Open positions, or the history of closed positions and finished limit orders, on the same tab. */
 function ViewSwitch({ view, onChange, openCount }: { view: View; onChange: (v: View) => void; openCount: number | null }) {
   const options: { value: View; label: string }[] = [
     { value: "open", label: openCount != null ? `Posisi terbuka (${openCount})` : "Posisi terbuka" },
     { value: "closed", label: "Riwayat posisi" },
+    { value: "net", label: "Hasil bersih" },
     { value: "orders", label: "Riwayat limit order" },
   ];
   return (
@@ -602,6 +604,7 @@ export default function PortfolioPage() {
             <ViewSwitch view={view} onChange={setView} openCount={data?.summary.positions ?? null} />
             {view === "closed" && <ClosedPositions wallet={connected.address} />}
             {view === "orders" && <ClosedOrders wallet={connected.address} />}
+            {view === "net" && <NetPnl wallet={connected.address} />}
             {view === "open" && (
           <>
             {error && (

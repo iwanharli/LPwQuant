@@ -9,6 +9,7 @@ import { StatusDot } from "../ui";
 import WalletButton from "../wallet-button";
 import PortfolioHeader from "./portfolio-header";
 import LimitRecs from "./limit-recs";
+import PaperLimitOrders from "./paper-lo";
 import PortfolioTabs from "./portfolio-tabs";
 
 const REFRESH_MS = 20_000;
@@ -304,6 +305,8 @@ export default function OrdersPage() {
             </section>
 
             <LimitRecs owner={connected.address} canSign={signer} />
+
+            <PaperLimitOrders />
           </>
         )}
 

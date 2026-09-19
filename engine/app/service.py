@@ -13,6 +13,7 @@ import redis.asyncio as aioredis
 
 from . import config
 from .alerts import Alerter, serve_commands
+from .paper_lo import PaperLimitOrders
 from .portfolio import snapshot_loop as portfolio_snapshot_loop
 from .indicators import Candle, compute_indicators, flow_features, merge_market
 from .metrics import PriceHistory
@@ -68,6 +69,7 @@ class Engine:
         self.pump: dict[str, dict[str, Any]] = {}  # pump.fun data per base mint
         self.paper: PaperTrader | None = None  # default profile: its cost model prices live plans
         self.papers: dict[str, PaperTrader] = {}  # one virtual account per risk profile (app.profiles)
+        self.paper_lo: PaperLimitOrders | None = None  # paper run of the limit-order recommendations
         self._paper_lock = asyncio.Lock()  # paper updates and resets never interleave
         self.depth: dict[str, Depth] = {}  # on-chain bin liquidity around the active bin (bins:latest)
         self.rows: dict[str, dict[str, Any]] = {}
@@ -106,6 +108,7 @@ class Engine:
         async with self.db.acquire() as conn:
             await conn.execute(config.SCHEMA_PATH.read_text())
         self.alerter = Alerter(self.db)
+        self.paper_lo = PaperLimitOrders(self.db) if config.PAPER_ENABLED else None
         if self.alerter.enabled:
             log.info("telegram alerts on for: %s", ", ".join(self.alerter.kinds))
         if config.PAPER_ENABLED:
@@ -309,6 +312,16 @@ class Engine:
                     except Exception:
                         log.exception("paper trading update failed (%s)", key)
                     open_addresses.update(trader.open_addresses())
+            if self.paper_lo is not None:
+                try:
+                    await self.paper_lo.step(self.rows)
+                    # Pools with an open paper limit order must keep their live price too.
+                    open_addresses.update(
+                        r["pool"]
+                        for r in await self.db.fetch("select pool from paper_lo_orders where status in ('waiting', 'holding')")
+                    )
+                except Exception:
+                    log.exception("paper limit orders failed")
             try:
                 # Tell the ingestor which pools must stay tracked while any profile holds positions in them.
                 async with self.redis.pipeline(transaction=True) as pipe:

@@ -103,7 +103,10 @@ function Stat({ label, value, hint, cls = "text-ink" }: { label: string; value: 
   );
 }
 
-function PoolPositions({ wallet, pool }: { wallet: string; pool: string }) {
+type PositionCost = { pool: string; cost_lp: number; cost_swaps: number; net: number; swaps: number };
+type Costs = { positions: Record<string, PositionCost>; costs_known_txs: number; transactions: number };
+
+function PoolPositions({ wallet, pool, costs }: { wallet: string; pool: string; costs: Costs | null }) {
   const { data, error } = useJson<{ positions: ClosedPosition[] }>(`${ENGINE_URL}/api/portfolio/closed?wallet=${wallet}&pool=${pool}`);
   if (error) return <p className="px-4 py-3 text-xs text-ink-3">Gagal memuat posisi.</p>;
   if (!data) return <p className="px-4 py-3 text-xs text-ink-3">Memuat posisi…</p>;
@@ -117,7 +120,9 @@ function PoolPositions({ wallet, pool }: { wallet: string; pool: string }) {
             <th className="py-1.5 text-left font-medium">Range harga</th>
             <th className="py-1.5 text-right font-medium">Modal</th>
             <th className="py-1.5 text-right font-medium">Fee</th>
-            <th className="py-1.5 text-right font-medium">PnL</th>
+            <th className="py-1.5 text-right font-medium" title="PnL di dalam posisi menurut Meteora: fee dikurangi IL">PnL LP</th>
+            <th className="py-1.5 text-right font-medium" title="Biaya jaringan + fee swap Meteora dari transaksi posisi ini dan swap di sekitarnya">Biaya</th>
+            <th className="py-1.5 text-right font-medium" title="Hasil bersih posisi setelah swap dan biaya (lihat tampilan Hasil bersih)">Bersih</th>
           </tr>
         </thead>
         <tbody>
@@ -135,6 +140,26 @@ function PoolPositions({ wallet, pool }: { wallet: string; pool: string }) {
               <td className={`py-1.5 text-right font-medium ${tone(p.pnl_usd)}`}>
                 {signed(p.pnl_usd)} <span className="font-normal opacity-80">({fmtSignedPct(p.pnl_pct, 1)})</span>
               </td>
+              {(() => {
+                const c = costs?.positions[p.address];
+                if (!c) return (
+                  <>
+                    <td className="py-1.5 text-right text-ink-3">{costs ? "–" : "…"}</td>
+                    <td className="py-1.5 text-right text-ink-3">{costs ? "–" : "…"}</td>
+                  </>
+                );
+                return (
+                  <>
+                    <td
+                      className="py-1.5 text-right text-amber-300/90"
+                      title={`Transaksi posisi ${usd.format(c.cost_lp)} · swap di sekitarnya (${c.swaps}) ${usd.format(c.cost_swaps)}`}
+                    >
+                      {usd.format(c.cost_lp + c.cost_swaps)}
+                    </td>
+                    <td className={`py-1.5 text-right font-semibold ${tone(c.net)}`}>{signed(c.net)}</td>
+                  </>
+                );
+              })()}
             </tr>
           ))}
         </tbody>
@@ -146,6 +171,8 @@ function PoolPositions({ wallet, pool }: { wallet: string; pool: string }) {
 /** Every pool the wallet has closed positions in, newest first; a pool opens into its positions. */
 export function ClosedPositions({ wallet }: { wallet: string }) {
   const { data, error } = useJson<{ pools: ClosedPool[] }>(`${ENGINE_URL}/api/portfolio/closed?wallet=${wallet}`);
+  // Costs and net per position come from the full accounting, which takes a moment the first time.
+  const { data: costs } = useJson<Costs>(`${ENGINE_URL}/api/portfolio/position-costs?wallet=${wallet}`);
   const [open, setOpen] = useState<string | null>(null);
   const [sort, setSort] = useState<"recent" | "pnl" | "worst" | "fees">("recent");
   if (error) return <p className="rounded-2xl border border-line bg-[#0e1217]/[0.97] px-4 py-8 text-sm text-ink-3">Gagal memuat riwayat posisi dari Meteora.</p>;
@@ -188,7 +215,7 @@ export function ClosedPositions({ wallet }: { wallet: string }) {
                 type="button"
                 onClick={() => setOpen(open === p.address ? null : p.address)}
                 aria-expanded={open === p.address}
-                className="grid w-full grid-cols-[auto_1fr_auto] items-center gap-4 px-4 py-3 text-left transition-colors hover:bg-white/[0.025] sm:grid-cols-[auto_1.4fr_1fr_1fr_1fr_auto]"
+                className="grid w-full grid-cols-[auto_1fr_auto] items-center gap-4 px-4 py-3 text-left transition-colors hover:bg-white/[0.025] sm:grid-cols-[auto_1.4fr_1fr_1fr_1fr_1fr_auto]"
               >
                 <Pair x={p.token_x_icon} y={p.token_y_icon} />
                 <span className="min-w-0">
@@ -205,6 +232,18 @@ export function ClosedPositions({ wallet }: { wallet: string }) {
                   <span className="block text-emerald-300/90">{usd.format(p.fees_usd)}</span>
                   <span className="text-[10px] uppercase tracking-wider text-ink-3">fee</span>
                 </span>
+                <span className="hidden text-right text-xs tabular-nums sm:block" title="Biaya jaringan + fee swap Meteora untuk semua posisi di pool ini">
+                  <span className="block text-amber-300/90">
+                    {costs
+                      ? usd.format(
+                          Object.values(costs.positions)
+                            .filter((c) => c.pool === p.address)
+                            .reduce((n, c) => n + c.cost_lp + c.cost_swaps, 0),
+                        )
+                      : "…"}
+                  </span>
+                  <span className="text-[10px] uppercase tracking-wider text-ink-3">biaya</span>
+                </span>
                 <span className="text-right tabular-nums">
                   <span className={`block text-sm font-semibold ${tone(p.pnl_usd)}`}>{signed(p.pnl_usd)}</span>
                   <span className={`text-[11px] ${tone(p.pnl_usd)} opacity-80`}>{fmtSignedPct(p.pnl_pct, 1)}</span>
@@ -213,7 +252,7 @@ export function ClosedPositions({ wallet }: { wallet: string }) {
                   <path d="m7.5 5 5 5-5 5" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
               </button>
-              {open === p.address && <PoolPositions wallet={wallet} pool={p.address} />}
+              {open === p.address && <PoolPositions wallet={wallet} pool={p.address} costs={costs} />}
             </li>
           ))}
         </ul>

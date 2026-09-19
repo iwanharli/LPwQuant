@@ -12,7 +12,9 @@ from . import config
 from .backtest import default_params, run_backtest
 from .charts import MAX_HOURS, load_candles, pool_paper_positions, profile_decision
 from .freshness import check_freshness
-from . import busy_hours, ledger, limit_recs, portfolio
+from . import busy_hours, ledger, limit_recs, netpnl, paper_lo, portfolio
+
+log = logging.getLogger("api")
 from .service import Engine
 
 _tz = ZoneInfo(config.TIMEZONE)
@@ -266,6 +268,40 @@ async def limit_order_recommendations() -> dict:
         raise HTTPException(status_code=503, detail="engine not ready")
     recs = await limit_recs.recommendations(engine.db, engine.sorted_rows())
     return {"updated_at": engine.updated_at, "pools": recs, "stats": limit_recs.summary_stats(recs)}
+
+
+@app.get("/api/limit-order/paper")
+async def limit_order_paper() -> dict:
+    """The engine's paper run of the recommended limit-order rule: every order and the running result."""
+    if engine.db is None:
+        raise HTTPException(status_code=503, detail="engine not ready")
+    return await paper_lo.report(engine.db)
+
+
+@app.get("/api/portfolio/netpnl")
+async def get_netpnl(wallet: str, fresh: bool = False) -> dict:
+    """Net result per coin and per position by cash-flow accounting, reconciled with the ledger's total."""
+    _wallet_or_400(wallet)
+    try:
+        return await netpnl.compute(engine.db, wallet, fresh)
+    except Exception as err:
+        log.exception("netpnl failed")
+        raise HTTPException(status_code=502, detail=f"gagal menghitung: {err}") from err
+
+
+@app.get("/api/portfolio/position-costs")
+async def get_position_costs(wallet: str) -> dict:
+    """Costs and net result per position, from the same accounting as the net view, for the position-history table."""
+    _wallet_or_400(wallet)
+    try:
+        data = await netpnl.compute(engine.db, wallet)
+    except Exception as err:
+        raise HTTPException(status_code=502, detail=f"gagal menghitung: {err}") from err
+    out = {}
+    for c in data["coins"]:
+        for p in c["positions"]:
+            out[p["position"]] = {"pool": p["pool"], "cost_lp": p["cost_lp"], "cost_swaps": p["cost_swaps"], "net": p["net"], "swaps": p["swaps"]}
+    return {"positions": out, "costs_known_txs": data["costs"]["costs_known_txs"], "transactions": data["costs"]["transactions"]}
 
 
 @app.get("/api/usage")

@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit",
     "lp-owners": "tsx src/lp-owners.ts",
     "history-backfill": "tsx src/history-backfill.ts",
-    "history-reclassify": "tsx src/history-reclassify.ts"
+    "history-reclassify": "tsx src/history-reclassify.ts",
+    "history-costs": "tsx src/history-costs.ts"
   },
   "dependencies": {
     "@meteora-ag/dlmm": "1.9.14",
