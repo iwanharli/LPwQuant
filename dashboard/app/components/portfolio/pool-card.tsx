@@ -275,7 +275,7 @@ function PositionBlock({
   const span = p.upper_bin - p.lower_bin + 1;
 
   return (
-    <div className="border-t border-line/80 first:border-t-0">
+    <div className={`border-t border-line/80 first:border-t-0 ${isSafe(p) ? "bg-emerald-400/[0.045] shadow-[inset_3px_0_0_rgba(52,211,153,0.7)]" : ""}`}>
       <div className="grid grid-cols-2 gap-x-4 gap-y-3 px-4 py-3.5 text-sm tabular-nums md:grid-cols-[1.3fr_1fr_0.6fr_1fr_1.1fr_1.2fr_auto] md:items-center">
         <div>
           <div className="text-[11px] uppercase tracking-wider text-ink-3 md:hidden">Likuiditas</div>
@@ -367,6 +367,25 @@ function PositionBlock({
   );
 }
 
+/** Meteora PnL at or above this has, in this wallet's closed positions, ended positive after swap costs and
+ * slippage 93-100% of the time at every size; below it the outside-LP costs often turn it negative. */
+export const SAFE_EXIT_PCT = 5;
+const isSafe = (p: Position) => p.pnl_pct >= SAFE_EXIT_PCT;
+
+function SafeChip() {
+  return (
+    <span
+      title={`PnL Meteora ≥ +${SAFE_EXIT_PCT}%: dari riwayatmu, posisi seperti ini hampir selalu tetap untung setelah biaya swap dan slippage.`}
+      className="inline-flex items-center gap-1 whitespace-nowrap rounded-full border border-emerald-400/40 bg-emerald-400/10 px-2 py-0.5 text-[11px] font-medium text-emerald-300"
+    >
+      <svg viewBox="0 0 16 16" width={11} height={11} aria-hidden>
+        <path d="m3.5 8.5 3 3 6-7" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+      Aman dijual
+    </span>
+  );
+}
+
 export default function PoolCard({
   pool,
   renderClaim,
@@ -378,11 +397,23 @@ export default function PoolCard({
   refreshKey?: number;
   wallet?: string;
 }) {
+  const safe = pool.positions.some(isSafe);
   return (
-    <section className="overflow-hidden rounded-2xl border border-line bg-[#0e1217]/[0.97] backdrop-blur-sm shadow-[0_14px_42px_rgba(0,0,0,0.20),inset_0_1px_0_rgba(255,255,255,0.04)]">
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-line bg-gradient-to-r from-[#8b6cf6]/12 via-raised/25 to-transparent px-4 py-3">
+    <section
+      className={`overflow-hidden rounded-2xl border backdrop-blur-sm transition-colors ${
+        safe
+          ? "border-emerald-400/45 bg-[#0c1512]/[0.97] shadow-[0_14px_42px_rgba(0,0,0,0.20),0_0_0_1px_rgba(52,211,153,0.08),inset_0_1px_0_rgba(110,231,183,0.10)]"
+          : "border-line bg-[#0e1217]/[0.97] shadow-[0_14px_42px_rgba(0,0,0,0.20),inset_0_1px_0_rgba(255,255,255,0.04)]"
+      }`}
+    >
+      <div
+        className={`flex flex-wrap items-center gap-x-3 gap-y-2 border-b px-4 py-3 ${
+          safe ? "border-emerald-400/20 bg-gradient-to-r from-emerald-400/[0.14] via-emerald-400/[0.04] to-transparent" : "border-line bg-gradient-to-r from-[#8b6cf6]/12 via-raised/25 to-transparent"
+        }`}
+      >
         <TokenPair pool={pool} />
         <span className="text-base font-semibold text-ink">{pool.name.replace("-", "/")}</span>
+        {safe && <SafeChip />}
         <span className="text-xs text-ink-3">{pool.bin_step}bps</span>
         <span className="text-sm tabular-nums text-ink-2">{fmtNum(pool.value_sol, 4)} SOL</span>
         <span className="text-xs text-ink-3">
