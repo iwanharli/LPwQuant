@@ -22,7 +22,7 @@ import {
   usd,
   usdCompact,
 } from "../lib/format";
-import { isActivePlan, type ActivePlan, type PoolRow } from "../lib/types";
+import { isActivePlan, type ActivePlan, type PoolRow, type RiskyRange } from "../lib/types";
 import { AlertIcon, CandleIcon, CheckIcon, CloseIcon, CopyIcon, ExitIcon, ExternalLinkIcon, ShieldIcon } from "./icons";
 import BusyHours from "./busy-hours";
 import { Delta, Meter, PlanBadge, RegimeBadge, StatusDot, TokenAvatar } from "./ui";
@@ -180,6 +180,65 @@ function PlanSection({
         </ul>
       )}
     </Section>
+  );
+}
+
+/** The range offered for a pool the plan holds back, for entering anyway at the user's own risk. */
+function RiskyPlanSection({
+  risky,
+  reason,
+  binStep,
+  price,
+  quote,
+}: {
+  risky: RiskyRange;
+  reason: string;
+  binStep: number;
+  price: number;
+  quote: string;
+}) {
+  const range = binAlignedRange(price, binStep, risky.range_low_pct, risky.range_high_pct);
+  return (
+    <section className="rounded-2xl border border-amber-400/35 bg-amber-400/[0.04] p-4">
+      <div className="flex items-baseline justify-between gap-3">
+        <div>
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-amber-300">Range risiko tinggi</h3>
+          <div className="mt-1 text-lg font-semibold">{STRATEGY_LABEL[risky.strategy]}</div>
+          <div className="text-xs text-ink-3">{risky.side === "quote" ? "Satu sisi, SOL/USDC saja" : "Dua sisi"}</div>
+        </div>
+        <div className="text-right">
+          <div className="text-lg font-semibold tabular-nums">maks {usd.format(risky.size_usd)}</div>
+          <div className="text-xs text-ink-3">¼ ukuran normal</div>
+        </div>
+      </div>
+      <p className="mt-3 text-sm text-ink-2">{risky.note}</p>
+      <RangeBar low={risky.range_low_pct} high={risky.range_high_pct} />
+      <div className="mt-3 grid grid-cols-2 gap-2">
+        <PriceField
+          label={`Min price (${quote})`}
+          value={range.min}
+          hint={`${((range.min / price - 1) * 100).toFixed(1)}% · ${range.below} bin di bawah`}
+        />
+        <PriceField
+          label={`Max price (${quote})`}
+          value={range.max}
+          hint={`+${((range.max / price - 1) * 100).toFixed(1)}% · ${range.above} bin di atas`}
+        />
+      </div>
+      <dl className="mt-3 grid grid-cols-3 gap-2">
+        <Stat label="Bin">{risky.bins}</Stat>
+        <Stat label="Posisi">{risky.positions}</Stat>
+        <Stat label="Cut loss">−{risky.stop_loss_pct}%</Stat>
+      </dl>
+      <ul className="mt-3 space-y-1 text-xs text-ink-2">
+        <li className="flex items-center gap-2">
+          <StatusDot severity="warning" /> Tidak direkomendasikan: {reason}
+        </li>
+        <li className="flex items-center gap-2">
+          <StatusDot severity="info" /> Tutup begitu PnL Meteora ≥ +5% atau rugi mencapai batas cut loss.
+        </li>
+      </ul>
+    </section>
   );
 }
 
@@ -624,6 +683,20 @@ function DrawerContent({ row, onClose }: { row: PoolRow; onClose: () => void }) 
           />
           <ExitSection plan={plan} />
         </>
+      )}
+      {!isActivePlan(plan) && plan.risky && (
+        <RiskyPlanSection
+          risky={plan.risky}
+          reason={plan.reason}
+          binStep={row.bin_step}
+          price={row.price}
+          quote={row.name.split("-").pop() ?? ""}
+        />
+      )}
+      {!isActivePlan(plan) && plan.risky === null && (
+        <p className="rounded-2xl border border-rose-400/30 bg-rose-400/[0.05] px-4 py-3 text-sm text-ink-2">
+          Tidak ada saran range: token ini bisa dicetak, dibekukan, atau sudah terindikasi rug. Range apa pun tetap bisa kehilangan seluruh modal.
+        </p>
       )}
 
       <SecuritySection row={row} />

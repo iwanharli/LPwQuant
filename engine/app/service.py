@@ -22,7 +22,7 @@ from .depth import Depth, depth_per_bin_y, fee_for_position_pct_day, new_bin_arr
 from .backtest import LpPosition
 from .costs import fixed_cost_usd, round_trip_cost_pct
 from .profiles import PROFILES, paper_config
-from .recommend import PlanParams, apply_cost_gate, bins_below, bins_for_width, plan_position
+from .recommend import PlanParams, apply_cost_gate, bins_below, bins_for_width, plan_position, risky_range
 from .scoring import base_token, effective_tvl, expected_fee_pct_day, fee_tvl_pct_sane, score_pool
 
 log = logging.getLogger("engine")
@@ -381,6 +381,11 @@ class Engine:
             params=self.plan_params,
             market=market,
         )
+        if plan.get("action") != "enter":
+            plan["risky"] = risky_range(
+                bin_step=pool["bin_step"], tvl=pool["tvl"], flags=scored["flags"], change_pct_1h=change_1h,
+                realized_vol_pct_1h=vol_1h, params=self.plan_params, market=market,
+            )
         new_arrays = None
         if plan.get("action") == "enter":
             lower = -bins_below(-plan["range_low_pct"], pool["bin_step"])
@@ -445,6 +450,13 @@ class Engine:
                     expected_fee_usd_day=round(single["size_usd"] * s_fee / 100, 2),
                 )
             plan = apply_cost_gate(plan, cost_pct, scored["fee_for_position_pct_day"], self.plan_params)
+            if plan.get("action") != "enter":
+                # Held back only by costs: the range itself is sound, so it is the one offered to enter anyway.
+                plan["risky"] = {
+                    **{k: plan_base[k] for k in ("strategy", "side", "note", "range_low_pct", "range_high_pct", "bins",
+                                                 "positions", "size_usd")},
+                    "stop_loss_pct": plan_base["exit"]["stop_loss_pct"],
+                }
         tvl_per_bin_usd = None
         if depth is not None and y_usd > 0:
             tvl_per_bin_usd = sum(depth.bins.values()) * y_usd / max(1, len(depth.bins))

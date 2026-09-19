@@ -260,6 +260,68 @@ def plan_position(
     }
 
 
+# A token that can be minted, frozen or already rugged loses the deposit whatever the range: no range for these.
+HARD_BLOCK_FLAGS = {"rugged", "mint_authority", "freeze_authority", "rugcheck_danger", "tvl_suspect"}
+RISKY_SIZE_MULT = 0.25  # of the normal maximum position: a speculative entry is sized as one
+
+
+def risky_range(
+    *,
+    bin_step: int,
+    tvl: float,
+    flags: list[str],
+    change_pct_1h: float | None,
+    realized_vol_pct_1h: float | None,
+    params: PlanParams,
+    market: dict[str, Any] | None = None,
+) -> dict[str, Any] | None:
+    """A range for a pool the plan skipped, for someone who enters anyway: same width estimate as a normal plan,
+    shaped for the risk (below the price when it is dumping or has just pumped), a quarter of the usual size and a
+    tighter stop. None when the token itself is unsafe (HARD_BLOCK_FLAGS) or there is no price history yet."""
+    flagset = set(flags)
+    if flagset & HARD_BLOCK_FLAGS:
+        return None
+    m = market or {}
+    atr = m.get("atr_pct")
+    change = change_pct_1h if change_pct_1h is not None else m.get("change_1h_pct")
+    regime = m.get("regime")
+    widths = []
+    if realized_vol_pct_1h is not None:
+        widths.append(2 * realized_vol_pct_1h * math.sqrt(params.hold_hours))
+    if atr is not None:
+        widths.append(1.5 * atr * math.sqrt(params.hold_hours * CANDLES_PER_HOUR))
+    if not widths:
+        return None
+    width = _clamp(max(widths), max(2.0, 3 * bin_step / 100), 60.0)
+
+    dumping = "dumping" in flagset or regime == "trending_down" or (change is not None and change <= -5)
+    pumped = "pumping" in flagset or (change is not None and params.pump_threshold_pct is not None and change >= params.pump_threshold_pct)
+    if dumping or pumped:
+        strategy, side, low, high = "bid_ask", "quote", -width, 0.0
+        note = (
+            "Harga sedang jatuh: pasang SOL/USDC saja di bawah harga, membeli bertahap bila turun terus"
+            if dumping else
+            "Baru saja pump: jangan kejar. Pasang SOL/USDC di bawah harga, menunggu koreksi"
+        )
+    else:
+        strategy, side, low, high = "spot", "both", -width, width * 0.6
+        note = "Sebar rata, condong ke bawah: sisi atas lebih sempit agar token tidak menumpuk saat harga turun"
+
+    bins = bins_below(-low, bin_step) + bins_for_width(high, bin_step) + 1
+    size_usd = min(params.portfolio_usd * params.max_position_pct * RISKY_SIZE_MULT / 100, tvl * params.max_tvl_share)
+    return {
+        "strategy": strategy,
+        "side": side,
+        "note": note,
+        "range_low_pct": round(low, 1),
+        "range_high_pct": round(high, 1),
+        "bins": bins,
+        "positions": math.ceil(bins / BINS_PER_POSITION),
+        "size_usd": round(size_usd, 2),
+        "stop_loss_pct": round(min(_clamp(0.5 * width, 4.0, 12.0), params.max_stop_loss_pct), 1),
+    }
+
+
 def cost_gate_ok(cost_pct: float, fee_pct_day: float, hours: float, ratio: float) -> bool:
     """Fees expected over `hours` are at least `ratio` times the round-trip cost (no cost = pass)."""
     return cost_pct <= 0 or fee_pct_day * hours / 24 >= ratio * cost_pct

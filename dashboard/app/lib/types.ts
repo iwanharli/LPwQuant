@@ -64,6 +64,18 @@ export type ActivePlan = {
   };
 };
 
+export type RiskyRange = {
+  strategy: Strategy;
+  side: "both" | "quote";
+  note: string;
+  range_low_pct: number;
+  range_high_pct: number;
+  bins: number;
+  positions: number;
+  size_usd: number;
+  stop_loss_pct: number;
+};
+
 export type Plan =
   | {
       action: "avoid" | "wait";
@@ -74,6 +86,8 @@ export type Plan =
       gated_tier?: Tier;
       round_trip_cost_pct?: number;
       fee_over_min_hold_pct?: number;
+      /** A range for entering anyway; null when the token itself is unsafe (can be minted, frozen, rugged). */
+      risky?: RiskyRange | null;
     }
   | ActivePlan;
 
