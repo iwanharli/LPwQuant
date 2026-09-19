@@ -275,7 +275,9 @@ function PositionBlock({
   const span = p.upper_bin - p.lower_bin + 1;
 
   return (
-    <div className={`border-t border-line/80 first:border-t-0 ${isSafe(p) ? "bg-emerald-400/[0.045] shadow-[inset_3px_0_0_rgba(52,211,153,0.7)]" : ""}`}>
+    <div className={`border-t border-line/80 first:border-t-0 ${
+      isSafe(p) ? "bg-emerald-400/[0.045] shadow-[inset_3px_0_0_rgba(52,211,153,0.7)]" : isNear(p) ? "shadow-[inset_3px_0_0_rgba(52,211,153,0.3)]" : ""
+    }`}>
       <div className="grid grid-cols-2 gap-x-4 gap-y-3 px-4 py-3.5 text-sm tabular-nums md:grid-cols-[1.3fr_1fr_0.6fr_1fr_1.1fr_1.2fr_auto] md:items-center">
         <div>
           <div className="text-[11px] uppercase tracking-wider text-ink-3 md:hidden">Likuiditas</div>
@@ -370,7 +372,22 @@ function PositionBlock({
 /** Meteora PnL at or above this has, in this wallet's closed positions, ended positive after swap costs and
  * slippage 93-100% of the time at every size; below it the outside-LP costs often turn it negative. */
 export const SAFE_EXIT_PCT = 5;
+/** From here the closed positions ended positive ~90% of the time: close, but not yet safe. */
+export const NEAR_EXIT_PCT = 3;
 const isSafe = (p: Position) => p.pnl_pct >= SAFE_EXIT_PCT;
+const isNear = (p: Position) => !isSafe(p) && p.pnl_pct >= NEAR_EXIT_PCT;
+
+function NearChip() {
+  return (
+    <span
+      title={`PnL Meteora +${NEAR_EXIT_PCT}% sampai +${SAFE_EXIT_PCT}%: dari riwayatmu ~9 dari 10 posisi seperti ini tetap untung, tapi belum aman. Tunggu +${SAFE_EXIT_PCT}% bila bisa.`}
+      className="inline-flex items-center gap-1 whitespace-nowrap rounded-full border border-emerald-400/25 bg-transparent px-2 py-0.5 text-[11px] font-medium text-emerald-300/80"
+    >
+      <span className="h-1.5 w-1.5 rounded-full bg-emerald-300/70" aria-hidden />
+      Hampir aman
+    </span>
+  );
+}
 
 function SafeChip() {
   return (
@@ -398,12 +415,15 @@ export default function PoolCard({
   wallet?: string;
 }) {
   const safe = pool.positions.some(isSafe);
+  const near = !safe && pool.positions.some(isNear);
   return (
     <section
       className={`overflow-hidden rounded-2xl border backdrop-blur-sm transition-colors ${
         safe
           ? "border-emerald-400/45 bg-[#0c1512]/[0.97] shadow-[0_14px_42px_rgba(0,0,0,0.20),0_0_0_1px_rgba(52,211,153,0.08),inset_0_1px_0_rgba(110,231,183,0.10)]"
-          : "border-line bg-[#0e1217]/[0.97] shadow-[0_14px_42px_rgba(0,0,0,0.20),inset_0_1px_0_rgba(255,255,255,0.04)]"
+          : near
+            ? "border-emerald-400/25 bg-[#0e1217]/[0.97] shadow-[0_14px_42px_rgba(0,0,0,0.20),inset_0_1px_0_rgba(255,255,255,0.04)]"
+            : "border-line bg-[#0e1217]/[0.97] shadow-[0_14px_42px_rgba(0,0,0,0.20),inset_0_1px_0_rgba(255,255,255,0.04)]"
       }`}
     >
       <div
@@ -414,6 +434,7 @@ export default function PoolCard({
         <TokenPair pool={pool} />
         <span className="text-base font-semibold text-ink">{pool.name.replace("-", "/")}</span>
         {safe && <SafeChip />}
+        {near && <NearChip />}
         <span className="text-xs text-ink-3">{pool.bin_step}bps</span>
         <span className="text-sm tabular-nums text-ink-2">{fmtNum(pool.value_sol, 4)} SOL</span>
         <span className="text-xs text-ink-3">
