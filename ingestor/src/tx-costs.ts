@@ -64,27 +64,41 @@ export async function costsOf(tx: ParsedTransactionWithMeta): Promise<TxCosts> {
   const meta = tx.meta;
   const fees = new Map<string, number>();
   let undecoded = false;
+  // Newer programs emit Swap2Evt next to Swap, and only Swap2Evt says which token the fee was taken in (a pool can
+  // charge it on the output: a USDC -> TACZ swap paid its fee in TACZ). So Swap2Evt wins when present; the old Swap
+  // event (fee always on the input) is used only in transactions that have no Swap2Evt.
+  type Evt = { name: string; data: Record<string, { toString(): string; toBase58?(): string } | boolean> };
+  const events: Evt[] = [];
   for (const group of meta?.innerInstructions ?? []) {
     for (const ix of group.instructions as { programId?: { toBase58(): string }; data?: string }[]) {
       if (ix.programId?.toBase58() !== LB || !ix.data) continue;
-      let ev;
       try {
-        ev = coder.events.decode(Buffer.from(utils.bytes.bs58.decode(ix.data)).subarray(8).toString("base64"));
+        const ev = coder.events.decode(Buffer.from(utils.bytes.bs58.decode(ix.data)).subarray(8).toString("base64"));
+        if (ev && (ev.name === "Swap" || ev.name === "Swap2Evt")) events.push(ev as unknown as Evt);
       } catch {
-        continue;
+        // not an event
       }
-      // "Swap" carries the total fee; newer programs also emit "Swap2Evt" for the same swap, skipped to avoid a double count.
-      if (!ev || ev.name !== "Swap") continue;
-      const d = ev.data as { lb_pair: { toBase58(): string }; swap_for_y: boolean; fee: { toString(): string } };
-      const p = await poolMints(d.lb_pair.toBase58());
-      if (!p) {
-        undecoded = true;
-        continue;
-      }
-      const inputMint = d.swap_for_y ? p.mintX : p.mintY;
-      const dec = d.swap_for_y ? p.decX : p.decY;
-      fees.set(inputMint, (fees.get(inputMint) ?? 0) + Number(d.fee.toString()) / 10 ** dec);
     }
+  }
+  const useNew = events.some((e) => e.name === "Swap2Evt");
+  for (const ev of events.filter((e) => e.name === (useNew ? "Swap2Evt" : "Swap"))) {
+    const d = ev.data as Record<string, { toString(): string; toBase58(): string }> & { swap_for_y: boolean; fees_on_token_x?: boolean };
+    const p = await poolMints(d.lb_pair.toBase58());
+    if (!p) {
+      undecoded = true;
+      continue;
+    }
+    let onX: boolean;
+    let raw: number;
+    if (useNew) {
+      onX = !!d.fees_on_token_x;
+      raw = ["mm_fee", "protocol_fee", "limit_order_fee", "host_fee"].reduce((n, k) => n + Number(d[k]?.toString() ?? 0), 0);
+    } else {
+      onX = d.swap_for_y; // fee on the input: X when swapping X for Y
+      raw = Number(d.fee.toString());
+    }
+    const mint = onX ? p.mintX : p.mintY;
+    fees.set(mint, (fees.get(mint) ?? 0) + raw / 10 ** (onX ? p.decX : p.decY));
   }
   const programs = new Set(
     (meta?.logMessages ?? []).map((l) => /^Program (\w{32,44}) invoke/.exec(l)?.[1]).filter((p): p is string => !!p),

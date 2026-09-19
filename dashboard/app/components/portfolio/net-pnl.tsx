@@ -253,9 +253,10 @@ export default function NetPnl({ wallet }: { wallet: string }) {
             <span className="text-ink-3">fee swap Meteora <span className="text-amber-300/90">{usd.format(data.costs.pool_fees)}</span></span>
             <span className="text-sm font-semibold text-amber-300">{usd.format(data.costs.total)}</span>
           </span>
-          {(data.costs.other_dex_swaps > 0 || data.costs.costs_known_txs < data.costs.transactions) && (
+          {(data.costs.other_dex_swaps > 0 || data.costs.unpriced_fees > 0 || data.costs.costs_known_txs < data.costs.transactions) && (
             <span className="basis-full text-[11px] text-ink-3">
               {data.costs.other_dex_swaps > 0 && `${data.costs.other_dex_swaps} transaksi lewat DEX lain (Raydium, PumpSwap, dll.): fee swap-nya tidak terbaca dan tidak ada di total biaya ini. `}
+              {data.costs.unpriced_fees > 0 && `${data.costs.unpriced_fees} fee dalam memecoin tidak bisa dinilai (swap di dalam rebalance/zap) dan tidak dihitung. `}
               {data.costs.costs_known_txs < data.costs.transactions &&
                 `Biaya baru terbaca untuk ${data.costs.costs_known_txs} dari ${data.costs.transactions} transaksi; sisanya sedang diisi.`}
             </span>

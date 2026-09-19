@@ -192,9 +192,13 @@ async def compute(db, wallet: str, fresh: bool = False) -> dict[str, Any]:
             elif f["mint"] == USDC:
                 pool_fee += f["amount"]
             else:
+                # Priced at the transaction's own rate. When the swap happens inside the transaction (a rebalance or a
+                # zap), little of the token ends up moving and that rate is meaningless; a fee worth more than 10% of
+                # the money that moved is such a case, and is counted as unpriced rather than guessed.
                 moved = sum(abs(d["amount"]) for d in ds if d["mint"] == f["mint"])
-                if moved > 0 and abs(cash) > 0:
-                    pool_fee += f["amount"] * abs(cash) / moved
+                value = f["amount"] * abs(cash) / moved if moved > 0 and abs(cash) > 0 else None
+                if value is not None and value <= 0.1 * abs(cash):
+                    pool_fee += value
                 else:
                     totals["unpriced_fees"] += 1
         totals["network"] += network
