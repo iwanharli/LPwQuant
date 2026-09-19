@@ -31,7 +31,7 @@ export function friendlyTxError(err: unknown): string {
  * never fails the action itself. */
 export function logActivity(entry: {
   wallet: string;
-  kind: "claim" | "limit_order_place" | "limit_order_cancel";
+  kind: "claim" | "limit_order_place" | "limit_order_cancel" | "remove_liquidity" | "swap";
   signatures: string[];
   pool?: string;
   note?: string;

@@ -10,6 +10,7 @@ import WalletButton from "../wallet-button";
 import DailyPnlChart, { type DailyPnl } from "./daily-pnl-chart";
 import PoolCard, { type Pool } from "./pool-card";
 import { ClosedOrders, ClosedPositions } from "./closed-history";
+import CloseSellButton from "./close-sell";
 import NetPnl from "./net-pnl";
 import PortfolioHeader from "./portfolio-header";
 import PortfolioTabs from "./portfolio-tabs";
@@ -727,13 +728,26 @@ export default function PortfolioPage() {
                 refreshKey={reloadKey}
                 wallet={connected?.address}
                 renderClaim={(p) => (
-                  <ClaimButton
-                    label={`Claim fee ${usd.format(p.unclaimed_fees_usd)}`}
-                    busyKey={p.address}
-                    state={claimState}
-                    disabled={!signer || p.unclaimed_fees_usd <= 0}
-                    onClick={() => void prepare(p.address, [claimItem(pool, p)])}
-                  />
+                  <span className="inline-flex flex-wrap justify-end gap-2">
+                    <ClaimButton
+                      label={`Claim fee ${usd.format(p.unclaimed_fees_usd)}`}
+                      busyKey={p.address}
+                      state={claimState}
+                      disabled={!signer || p.unclaimed_fees_usd <= 0}
+                      onClick={() => void prepare(p.address, [claimItem(pool, p)])}
+                    />
+                    <CloseSellButton
+                      owner={connected?.address}
+                      pool={pool.address}
+                      position={p.address}
+                      poolName={pool.name}
+                      tokenX={pool.token_x}
+                      tokenY={pool.token_y}
+                      valueUsd={p.value_usd + p.unclaimed_fees_usd}
+                      disabled={!signer}
+                      onDone={reload}
+                    />
+                  </span>
                 )}
               />
             ))}

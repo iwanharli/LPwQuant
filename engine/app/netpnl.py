@@ -52,7 +52,19 @@ async def sync_positions(db, wallet: str) -> None:
     open_pf = await portfolio.fetch_portfolio(db, wallet)
     now = datetime.now(timezone.utc)
     positions: list[tuple] = []
+    # A pool whose newest close is already indexed has nothing new: skip its per-position call (100+ pools otherwise
+    # cost ~25 s on every recompute).
+    known = {
+        r["pool"]: int(r["last"].timestamp() * 1000)
+        for r in await db.fetch(
+            "select pool, max(closed_at) as last from portfolio_positions_index where wallet = $1 and status = 'closed' group by pool",
+            wallet,
+        )
+        if r["last"]
+    }
     for p in closed_pools:
+        if p.get("closed_at") and known.get(p["address"], 0) >= p["closed_at"]:
+            continue
         for q in await portfolio.closed_positions(db, wallet, p["address"]):
             positions.append((q["address"], p["address"], p.get("mint_x"), p.get("mint_y"), p.get("token_x"), p.get("token_y"),
                               q["opened_at"], q["closed_at"], "closed", q["pnl_usd"], q["fees_usd"], q["deposit_usd"]))

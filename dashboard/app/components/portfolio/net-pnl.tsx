@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ENGINE_URL, fmtDateTime, usd } from "../../lib/format";
 
 type Position = {
@@ -185,6 +185,25 @@ function lastActivity(c: Coin): number {
   return -1 / Math.max(1, ...c.positions.map((p) => p.opened_at ?? 0));
 }
 
+const PAGE = 15;
+
+/** Calls onVisible when scrolled into view, to show the next page of rows. */
+function LoadMore({ onVisible, left }: { onVisible: () => void; left: number }) {
+  const ref = useRef<HTMLLIElement>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const io = new IntersectionObserver((e) => e[0]?.isIntersecting && onVisible(), { rootMargin: "200px" });
+    io.observe(el);
+    return () => io.disconnect();
+  }, [onVisible]);
+  return (
+    <li ref={ref} className="px-4 py-3 text-center text-[11px] text-ink-3">
+      Memuat {left} koin lagi…
+    </li>
+  );
+}
+
 /** Net result per coin and per position, reconciled with the wallet's total P/L. */
 export default function NetPnl({ wallet }: { wallet: string }) {
   const [data, setData] = useState<NetPnl | null>(null);
@@ -192,6 +211,8 @@ export default function NetPnl({ wallet }: { wallet: string }) {
   const [sort, setSort] = useState<"recent" | "worst" | "best" | "name">("recent");
   const [reloadKey, setReloadKey] = useState(0);
   const [filter, setFilter] = useState<"all" | "lp" | "swap">("all");
+  const [limit, setLimit] = useState(PAGE);
+  const more = useCallback(() => setLimit((n) => n + PAGE), []);
 
   useEffect(() => {
     let cancelled = false;
@@ -305,12 +326,18 @@ export default function NetPnl({ wallet }: { wallet: string }) {
           <h2 className="text-sm font-semibold text-ink">Per koin · {coins.length}</h2>
           <div className="flex flex-wrap gap-2">
             {([["all", "Semua"], ["lp", "Dengan LP"], ["swap", "Hanya swap"]] as const).map(([k, label]) => (
-              <button key={k} type="button" aria-pressed={filter === k} onClick={() => setFilter(k)}
+              <button key={k} type="button" aria-pressed={filter === k} onClick={() => {
+                setFilter(k);
+                setLimit(PAGE);
+              }}
                 className={`rounded-full border px-3 py-1 text-xs font-medium ${filter === k ? "border-accent/70 bg-accent/10 text-ink" : "border-line text-ink-2 hover:text-ink"}`}>
                 {label}
               </button>
             ))}
-            <select value={sort} onChange={(e) => setSort(e.target.value as typeof sort)} aria-label="Urutkan"
+            <select value={sort} onChange={(e) => {
+              setSort(e.target.value as typeof sort);
+              setLimit(PAGE);
+            }} aria-label="Urutkan"
               className="h-7 rounded-full border border-line bg-bg/50 px-3 text-xs text-ink-2 focus:outline-none">
               <option value="recent">Terbaru</option>
               <option value="worst">Rugi terbesar dulu</option>
@@ -319,7 +346,10 @@ export default function NetPnl({ wallet }: { wallet: string }) {
             </select>
           </div>
         </div>
-        <ul>{coins.map((c) => <CoinRow key={c.mint} c={c} />)}</ul>
+        <ul>
+          {coins.slice(0, limit).map((c) => <CoinRow key={c.mint} c={c} />)}
+          {coins.length > limit && <LoadMore key={limit} onVisible={more} left={coins.length - limit} />}
+        </ul>
         <p className="border-t border-line px-4 py-2.5 text-[11px] text-ink-3">
           &quot;Kata Meteora&quot; = PnL posisi menurut Meteora (fee dikurangi IL, token dinilai saat ditarik). &quot;Bersih&quot; = semua SOL/USDC
           masuk dikurangi yang keluar untuk koin itu, ditambah yang masih dipegang, termasuk swap sebelum dan sesudah posisi.

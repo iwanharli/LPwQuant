@@ -11,7 +11,7 @@
 import DLMM from "@meteora-ag/dlmm";
 import { BN } from "@coral-xyz/anchor";
 import { TOKEN_2022_PROGRAM_ID, getAssociatedTokenAddressSync, getMint, getTransferFeeConfig } from "@solana/spl-token";
-import { Connection, Keypair, PublicKey, type Transaction } from "@solana/web3.js";
+import { ComputeBudgetProgram, Connection, Keypair, PublicKey, type Transaction } from "@solana/web3.js";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { config } from "./config";
 import { apiFetch, createFailoverFetch } from "./rpc";
@@ -591,6 +591,183 @@ export async function tokenInfo(mints: string[]) {
   return Object.fromEntries(mints.map((m) => [m, priceCache.get(m)?.value ?? { price: null, symbol: null, icon: null }]));
 }
 
+// ---- Close a position and sell its memecoin: two transactions, the second built once the first has landed -----------
+
+const JUP_SWAP = "https://lite-api.jup.ag/swap/v1/swap";
+// Micro-lamports per compute unit. The floor gets the close into a busy block; the cap keeps a fee spike from
+// costing more than ~0.0005 SOL at the limits these transactions use.
+const CU_PRICE_MIN = 50_000;
+const CU_PRICE_MAX = 1_000_000;
+const SELL_SLIPPAGE_BPS = 300; // memecoins move fast: 3%, shown to the user before signing
+const CONFIRM_TIMEOUT_MS = 45_000;
+
+type CloseRequest = { owner: string; pool: string; position: string };
+
+async function priorityPrice(conn: Connection, accounts: PublicKey[]): Promise<number> {
+  const fees = await conn.getRecentPrioritizationFees({ lockedWritableAccounts: accounts }).catch(() => []);
+  const paid = fees.map((f) => f.prioritizationFee).filter((f) => f > 0).sort((a, b) => a - b);
+  const p75 = paid.length ? paid[Math.floor(paid.length * 0.75)] : 0;
+  return Math.min(CU_PRICE_MAX, Math.max(CU_PRICE_MIN, p75));
+}
+
+async function mintProgram(conn: Connection, mint: PublicKey): Promise<PublicKey> {
+  const info = await conn.getAccountInfo(mint);
+  return info?.owner.equals(TOKEN_2022_PROGRAM_ID) ? TOKEN_2022_PROGRAM_ID : TOKEN_PROGRAMS[0];
+}
+
+async function buildCloseNow(r: CloseRequest) {
+  if (!BASE58.test(r.owner ?? "") || !BASE58.test(r.pool ?? "") || !BASE58.test(r.position ?? "")) throw new Error("alamat tidak valid");
+  const conn = rpc();
+  const owner = new PublicKey(r.owner);
+  const dlmm = await poolFor(r.pool);
+  const pos = await dlmm.getPosition(new PublicKey(r.position));
+  if (!pos.positionData.owner.equals(owner)) throw new Error("posisi ini bukan milik wallet ini");
+  const d = pos.positionData;
+  const mintX = dlmm.tokenX.publicKey;
+  const mintY = dlmm.tokenY.publicKey;
+  const decX = dlmm.tokenX.mint.decimals;
+  const decY = dlmm.tokenY.mint.decimals;
+  const rawX = BigInt(Math.floor(Number(d.totalXAmount))) + BigInt(d.feeX.toString());
+  const rawY = BigInt(Math.floor(Number(d.totalYAmount))) + BigInt(d.feeY.toString());
+
+  const txs: Transaction[] = await dlmm.removeLiquidity({
+    user: owner,
+    position: pos.publicKey,
+    fromBinId: d.lowerBinId,
+    toBinId: d.upperBinId,
+    bps: new BN(10_000),
+    shouldClaimAndClose: true,
+  });
+  const price = await priorityPrice(conn, [new PublicKey(r.pool)]);
+  const { blockhash, lastValidBlockHeight } = await conn.getLatestBlockhash("confirmed");
+  const encoded: string[] = [];
+  let networkFee = 0;
+  for (const tx of txs) {
+    tx.feePayer = owner;
+    tx.recentBlockhash = blockhash;
+    tx.lastValidBlockHeight = lastValidBlockHeight;
+    const sim = await conn.simulateTransaction(tx);
+    if (sim.value.err) {
+      throw new Error(`simulasi gagal: ${JSON.stringify(sim.value.err)} ${(sim.value.logs ?? []).slice(-3).join(" | ")}`);
+    }
+    // The SDK asks for 1.4M compute units; the fee is price x limit, so size the limit to what the simulation used
+    // (+20%) and add the priority price that gets the close in quickly.
+    const units = Math.min(1_400_000, Math.ceil((sim.value.unitsConsumed ?? 400_000) * 1.2) + 10_000);
+    tx.instructions = [
+      ComputeBudgetProgram.setComputeUnitLimit({ units }),
+      ComputeBudgetProgram.setComputeUnitPrice({ microLamports: price }),
+      ...tx.instructions.filter((ix) => !ix.programId.equals(ComputeBudgetProgram.programId)),
+    ];
+    networkFee += 5000 * tx.compileMessage().header.numRequiredSignatures + Math.ceil((units * price) / 1e6);
+    encoded.push(tx.serialize({ requireAllSignatures: false, verifySignatures: false }).toString("base64"));
+  }
+
+  // The memecoin side is sold into the pool's other token when that is SOL or USDC, into SOL otherwise.
+  const xCore = CORE_MINTS.has(mintX.toBase58());
+  const yCore = CORE_MINTS.has(mintY.toBase58());
+  const sellX = !xCore ? true : !yCore ? false : null;
+  let sell = null;
+  if (sellX !== null) {
+    const mint = sellX ? mintX : mintY;
+    const raw = sellX ? rawX : rawY;
+    const output = sellX ? (yCore ? mintY : new PublicKey(SOL_MINT)) : xCore ? mintX : new PublicKey(SOL_MINT);
+    const program = await mintProgram(conn, mint);
+    const before = await tokenBalance(conn, owner, mint, program);
+    const { feeBps } = await transferFee(conn, mint);
+    const received = (raw * BigInt(10_000 - feeBps)) / 10_000n;
+    const info = await tokenInfo([mint.toBase58(), output.toBase58()]);
+    const inPrice = info[mint.toBase58()]?.price ?? 0;
+    const outPrice = info[output.toBase58()]?.price ?? 0;
+    const dec = sellX ? decX : decY;
+    const outDec = output.equals(mintX) ? decX : output.equals(mintY) ? decY : 9;
+    const amountUi = Number(received) / 10 ** dec;
+    sell = {
+      mint: mint.toBase58(),
+      symbol: info[mint.toBase58()]?.symbol ?? "?",
+      output: output.toBase58(),
+      output_symbol: output.toBase58() === SOL_MINT ? "SOL" : (info[output.toBase58()]?.symbol ?? "?"),
+      amount_ui: amountUi,
+      value_usd: amountUi * inPrice,
+      before_raw: before.toString(),
+      slippage_bps: SELL_SLIPPAGE_BPS,
+      quote: received > 0n && outPrice > 0 ? await quote(mint.toBase58(), output.toBase58(), received.toString(), outDec, outPrice, amountUi * inPrice).catch(() => null) : null,
+    };
+  }
+  return {
+    position: r.position,
+    pool: r.pool,
+    token_x: mintX.toBase58(),
+    token_y: mintY.toBase58(),
+    receive_x: Number(rawX) / 10 ** decX,
+    receive_y: Number(rawY) / 10 ** decY,
+    fee_x: Number(d.feeX.toString()) / 10 ** decX,
+    fee_y: Number(d.feeY.toString()) / 10 ** decY,
+    transactions: encoded,
+    network_fee_lamports: networkFee,
+    priority_micro_lamports: price,
+    sell,
+  };
+}
+
+export function buildClose(body: unknown) {
+  return serial(() => buildCloseNow(body as CloseRequest));
+}
+
+type SellRequest = { owner: string; mint: string; output: string; before_raw: string; signatures: string[]; slippage_bps?: number };
+
+async function waitConfirmed(conn: Connection, signatures: string[]) {
+  const until = Date.now() + CONFIRM_TIMEOUT_MS;
+  while (Date.now() < until) {
+    const { value } = await conn.getSignatureStatuses(signatures);
+    const failed = value.find((s) => s?.err);
+    if (failed) throw new Error(`penutupan posisi gagal di chain: ${JSON.stringify(failed.err)}`);
+    if (value.every((s) => s && (s.confirmationStatus === "confirmed" || s.confirmationStatus === "finalized"))) return;
+    await new Promise((res) => setTimeout(res, 600));
+  }
+  throw new Error("penutupan posisi belum terkonfirmasi setelah 45 detik; cek wallet lalu jual dari tab Wallet");
+}
+
+/** After the close has landed: sells exactly what it brought in (balance now minus balance before) via Jupiter. */
+export async function buildSell(body: unknown) {
+  const r = body as SellRequest;
+  if (![r?.owner, r?.mint, r?.output].every((a) => BASE58.test(a ?? ""))) throw new Error("alamat tidak valid");
+  if (!Array.isArray(r.signatures) || r.signatures.length === 0 || r.signatures.length > 10) throw new Error("signature tidak valid");
+  const conn = rpc();
+  await waitConfirmed(conn, r.signatures);
+  const owner = new PublicKey(r.owner);
+  const mint = new PublicKey(r.mint);
+  const now = await tokenBalance(conn, owner, mint, await mintProgram(conn, mint));
+  const amount = now - BigInt(r.before_raw || "0");
+  if (amount <= 0n) throw new Error("token dari posisi belum terlihat di wallet");
+  const slippage = Math.min(1000, Math.max(50, Math.round(r.slippage_bps ?? SELL_SLIPPAGE_BPS)));
+  const qUrl = `${JUP_QUOTE}?inputMint=${r.mint}&outputMint=${r.output}&amount=${amount}&slippageBps=${slippage}`;
+  const qRes = await apiFetch("jupiter", "quote", qUrl, { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(15_000) });
+  if (!qRes.ok) throw new Error(`Jupiter tidak memberi harga (HTTP ${qRes.status})`);
+  const quoteResponse = (await qRes.json()) as { outAmount?: string; routePlan?: { swapInfo?: { label?: string } }[] };
+  if (!quoteResponse.outAmount) throw new Error("Jupiter tidak menemukan rute jual");
+  const sRes = await apiFetch("jupiter", "swap", JUP_SWAP, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({
+      quoteResponse,
+      userPublicKey: r.owner,
+      wrapAndUnwrapSol: true,
+      dynamicComputeUnitLimit: true,
+      prioritizationFeeLamports: { priorityLevelWithMaxLamports: { maxLamports: 500_000, priorityLevel: "veryHigh" } },
+    }),
+    signal: AbortSignal.timeout(20_000),
+  });
+  const swap = (await sRes.json()) as { swapTransaction?: string; error?: string };
+  if (!sRes.ok || !swap.swapTransaction) throw new Error(`Jupiter gagal menyusun swap: ${swap.error ?? sRes.status}`);
+  const outDec = r.output === SOL_MINT ? 9 : (await getMint(conn, new PublicKey(r.output))).decimals;
+  return {
+    transaction: swap.swapTransaction,
+    amount_raw: amount.toString(),
+    out_amount: Number(quoteResponse.outAmount) / 10 ** outDec,
+    route: (quoteResponse.routePlan ?? []).map((p) => p.swapInfo?.label ?? "?"),
+  };
+}
+
 function send(res: ServerResponse, status: number, body: unknown, origin: string) {
   res.writeHead(status, {
     "Content-Type": "application/json",
@@ -684,6 +861,16 @@ export function startClaimServer(port = config.claimPort, allowed = config.dashb
       } catch (err) {
         const message = err instanceof Error ? err.message : "gagal menyusun transaksi";
         console.warn(`[limit-order] ${message}`);
+        return send(res, 400, { detail: message }, origin);
+      }
+    }
+    if (req.method === "POST" && (url.pathname === "/close" || url.pathname === "/close/sell")) {
+      try {
+        const body = await readJson(req);
+        return send(res, 200, url.pathname === "/close" ? await buildClose(body) : await buildSell(body), origin);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "gagal menyusun transaksi";
+        console.warn(`[close] ${message}`);
         return send(res, 400, { detail: message }, origin);
       }
     }
