@@ -60,6 +60,9 @@ export const config = {
   binsRefreshMs: Math.max(num("BINS_REFRESH_SEC", 300), 60) * 1000,
   binsArraysEachSide: Math.max(Math.round(num("BINS_ARRAYS_EACH_SIDE", 2)), 1),
   rpcProviders: rpcProviders(),
+  // New-pool feed (new-pools.ts): how often to ask Meteora for its newest pools, and the TVL a new pool needs.
+  newPoolPollMs: Math.max(num("NEW_POOL_POLL_SEC", 15), 5) * 1000,
+  newPoolMinTvl: num("NEW_POOL_MIN_TVL", 500),
   // Builds unsigned claim-fee transactions for the dashboard (claim-server.ts); bound to 127.0.0.1.
   claimPort: num("CLAIM_PORT", 8010),
   dashboardOrigins: (process.env.DASHBOARD_ORIGIN || "http://localhost:3000,http://127.0.0.1:3000").split(","),

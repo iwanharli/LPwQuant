@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { CLAIM_URL, fmtDateTime, fmtNum, fmtSignedPct, shortAddress, usd } from "../../lib/format";
+import { CLAIM_URL, ENGINE_URL, fmtDateTime, fmtNum, fmtSignedPct, shortAddress, usd } from "../../lib/format";
 import { StatusDot } from "../ui";
 
 export type Position = {
@@ -108,6 +108,57 @@ function useBins(pool: string, position: string, open: boolean, refreshKey: numb
   return { data, failed };
 }
 
+type PnlPoint = { ts: number; pnl_usd: number };
+
+function usePositionHistory(wallet: string | undefined, position: string, open: boolean) {
+  const [points, setPoints] = useState<PnlPoint[] | null>(null);
+  useEffect(() => {
+    if (!open || !wallet) return;
+    let cancelled = false;
+    fetch(`${ENGINE_URL}/api/portfolio/position-history?wallet=${wallet}&position=${position}&days=30`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((body) => !cancelled && body && setPoints(body.series as PnlPoint[]))
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [wallet, position, open]);
+  return points;
+}
+
+/** PnL of one position since the engine started snapshotting it, as a small line: is it earning or bleeding. */
+function PnlSparkline({ points }: { points: PnlPoint[] }) {
+  if (points.length < 2) {
+    return <span className="text-[11px] text-ink-3">Riwayat PnL muncul setelah beberapa snapshot (tiap 15 menit).</span>;
+  }
+  const w = 240;
+  const h = 36;
+  const xs = points.map((p) => p.ts);
+  const ys = points.map((p) => p.pnl_usd);
+  const [x0, x1] = [Math.min(...xs), Math.max(...xs)];
+  const [y0, y1] = [Math.min(...ys, 0), Math.max(...ys, 0)];
+  const sx = (x: number) => ((x - x0) / Math.max(1, x1 - x0)) * w;
+  const sy = (y: number) => h - ((y - y0) / Math.max(1e-9, y1 - y0)) * h;
+  const path = points.map((p, i) => `${i ? "L" : "M"}${sx(p.ts).toFixed(1)},${sy(p.pnl_usd).toFixed(1)}`).join(" ");
+  const last = ys[ys.length - 1];
+  const change = last - ys[0];
+  return (
+    <span className="flex items-center gap-3">
+      <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} className="overflow-visible" role="img" aria-label="PnL posisi sejak dipantau">
+        <line x1={0} x2={w} y1={sy(0)} y2={sy(0)} stroke="currentColor" className="text-line" strokeDasharray="3 3" />
+        <path d={path} fill="none" stroke={last >= 0 ? "var(--color-up)" : "var(--color-down)"} strokeWidth={1.6} strokeLinejoin="round" />
+      </svg>
+      <span className="text-[11px] tabular-nums text-ink-3">
+        PnL sejak dipantau{" "}
+        <span className={change >= 0 ? "text-up" : "text-down"}>
+          {change >= 0 ? "+" : "−"}
+          {usd.format(Math.abs(change))}
+        </span>
+      </span>
+    </span>
+  );
+}
+
 function TokenPair({ pool, size = 28 }: { pool: Pool; size?: number }) {
   return (
     <span className="flex shrink-0 -space-x-2.5">
@@ -208,14 +259,17 @@ function PositionBlock({
   p,
   claimButton,
   refreshKey,
+  wallet,
 }: {
   pool: Pool;
   p: Position;
   claimButton: React.ReactNode;
   refreshKey: number;
+  wallet?: string;
 }) {
   const [open, setOpen] = useState(true);
   const { data: bins, failed } = useBins(pool.address, p.address, open, refreshKey);
+  const history = usePositionHistory(wallet, p.address, open);
   const active = bins?.active_bin ?? p.active_bin;
   const st = rangeStatus(p, active);
   const span = p.upper_bin - p.lower_bin + 1;
@@ -300,6 +354,7 @@ function PositionBlock({
             </div>
           )}
           <RangeMeter pos={st.pos} severity={st.severity} />
+          {history && <PnlSparkline points={history} />}
           <div className="flex flex-wrap items-center gap-2 pt-1">
             <ActionLink href={`https://app.meteora.ag/dlmm/${pool.address}`}>View on Meteora</ActionLink>
             <ActionLink href={`https://solscan.io/account/${p.address}`}>Posisi di Solscan</ActionLink>
@@ -316,10 +371,12 @@ export default function PoolCard({
   pool,
   renderClaim,
   refreshKey = 0,
+  wallet,
 }: {
   pool: Pool;
   renderClaim: (p: Position) => React.ReactNode;
   refreshKey?: number;
+  wallet?: string;
 }) {
   return (
     <section className="overflow-hidden rounded-2xl border border-line bg-[#0e1217]/[0.97] backdrop-blur-sm shadow-[0_14px_42px_rgba(0,0,0,0.20),inset_0_1px_0_rgba(255,255,255,0.04)]">
@@ -350,7 +407,7 @@ export default function PoolCard({
       {pool.positions.length === 0 ? (
         <p className="px-4 py-4 text-sm text-ink-3">Detail posisi belum tersedia dari Meteora.</p>
       ) : (
-        pool.positions.map((p) => <PositionBlock key={p.address} pool={pool} p={p} claimButton={renderClaim(p)} refreshKey={refreshKey} />)
+        pool.positions.map((p) => <PositionBlock key={p.address} pool={pool} p={p} claimButton={renderClaim(p)} refreshKey={refreshKey} wallet={wallet} />)
       )}
     </section>
   );

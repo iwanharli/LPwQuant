@@ -6,6 +6,8 @@ import { usePathname } from "next/navigation";
 const TABS = [
   { href: "/portfolio", label: "Posisi LP" },
   { href: "/portfolio/wallet", label: "Wallet" },
+  { href: "/portfolio/orders", label: "Limit order" },
+  { href: "/portfolio/history", label: "Riwayat" },
 ];
 
 /** Sub-pages of the portfolio: LP positions and the coins held in the wallet itself. */

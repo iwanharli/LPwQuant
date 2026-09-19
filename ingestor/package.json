@@ -8,10 +8,13 @@
     "start": "tsx src/index.ts",
     "backfill": "tsx src/backfill.ts",
     "typecheck": "tsc --noEmit",
-    "lp-owners": "tsx src/lp-owners.ts"
+    "lp-owners": "tsx src/lp-owners.ts",
+    "history-backfill": "tsx src/history-backfill.ts",
+    "history-reclassify": "tsx src/history-reclassify.ts"
   },
   "dependencies": {
     "@meteora-ag/dlmm": "1.9.14",
+    "@solana/spl-token": "^0.4.15",
     "@solana/web3.js": "^1.98.0",
     "dotenv": "^16.4.7",
     "ioredis": "^5.4.2",

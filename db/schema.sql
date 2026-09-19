@@ -235,3 +235,46 @@ create table if not exists portfolio_snapshots (
   positions           integer not null,
   primary key (wallet, ts)
 );
+
+-- Wallet activity: every transaction of a watched wallet, from the app (claims, limit orders it sent) and from the
+-- chain (ingestor/src/wallet-history.ts), so actions taken on Meteora or Jupiter directly show up too.
+create table if not exists portfolio_activity (
+  signature  text primary key,
+  wallet     text not null,
+  ts         timestamptz not null,
+  kind       text not null,  -- claim | add_liquidity | remove_liquidity | limit_order_place | limit_order_cancel | swap | transfer | other
+  source     text not null,  -- app | chain
+  ok         boolean not null default true,
+  pool       text,
+  sol_delta  double precision,
+  deltas     jsonb not null default '[]',  -- [{mint, symbol, amount}] for the wallet's own token accounts
+  note       text
+);
+create index if not exists portfolio_activity_wallet_ts on portfolio_activity (wallet, ts desc);
+-- Instruction names from the logs: lets the classification be redone without re-reading the chain.
+alter table portfolio_activity add column if not exists instructions text[];
+
+-- Per-position history (engine snapshot loop, every 15 min).
+create table if not exists portfolio_position_snapshots (
+  wallet              text not null,
+  ts                  timestamptz not null,
+  position            text not null,
+  pool                text not null,
+  name                text not null,
+  value_usd           double precision not null,
+  pnl_usd             double precision not null,
+  unclaimed_fees_usd  double precision not null,
+  in_range            boolean,
+  primary key (wallet, ts, position)
+);
+
+-- Everything the wallet owns, in one number over time: coins in the wallet, LP positions, open limit orders.
+create table if not exists portfolio_networth_snapshots (
+  wallet      text not null,
+  ts          timestamptz not null,
+  wallet_usd  double precision not null,
+  lp_usd      double precision not null,
+  orders_usd  double precision not null,
+  total_usd   double precision not null,
+  primary key (wallet, ts)
+);

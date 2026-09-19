@@ -7,6 +7,8 @@ import { JupiterFetcher } from "./jupiter";
 import { PumpFetcher } from "./pump";
 import { usage } from "./rpc";
 import { startClaimServer } from "./claim-server";
+import { WalletHistory } from "./wallet-history";
+import { NewPoolFeed } from "./new-pools";
 import { GmgnFetcher } from "./gmgn";
 import { CandleFetcher, FlowFetcher } from "./market";
 import { SecurityFetcher } from "./security";
@@ -46,6 +48,8 @@ async function onTicks(ticks: PriceTick[]): Promise<void> {
 async function main(): Promise<void> {
   await applySchema();
   const claimServer = config.rpcProviders.length > 0 ? startClaimServer() : null;
+  const history = config.rpcProviders.length > 0 ? new WalletHistory() : null;
+  history?.start();
   const security = new SecurityFetcher();
   await security.load();
   const organic = new JupiterFetcher();
@@ -90,11 +94,25 @@ async function main(): Promise<void> {
   let timer: NodeJS.Timeout | undefined;
   let stopped = false;
 
+  // A new pool found by the feed triggers the next cycle now rather than up to a minute later.
+  let polling = false;
+  const newPools = new NewPoolFeed((added) => {
+    security.enqueueFirst(added);
+    if (polling || stopped) return;
+    if (timer) clearTimeout(timer);
+    void poll();
+  });
+
   const poll = async () => {
+    if (polling) return;
+    polling = true;
     const started = Date.now();
     try {
       const pinned = await redis.smembers(PAPER_OPEN_POOLS_KEY);
-      const pools = await withPinnedPools(await fetchPools(), pinned);
+      const listed = await fetchPools();
+      const known = new Set(listed.map((p) => p.address));
+      const fresh = newPools.current().filter((p) => !known.has(p.address));
+      const pools = await withPinnedPools([...listed, ...fresh], pinned);
       await savePools(pools);
       await publishPools(pools);
       security.enqueue(pools);
@@ -111,11 +129,12 @@ async function main(): Promise<void> {
       }
       const usageSummary = await flushUsage();
       console.log(
-        `[poller] ${pools.length} pools, watching ${watcher?.size ?? 0}, security ${security.known} known/${security.pending} queued, organic ${organic.known}, pump ${pump.known}, candles ${candles.tracked} pools/${candles.pending} queued, flow ${flow.lastCount}, gmgn ${gmgn?.known ?? "off"}, bins ${bins?.lastCount ?? "off"}, ${usageSummary}, ${Date.now() - started}ms`,
+        `[poller] ${pools.length} pools (${fresh.length} baru), watching ${watcher?.size ?? 0}, security ${security.known} known/${security.pending} queued, organic ${organic.known}, pump ${pump.known}, candles ${candles.tracked} pools/${candles.pending} queued, flow ${flow.lastCount}, gmgn ${gmgn?.known ?? "off"}, bins ${bins?.lastCount ?? "off"}, ${usageSummary}, ${Date.now() - started}ms`,
       );
     } catch (err) {
       console.error("[poller] failed", err);
     }
+    polling = false;
     if (!stopped) timer = setTimeout(poll, config.pollIntervalMs);
   };
 
@@ -129,6 +148,8 @@ async function main(): Promise<void> {
     gmgn?.stop();
     await watcher?.close();
     claimServer?.close();
+    history?.stop();
+    newPools.stop();
     await flushUsage().catch((err) => console.error("[usage] final flush failed", err));
     await Promise.allSettled([pg.end(), redis.quit()]);
     process.exit(0);
@@ -136,6 +157,7 @@ async function main(): Promise<void> {
   process.on("SIGINT", shutdown);
   process.on("SIGTERM", shutdown);
 
+  newPools.start();
   await poll();
 }
 

@@ -5,6 +5,7 @@ import { type Filters, activeFilterCount, defaultFilters, emptyFilters, matchesF
 import { type SortKey, type Tier, rowTier } from "../lib/types";
 import { useLivePools } from "../lib/use-live-pools";
 import FilterPanel from "./filter-panel";
+import BusyHours from "./busy-hours";
 import KpiStrip from "./kpi-strip";
 import PoolDrawer from "./pool-drawer";
 import PoolTable from "./pool-table";
@@ -76,13 +77,24 @@ export default function Dashboard() {
       <main className="mx-auto w-full min-w-0 max-w-full flex-1 space-y-5 overflow-x-hidden px-4 py-6 sm:px-6 lg:py-7 2xl:px-8">
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-ink sm:text-4xl">Pool DLMM</h1>
-          <p className="mt-1 max-w-3xl text-sm leading-6 text-ink-3">
-            Dikelompokkan per tingkat risiko. Di dalam tiap tier, diurutkan berdasarkan skor peluang fee, likuiditas,
-            dan keamanan.
-          </p>
+          <p className="mt-1 truncate text-sm text-ink-3">Pool diurutkan per tingkat risiko dan skor peluang fee.</p>
         </div>
 
         <KpiStrip rows={all} />
+
+        {/* Collapsed by default: a reference for timing entries, not something to read on every visit. */}
+        <details className="group rounded-2xl border border-line bg-panel/90 shadow-[0_12px_32px_rgba(0,0,0,0.18)]">
+          <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-sm font-semibold text-ink [&::-webkit-details-marker]:hidden">
+            <svg viewBox="0 0 20 20" width={14} height={14} className="text-ink-3 transition-transform group-open:rotate-90" aria-hidden>
+              <path d="m7.5 5 5 5-5 5" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+            Jam ramai pasar (WIB)
+            <span className="font-normal text-ink-3">· kapan volume DLMM paling tinggi, dari 30 hari candle</span>
+          </summary>
+          <div className="border-t border-line px-4 py-3">
+            <BusyHours />
+          </div>
+        </details>
 
         <section className="max-w-full overflow-x-clip rounded-2xl border border-line bg-panel/95 shadow-[0_18px_55px_rgba(0,0,0,0.24),inset_0_1px_0_rgba(255,255,255,0.04)]">
           <Toolbar

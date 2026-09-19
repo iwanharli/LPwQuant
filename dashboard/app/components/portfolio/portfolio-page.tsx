@@ -2,12 +2,15 @@
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { CLAIM_URL, ENGINE_URL, fmtDateTime, fmtTime, fmtNum, shortAddress, usd } from "../../lib/format";
+import { logActivity } from "../../lib/tx";
 import { canSign, signAndSendAll, useConnectedWallet, useWalletOptions, useWalletParam } from "../../lib/wallet";
 import TopBar from "../top-bar";
 import { StatusDot } from "../ui";
 import WalletButton from "../wallet-button";
 import DailyPnlChart, { type DailyPnl } from "./daily-pnl-chart";
 import PoolCard, { type Pool } from "./pool-card";
+import { ClosedOrders, ClosedPositions } from "./closed-history";
+import PortfolioHeader from "./portfolio-header";
 import PortfolioTabs from "./portfolio-tabs";
 import PositionFilters, { DEFAULT_FILTERS, applyFilters, statusCounts, type Filters } from "./position-filters";
 
@@ -90,7 +93,7 @@ type ClaimState =
   | { phase: "building"; key: string; items: ClaimItem[] }
   | { phase: "signing"; key: string }
   | { phase: "review"; key: string; review: Review }
-  | { phase: "done"; key: string; signatures: string[]; skipped: number }
+  | { phase: "done"; key: string; signatures: string[]; skipped: number; received: [string, number][] }
   | { phase: "error"; key: string; message: string };
 
 // A transaction carries a recent blockhash that expires after ~60-90s; past this, rebuild before signing.
@@ -102,6 +105,19 @@ function friendlyError(err: unknown): string {
   if (/429|too many requests|rate limit/i.test(message)) return "RPC sedang sibuk (rate limit). Coba lagi sebentar lagi.";
   if (/failed to fetch|networkerror/i.test(message)) return "Ingestor tidak bisa dihubungi. Pastikan ingestor berjalan.";
   return message;
+}
+
+/** Tokens a claim pays out, summed across positions: several pools can pay the same token. */
+function receivedTotals(review: Review): [string, number][] {
+  const byPosition = new Map(review.items.map((i) => [i.position, i]));
+  const totals = new Map<string, number>();
+  for (const c of review.claims) {
+    const item = byPosition.get(c.position);
+    if (!item) continue;
+    if (c.fee_x_ui > 0) totals.set(item.tokenX, (totals.get(item.tokenX) ?? 0) + c.fee_x_ui);
+    if (c.fee_y_ui > 0) totals.set(item.tokenY, (totals.get(item.tokenY) ?? 0) + c.fee_y_ui);
+  }
+  return [...totals.entries()];
 }
 
 async function buildClaims(owner: string, items: ClaimItem[]): Promise<Review> {
@@ -132,7 +148,7 @@ function useClaim(owner: string | undefined, onDone: () => void) {
       const review = await buildClaims(owner, items);
       if (cancelled) return; // closed while the transactions were still being built
       if (review.claims.length === 0) {
-        setState({ phase: "done", key, signatures: [], skipped: review.skipped.length });
+        setState({ phase: "done", key, signatures: [], skipped: review.skipped.length, received: [] });
         return;
       }
       setState({ phase: "review", key, review });
@@ -150,8 +166,19 @@ function useClaim(owner: string | undefined, onDone: () => void) {
       if (Date.now() - review.builtAt > REBUILD_AFTER_MS) review = await buildClaims(owner, review.items);
       const txs = review.claims.flatMap((c) => c.transactions.map((t) => Uint8Array.from(atob(t), (ch) => ch.charCodeAt(0))));
       const signatures = await signAndSendAll(txs);
-      setState({ phase: "done", key, signatures, skipped: review.skipped.length });
-      setTimeout(onDone, 4000); // give the chain and Meteora's indexer a moment before re-reading
+      setState({ phase: "done", key, signatures, skipped: review.skipped.length, received: receivedTotals(review) });
+      logActivity({
+        wallet: owner,
+        kind: "claim",
+        signatures,
+        pool: review.claims.length === 1 ? review.claims[0].pool : undefined,
+        note: receivedTotals(review).map(([t, a]) => `+${a.toPrecision(4)} ${t}`).join(" · "),
+      });
+      setTimeout(() => {
+        onDone();
+        // Also drop the ingestor's wallet cache, so the Wallet tab shows the claimed tokens on its next load.
+        void fetch(`${CLAIM_URL}/wallet?owner=${owner}&fresh=1`).catch(() => undefined);
+      }, 4000); // give the chain and Meteora's indexer a moment before re-reading
     } catch (err) {
       setState({ phase: "error", key, message: friendlyError(err) });
     }
@@ -183,13 +210,7 @@ function ClaimReview({
   const feeSol = claims.reduce((n, c) => n + c.network_fee_lamports, 0) / 1e9;
   const usdTotal = claims.reduce((n, c) => n + (byPosition.get(c.position)?.usd ?? 0), 0);
   // Same token claimed from several positions: one total per token, so two-token fees read at a glance.
-  const totals = new Map<string, number>();
-  for (const c of claims) {
-    const item = byPosition.get(c.position);
-    if (!item) continue;
-    if (c.fee_x_ui > 0) totals.set(item.tokenX, (totals.get(item.tokenX) ?? 0) + c.fee_x_ui);
-    if (c.fee_y_ui > 0) totals.set(item.tokenY, (totals.get(item.tokenY) ?? 0) + c.fee_y_ui);
-  }
+  const totals = new Map(review ? receivedTotals(review) : []);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onCancel();
@@ -348,6 +369,20 @@ function ClaimResult({ state }: { state: ClaimState }) {
           </a>
         ))}
         {state.skipped > 0 && <span className="text-xs text-ink-3">{state.skipped} posisi dilewati (fee nol)</span>}
+        {state.received.length > 0 && (
+          <span className="basis-full pl-4 text-xs leading-5 text-ink-2">
+            Masuk ke wallet:{" "}
+            {state.received.map(([token, amount], i) => (
+              <span key={token} className="tabular-nums">
+                {i > 0 && " · "}+{fmtNum(amount, amount < 1 ? 6 : 4)} <span className="font-medium text-ink">{token}</span>
+              </span>
+            ))}
+            <span className="text-ink-3">
+              {" "}
+              — token bernilai di bawah $1 ada di kelompok Debu di tab Wallet, dan aplikasi wallet sering menyembunyikannya.
+            </span>
+          </span>
+        )}
       </p>
     );
   }
@@ -441,6 +476,61 @@ function RefreshButton({ onClick, fetchedAt }: { onClick: () => void; fetchedAt:
   );
 }
 
+/** One quiet line under the filters when a position needs a look; each part filters the list to those positions. */
+function RangeNotice({
+  counts,
+  onShow,
+}: {
+  counts: ReturnType<typeof statusCounts>;
+  onShow: (status: "out" | "near_edge") => void;
+}) {
+  const parts = [
+    counts.out > 0 && { status: "out" as const, dot: "bg-critical", text: `${counts.out} di luar range, tidak mengumpulkan fee` },
+    counts.near_edge > 0 && { status: "near_edge" as const, dot: "bg-warning", text: `${counts.near_edge} dekat tepi range` },
+  ].filter(Boolean) as { status: "out" | "near_edge"; dot: string; text: string }[];
+  if (parts.length === 0) return null;
+  return (
+    <div className="-mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 px-1 text-xs text-ink-3">
+      {parts.map((p) => (
+        <button key={p.status} type="button" onClick={() => onShow(p.status)} className="inline-flex items-center gap-1.5 hover:text-ink">
+          <span className={`h-1.5 w-1.5 rounded-full ${p.dot}`} aria-hidden />
+          {p.text}
+          <span className="text-ink-3/70">→</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+type View = "open" | "closed" | "orders";
+
+/** Open positions, or the history of closed positions and finished limit orders, on the same tab. */
+function ViewSwitch({ view, onChange, openCount }: { view: View; onChange: (v: View) => void; openCount: number | null }) {
+  const options: { value: View; label: string }[] = [
+    { value: "open", label: openCount != null ? `Posisi terbuka (${openCount})` : "Posisi terbuka" },
+    { value: "closed", label: "Riwayat posisi" },
+    { value: "orders", label: "Riwayat limit order" },
+  ];
+  return (
+    <div className="flex flex-wrap gap-1 border-b border-line" role="tablist" aria-label="Tampilan posisi">
+      {options.map((o) => (
+        <button
+          key={o.value}
+          type="button"
+          role="tab"
+          aria-selected={view === o.value}
+          onClick={() => onChange(o.value)}
+          className={`-mb-px border-b-2 px-4 py-2.5 text-sm font-medium transition-colors ${
+            view === o.value ? "border-accent text-ink" : "border-transparent text-ink-3 hover:text-ink-2"
+          }`}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function EmptyState() {
   return (
     <div className="grid place-items-center rounded-2xl border border-line bg-[#0e1217]/[0.97] backdrop-blur-sm px-6 py-16 text-center shadow-[0_14px_42px_rgba(0,0,0,0.20)]">
@@ -464,6 +554,7 @@ export default function PortfolioPage() {
   const { data, error, reload, reloadKey } = usePortfolio(connected?.address);
   const walletOptions = useWalletOptions();
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
+  const [view, setView] = useState<View>("open");
   const visiblePools = applyFilters(data?.pools ?? [], filters);
   const visibleCount = visiblePools.reduce((n, pool) => n + pool.positions.length, 0);
   const signer = canSign(connected, walletOptions);
@@ -487,24 +578,20 @@ export default function PortfolioPage() {
     <div className="flex min-h-screen min-w-0 flex-col overflow-x-hidden">
       <TopBar />
       <main className="mx-auto w-full min-w-0 max-w-full flex-1 space-y-5 overflow-x-hidden px-4 py-6 sm:px-6 lg:py-7 2xl:px-8">
-        <div className="flex flex-wrap items-end justify-between gap-4">
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight text-ink sm:text-4xl">Portofolio LP</h1>
-            <p className="mt-1 max-w-3xl text-sm leading-6 text-ink-3">
-              Posisi DLMM Meteora milik wallet kamu, dengan PnL dari Meteora (deposit, withdraw, dan fee sudah
-              diperhitungkan). Keuntungan per hari dicatat engine setiap 15 menit sejak wallet pertama dibuka di sini.
-            </p>
-          </div>
-          {data && (
-            <div className="flex items-center gap-3">
+        <PortfolioHeader
+          subtitle="Posisi DLMM di wallet kamu."
+          right={
+            data && (
+              <>
               <div className="text-right text-xs text-ink-3">
                 <div className="font-mono text-ink-2">{shortAddress(data.wallet)}</div>
                 diperbarui {fmtTime(data.fetched_at)} · otomatis tiap {REFRESH_MS / 1000} dtk
               </div>
               <RefreshButton onClick={reload} fetchedAt={data.fetched_at} />
-            </div>
-          )}
-        </div>
+              </>
+            )
+          }
+        />
 
         <PortfolioTabs />
 
@@ -512,14 +599,14 @@ export default function PortfolioPage() {
           <EmptyState />
         ) : (
           <>
+            <ViewSwitch view={view} onChange={setView} openCount={data?.summary.positions ?? null} />
+            {view === "closed" && <ClosedPositions wallet={connected.address} />}
+            {view === "orders" && <ClosedOrders wallet={connected.address} />}
+            {view === "open" && (
+          <>
             {error && (
               <p className="flex items-center gap-2 rounded-2xl border border-critical/30 bg-critical/10 px-4 py-3 text-sm text-ink-2 shadow-sm shadow-black/20">
                 <StatusDot severity="critical" /> {error}. Pastikan engine berjalan di {ENGINE_URL}.
-              </p>
-            )}
-            {s && s.out_of_range > 0 && (
-              <p className="flex items-center gap-2 rounded-2xl border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-ink-2 shadow-sm shadow-black/20">
-                <StatusDot severity="warning" /> {s.out_of_range} posisi di luar range dan tidak sedang mengumpulkan fee.
               </p>
             )}
 
@@ -619,6 +706,9 @@ export default function PortfolioPage() {
                 shown={visibleCount}
               />
             )}
+            {data && data.pools.length > 0 && (
+              <RangeNotice counts={statusCounts(data.pools)} onShow={(status) => setFilters({ ...filters, status })} />
+            )}
             {data && data.pools.length > 0 && visiblePools.length === 0 && (
               <p className="rounded-2xl border border-line bg-[#0e1217]/[0.97] px-4 py-8 text-center text-sm text-ink-3">
                 Tidak ada posisi yang cocok dengan filter.{" "}
@@ -632,6 +722,7 @@ export default function PortfolioPage() {
                 key={pool.address}
                 pool={pool}
                 refreshKey={reloadKey}
+                wallet={connected?.address}
                 renderClaim={(p) => (
                   <ClaimButton
                     label={`Claim fee ${usd.format(p.unclaimed_fees_usd)}`}
@@ -643,6 +734,8 @@ export default function PortfolioPage() {
                 )}
               />
             ))}
+          </>
+            )}
           </>
         )}
       </main>

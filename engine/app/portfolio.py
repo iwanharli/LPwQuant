@@ -206,7 +206,10 @@ async def snapshot_loop(db) -> None:
             wallets = [r["address"] for r in await db.fetch("select address from portfolio_wallets")]
             for wallet in wallets:
                 try:
-                    await snapshot(db, await fetch_portfolio(db, wallet, fresh=True))
+                    data = await fetch_portfolio(db, wallet, fresh=True)
+                    await snapshot(db, data)
+                    await snapshot_positions(db, data)
+                    await snapshot_networth(db, wallet, data)
                 except Exception as err:
                     log.warning("portfolio snapshot failed for %s…: %s", wallet[:4], err)
         except asyncio.CancelledError:
@@ -266,3 +269,361 @@ async def history(db, wallet: str, days: int = 30) -> dict[str, Any]:
         for r in rows
     ]
     return {"daily": daily, "series": series, "tracking_since": series[0]["ts"] if series else None}
+
+
+ORDERS_CACHE_MS = 15_000
+_orders_cache: dict[str, tuple[int, dict[str, Any]]] = {}
+
+
+def _order(o: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "address": o.get("limit_order_address"),
+        "is_ask": bool(o.get("is_ask_side")),
+        "input_token": o.get("input_token"),
+        "output_token": o.get("output_token"),
+        "lower_price": _f(o.get("lower_pool_price")),
+        "upper_price": _f(o.get("upper_pool_price")),
+        "input_amount": _f(o.get("input_amount")),
+        "input_usd": _f(o.get("input_amount_usd")),
+        "output_expected": _f(o.get("output_amount_expected")),
+        "filled_pct": _f(o.get("filled_pct")),
+        "filled_output": _f(o.get("total_filled_amount")),
+        "filled_output_usd": _f(o.get("total_filled_amount_usd")),
+        "unfilled_input": _f(o.get("total_unfilled_amount")),
+        "unfilled_usd": _f(o.get("total_unfilled_amount_usd")),
+        "bonus_usd": _f(o.get("total_bonus_usd")),
+        "pnl_usd": _f(o.get("unrealized_pnl_usd")),
+        "pnl_pct": _f(o.get("unrealized_pnl_pct_usd")),
+        "opened_at": (o.get("opened_at") or 0) * 1000 or None,
+        "bins": [
+            {
+                "bin": b.get("bin_id"),
+                "price": _f(b.get("price")),
+                "deposit": _f(b.get("deposit_amount")),
+                "filled": _f(b.get("fulfilled_amount")),
+                "status": b.get("fill_status"),
+            }
+            for b in o.get("bin_distribution") or []
+        ],
+    }
+
+
+def _fetch_orders(wallet: str) -> tuple[dict[str, Any], int, int]:
+    calls = errors = 0
+
+    def get(path: str, params: dict[str, Any]) -> Any:
+        nonlocal calls, errors
+        calls += 1
+        try:
+            return _get(path, params)
+        except (urllib.error.URLError, TimeoutError, ValueError):
+            errors += 1
+            raise
+
+    pools_out = []
+    listing = get(f"/wallets/{wallet}/limit_orders/open/pools", {"page_size": 50})
+    for item in listing.get("data") or []:
+        pool = item.get("pool") or {}
+        address = pool.get("pool_address")
+        detail = get(f"/wallets/{wallet}/limit_orders/open/pools/{address}", {"page_size": 50})
+        pools_out.append(
+            {
+                "address": address,
+                "name": pool.get("pair_name"),
+                "token_x": pool.get("token_x"),
+                "token_y": pool.get("token_y"),
+                "token_x_icon": pool.get("token_x_icon"),
+                "token_y_icon": pool.get("token_y_icon"),
+                "bin_step": pool.get("bin_step"),
+                "active_bin": detail.get("current_active_bin_id"),
+                "price": _f(detail.get("current_pool_price")),
+                "orders": [_order(o) for o in detail.get("data") or []],
+            }
+        )
+    return {"wallet": wallet, "pools": pools_out}, calls, errors
+
+
+async def fetch_orders(db, wallet: str, fresh: bool = False) -> dict[str, Any]:
+    """Open limit orders of a wallet, from Meteora's limit-order API. Read-only."""
+    now = int(time.time() * 1000)
+    cached = _orders_cache.get(wallet)
+    if cached and not fresh and now - cached[0] < ORDERS_CACHE_MS:
+        return cached[1]
+    calls = errors = 0
+    try:
+        data, calls, errors = await asyncio.to_thread(_fetch_orders, wallet)
+    finally:
+        await _record_usage(db, calls or 1, errors if calls else 1)
+    data["fetched_at"] = now
+    _orders_cache[wallet] = (now, data)
+    return data
+
+
+# ---- History ---------------------------------------------------------------------------------------------------
+
+ACTIVITY_KINDS = {
+    "claim", "add_liquidity", "remove_liquidity", "limit_order_place", "limit_order_cancel", "swap", "transfer", "other",
+}
+_SIGNATURE = re.compile(r"^[1-9A-HJ-NP-Za-km-z]{64,90}$")
+
+
+def valid_signature(sig: str) -> bool:
+    return bool(_SIGNATURE.match(sig or ""))
+
+
+async def snapshot_positions(db, data: dict[str, Any]) -> None:
+    rows = [
+        (data["wallet"], p["address"], pool["address"], pool["name"], p["value_usd"], p["pnl_usd"],
+         p["unclaimed_fees_usd"], None if p["out_of_range"] is None else not p["out_of_range"])
+        for pool in data["pools"]
+        for p in pool["positions"]
+    ]
+    if rows:
+        await db.executemany(
+            """insert into portfolio_position_snapshots
+                 (wallet, ts, position, pool, name, value_usd, pnl_usd, unclaimed_fees_usd, in_range)
+               values ($1, date_trunc('minute', now()), $2, $3, $4, $5, $6, $7, $8) on conflict do nothing""",
+            rows,
+        )
+
+
+def _wallet_usd(wallet: str) -> float | None:
+    """Coins in the wallet, from the ingestor's /wallet (it holds the RPC key). None when the ingestor is down, so a
+    missing reading is not stored as a wallet worth $0."""
+    url = f"{config.CLAIM_SERVER_URL}/wallet?{urllib.parse.urlencode({'owner': wallet})}"
+    try:
+        with urllib.request.urlopen(url, timeout=60) as response:
+            return float(json.load(response).get("total_usd") or 0)
+    except (urllib.error.URLError, TimeoutError, ValueError):
+        return None
+
+
+async def snapshot_networth(db, wallet: str, data: dict[str, Any]) -> None:
+    wallet_usd = await asyncio.to_thread(_wallet_usd, wallet)
+    if wallet_usd is None:
+        return
+    s = data["summary"]
+    lp = s["value_usd"] + s["unclaimed_fees_usd"]
+    try:
+        orders = await fetch_orders(db, wallet)
+        orders_usd = sum(
+            o["unfilled_usd"] + o["filled_output_usd"] + o["bonus_usd"] for pool in orders["pools"] for o in pool["orders"]
+        )
+    except Exception:
+        orders_usd = 0.0  # no limit orders is the common case; a failed read only understates this one snapshot
+    await db.execute(
+        """insert into portfolio_networth_snapshots (wallet, ts, wallet_usd, lp_usd, orders_usd, total_usd)
+           values ($1, date_trunc('minute', now()), $2, $3, $4, $5) on conflict do nothing""",
+        wallet, wallet_usd, lp, orders_usd, wallet_usd + lp + orders_usd,
+    )
+
+
+async def record_activity(db, entry: dict[str, Any]) -> None:
+    """An action sent from the app. The chain sync later fills in the exact token changes for the same signature;
+    what the app knows (the kind, the pool, a note) is kept."""
+    await db.execute(
+        """insert into portfolio_activity (signature, wallet, ts, kind, source, ok, pool, deltas, note)
+           values ($1, $2, now(), $3, 'app', true, $4, $5::jsonb, $6)
+           on conflict (signature) do update set kind = excluded.kind, source = 'app',
+             pool = coalesce(excluded.pool, portfolio_activity.pool),
+             note = coalesce(excluded.note, portfolio_activity.note)""",
+        entry["signature"], entry["wallet"], entry["kind"], entry.get("pool"),
+        json.dumps(entry.get("deltas") or []), entry.get("note"),
+    )
+
+
+async def list_activity(
+    db, wallet: str, limit: int = 50, kind: str | None = None, before: tuple[int, str] | None = None
+) -> list[dict[str, Any]]:
+    """Newest first, `limit` at a time. `before` is the (ts ms, signature) of the last row already shown: a keyset
+    cursor, so paging stays fast however deep the history goes and rows arriving meanwhile do not shift pages."""
+    before_ts = before_sig = None
+    if before:
+        before_ts, before_sig = before
+    rows = await db.fetch(
+        """select signature, ts, kind, source, ok, pool, sol_delta, deltas, note from portfolio_activity
+           where wallet = $1 and ($2::text is null or kind = $2)
+             and ($4::bigint is null or (ts, signature) < (to_timestamp($4 / 1000.0), $5::text))
+           order by ts desc, signature desc limit $3""",
+        wallet, kind, limit, before_ts, before_sig,
+    )
+    return [
+        {**dict(r), "ts": int(r["ts"].timestamp() * 1000),
+         "deltas": r["deltas"] if isinstance(r["deltas"], list) else json.loads(r["deltas"] or "[]")}
+        for r in rows
+    ]
+
+
+async def networth_history(db, wallet: str, days: int = 30) -> list[dict[str, Any]]:
+    rows = await db.fetch(
+        """select ts, wallet_usd, lp_usd, orders_usd, total_usd from portfolio_networth_snapshots
+           where wallet = $1 and ts >= now() - make_interval(days => $2) order by ts""",
+        wallet, days,
+    )
+    return [{**dict(r), "ts": int(r["ts"].timestamp() * 1000)} for r in rows]
+
+
+async def position_history(db, wallet: str, position: str, days: int = 30) -> list[dict[str, Any]]:
+    rows = await db.fetch(
+        """select ts, value_usd, pnl_usd, unclaimed_fees_usd, in_range from portfolio_position_snapshots
+           where wallet = $1 and position = $2 and ts >= now() - make_interval(days => $3) order by ts""",
+        wallet, position, days,
+    )
+    return [{**dict(r), "ts": int(r["ts"].timestamp() * 1000)} for r in rows]
+
+
+SOL_MINT = "So11111111111111111111111111111111111111112"
+
+
+async def claims_daily(db, wallet: str) -> list[dict[str, Any]]:
+    """Fees claimed per WIB day, per token, from the transaction history (so it reaches back as far as the backfill).
+    Token amounts only: the dashboard prices them, since historical prices are not available for most memecoins.
+    Fees paid out when a position is closed arrive mixed with the withdrawn liquidity and are not counted here."""
+    rows = await db.fetch(
+        """select (ts at time zone $2)::date as day, deltas, sol_delta from portfolio_activity
+           where wallet = $1 and kind = 'claim' and ok order by 1""",
+        wallet, config.TIMEZONE,
+    )
+    days: dict[str, dict[str, dict[str, Any]]] = {}
+    counts: dict[str, int] = {}
+    for r in rows:
+        day = r["day"].isoformat()
+        counts[day] = counts.get(day, 0) + 1
+        tokens = days.setdefault(day, {})
+        deltas = r["deltas"] if isinstance(r["deltas"], list) else json.loads(r["deltas"] or "[]")
+        for d in deltas:
+            if d["amount"] > 0:
+                t = tokens.setdefault(d["mint"], {"symbol": d["symbol"], "amount": 0.0})
+                t["amount"] += d["amount"]
+        # Native SOL fees land in the wallet's own account, not a token account.
+        if r["sol_delta"] and r["sol_delta"] > 0.0001:
+            t = tokens.setdefault(SOL_MINT, {"symbol": "SOL", "amount": 0.0})
+            t["amount"] += r["sol_delta"]
+    return [{"day": day, "claims": counts[day], "tokens": [{"mint": m, **v} for m, v in tokens.items()]} for day, tokens in days.items()]
+
+
+# ---- Closed positions and orders (Meteora keeps these; nothing of ours to snapshot) ----------------------------
+
+HISTORY_CACHE_MS = 60_000
+_closed_cache: dict[str, tuple[int, Any]] = {}
+
+
+def _cached(key: str, fresh: bool, build) -> Any:
+    now = int(time.time() * 1000)
+    hit = _closed_cache.get(key)
+    if hit and not fresh and now - hit[0] < HISTORY_CACHE_MS:
+        return hit[1]
+    value = build()
+    _closed_cache[key] = (now, value)
+    return value
+
+
+def _closed_pools(wallet: str) -> list[dict[str, Any]]:
+    out, page = [], 1
+    while True:
+        body = _get("/portfolio", {"user": wallet, "page": page, "page_size": 50})
+        for p in body.get("pools") or []:
+            out.append({
+                "address": p.get("poolAddress"),
+                "name": f"{p.get('tokenX') or '?'}/{p.get('tokenY') or '?'}",
+                "token_x": p.get("tokenX"),
+                "token_y": p.get("tokenY"),
+                "token_x_icon": p.get("tokenXIcon"),
+                "token_y_icon": p.get("tokenYIcon"),
+                "bin_step": int(_f(p.get("binStep"))),
+                "deposit_usd": _f(p.get("totalDeposit")),
+                "withdrawn_usd": _f(p.get("totalWithdrawal")),
+                "fees_usd": _f(p.get("totalFee")),
+                "pnl_usd": _f(p.get("pnlUsd")),
+                "pnl_pct": _f(p.get("pnlPctChange")),
+                "pnl_sol": _f(p.get("pnlSol")),
+                "closed_at": (p.get("lastClosedAt") or 0) * 1000 or None,
+            })
+        if not body.get("hasNext"):
+            break
+        page += 1
+    out.sort(key=lambda p: p["closed_at"] or 0, reverse=True)
+    return out
+
+
+def _closed_positions(wallet: str, pool: str) -> list[dict[str, Any]]:
+    body = _get(f"/positions/{pool}/pnl", {"user": wallet, "status": "closed", "page_size": 50})
+    out = []
+    for p in body.get("positions") or []:
+        fees = (p.get("allTimeFees") or {}).get("total") or {}
+        dep = (p.get("allTimeDeposits") or {}).get("total") or {}
+        out.append({
+            "address": p.get("positionAddress"),
+            "opened_at": (p.get("createdAt") or 0) * 1000 or None,
+            "closed_at": (p.get("closedAt") or 0) * 1000 or None,
+            "lower_bin": p.get("lowerBinId"),
+            "upper_bin": p.get("upperBinId"),
+            "min_price": _f(p.get("minPrice")),
+            "max_price": _f(p.get("maxPrice")),
+            "deposit_usd": _f(dep.get("usd")),
+            "fees_usd": _f(fees.get("usd")),
+            "pnl_usd": _f(p.get("pnlUsd")),
+            "pnl_pct": _f(p.get("pnlPctChange")),
+            "pnl_sol": _f(p.get("pnlSol")),
+        })
+    out.sort(key=lambda p: p["closed_at"] or 0, reverse=True)
+    return out
+
+
+def _closed_orders(wallet: str) -> list[dict[str, Any]]:
+    out, page = [], 1
+    pools = []
+    while True:
+        body = _get(f"/wallets/{wallet}/limit_orders/closed/pools", {"page": page, "page_size": 50})
+        pools += body.get("data") or []
+        if page >= (body.get("pages") or 1):
+            break
+        page += 1
+    for item in pools:
+        pool = item.get("pool") or {}
+        detail = _get(f"/wallets/{wallet}/limit_orders/closed/pools/{pool.get('pool_address')}", {"page_size": 100})
+        for o in detail.get("data") or []:
+            out.append({
+                "address": o.get("limit_order_address"),
+                "pool": pool.get("pool_address"),
+                "pair": (pool.get("pair_name") or "").replace("-", "/"),
+                "is_ask": bool(o.get("is_ask_side")),
+                "input_token": o.get("input_token"),
+                "output_token": o.get("output_token"),
+                "lower_price": _f(o.get("lower_pool_price")),
+                "upper_price": _f(o.get("upper_pool_price")),
+                "deposit_usd": _f(o.get("total_deposit_usd")),
+                "withdrawn_usd": _f(o.get("total_withdrawal_usd")),
+                "filled_pct": _f(o.get("filled_pct")),
+                "filled_input": _f(o.get("filled_input_amount")),
+                "received_output": _f(o.get("received_output_amount")),
+                "bonus_usd": _f(o.get("total_bonus_usd")),
+                "pnl_usd": _f(o.get("realized_pnl_usd")),
+                "pnl_pct": _f(o.get("realized_pnl_pct_usd")),
+                "opened_at": (o.get("opened_at") or 0) * 1000 or None,
+                "closed_at": (o.get("last_closed_at") or 0) * 1000 or None,
+                "signature": o.get("terminal_signature"),
+            })
+    out.sort(key=lambda o: o["closed_at"] or 0, reverse=True)
+    return out
+
+
+async def closed_pools(db, wallet: str, fresh: bool = False) -> list[dict[str, Any]]:
+    try:
+        return await asyncio.to_thread(_cached, f"cp:{wallet}", fresh, lambda: _closed_pools(wallet))
+    finally:
+        await _record_usage(db, 1, 0)
+
+
+async def closed_positions(db, wallet: str, pool: str) -> list[dict[str, Any]]:
+    try:
+        return await asyncio.to_thread(_cached, f"cpp:{wallet}:{pool}", False, lambda: _closed_positions(wallet, pool))
+    finally:
+        await _record_usage(db, 1, 0)
+
+
+async def closed_orders(db, wallet: str, fresh: bool = False) -> list[dict[str, Any]]:
+    try:
+        return await asyncio.to_thread(_cached, f"co:{wallet}", fresh, lambda: _closed_orders(wallet))
+    finally:
+        await _record_usage(db, 1, 0)

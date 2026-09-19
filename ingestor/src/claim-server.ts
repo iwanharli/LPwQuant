@@ -9,7 +9,9 @@
  * Listens on 127.0.0.1 only. The RPC key stays in this process; the browser never sees it.
  */
 import DLMM from "@meteora-ag/dlmm";
-import { Connection, PublicKey, type Transaction } from "@solana/web3.js";
+import { BN } from "@coral-xyz/anchor";
+import { TOKEN_2022_PROGRAM_ID, getAssociatedTokenAddressSync, getMint, getTransferFeeConfig } from "@solana/spl-token";
+import { Connection, Keypair, PublicKey, type Transaction } from "@solana/web3.js";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { config } from "./config";
 import { apiFetch, createFailoverFetch } from "./rpc";
@@ -200,6 +202,8 @@ type WalletToken = {
   price: number | null;
   value_usd: number | null;
   change_24h: number | null;
+  change_1h: number | null;
+  change_6h: number | null;
   verified: boolean;
   organic_score: number | null;
 };
@@ -214,6 +218,8 @@ type JupAsset = {
   usdPrice?: number;
   isVerified?: boolean;
   organicScore?: number;
+  stats1h?: { priceChange?: number };
+  stats6h?: { priceChange?: number };
   stats24h?: { priceChange?: number };
 };
 
@@ -261,6 +267,8 @@ async function readWallet(owner: string): Promise<WalletResponse> {
       price,
       value_usd: price == null ? null : price * amount,
       change_24h: a?.stats24h?.priceChange ?? null,
+      change_1h: a?.stats1h?.priceChange ?? null,
+      change_6h: a?.stats6h?.priceChange ?? null,
       verified: !!a?.isVerified,
       organic_score: a?.organicScore ?? null,
     };
@@ -293,10 +301,15 @@ type SwapSuggestion = {
   amount: number;
   value_usd: number;
   change_24h: number | null;
+  change_1h: number | null;
+  change_6h: number | null;
   verified: boolean;
   organic_score: number | null;
   to_sol: Quote;
   to_usdc: Quote;
+  // Deepest Meteora pool per quote where a sell limit order can sit, if any.
+  lo_pool_sol: LoPool | null;
+  lo_pool_usdc: LoPool | null;
 };
 
 async function quote(input: string, output: string, rawAmount: string, outDecimals: number, outPrice: number, inUsd: number): Promise<Quote> {
@@ -339,14 +352,225 @@ export async function swapSuggestions(owner: string): Promise<SwapSuggestion[]> 
       amount: t.amount,
       value_usd: inUsd,
       change_24h: t.change_24h,
+      change_1h: t.change_1h,
+      change_6h: t.change_6h,
       verified: t.verified,
       organic_score: t.organic_score,
       to_sol: sol ? await quote(t.mint, SOL_MINT, raw, 9, sol, inUsd).catch(() => null) : null,
       to_usdc: await quote(t.mint, USDC_MINT, raw, 6, 1, inUsd).catch(() => null),
+      ...(await limitOrderPools(t.mint)
+        .then((pools) => ({
+          lo_pool_sol: pools.find((p) => p.quote === "SOL") ?? null,
+          lo_pool_usdc: pools.find((p) => p.quote === "USDC") ?? null,
+        }))
+        .catch(() => ({ lo_pool_sol: null, lo_pool_usdc: null }))),
     });
   }
   suggestCache.set(owner, { at: Date.now(), value: out });
   return out;
+}
+
+// ---- Limit orders ----------------------------------------------------------------------------------------------
+// Meteora's native limit orders: tokens placed in bins above the price are sold as the price climbs through them,
+// and what has filled stays filled (unlike an LP position, it does not turn back if the price falls again).
+
+const MAX_ORDER_BINS = 20;
+
+type LoPool = { address: string; name: string; quote: string; bin_step: number; tvl: number; price: number };
+
+/** Pools where `mint` is token X against SOL or USDC, deepest first: where a sell order can be placed. */
+export async function limitOrderPools(mint: string): Promise<LoPool[]> {
+  const url = `${config.meteoraApi}/pools?page=1&page_size=30&query=${mint}&sort_by=tvl:desc`;
+  const res = await apiFetch("meteora", "pools", url, { signal: AbortSignal.timeout(20_000) });
+  if (!res.ok) throw new Error(`Meteora API ${res.status}`);
+  const body = (await res.json()) as {
+    data: { address: string; name: string; tvl: number; current_price: number; pool_config?: { bin_step: number };
+      token_x: { address: string }; token_y: { address: string; symbol: string } }[];
+  };
+  return body.data
+    .filter((p) => p.token_x.address === mint && (p.token_y.address === SOL_MINT || p.token_y.address === USDC_MINT))
+    .slice(0, 6)
+    .map((p) => ({
+      address: p.address,
+      name: p.name,
+      quote: p.token_y.symbol,
+      bin_step: p.pool_config?.bin_step ?? 0,
+      tvl: p.tvl,
+      price: p.current_price,
+    }));
+}
+
+type PlaceRequest = { owner: string; pool: string; amount: number; start_pct: number; end_pct: number; bins: number };
+
+function parsePlace(body: unknown): PlaceRequest {
+  const r = body as PlaceRequest;
+  if (!r || !BASE58.test(r.owner ?? "") || !BASE58.test(r.pool ?? "")) throw new Error("alamat tidak valid");
+  if (!(r.amount > 0)) throw new Error("jumlah harus lebih dari 0");
+  if (!(r.start_pct > 0) || !(r.end_pct >= r.start_pct) || r.end_pct > 500) throw new Error("rentang harga tidak valid");
+  if (!Number.isInteger(r.bins) || r.bins < 1 || r.bins > MAX_ORDER_BINS) throw new Error(`jumlah bin 1-${MAX_ORDER_BINS}`);
+  return r;
+}
+
+async function placeNow(r: PlaceRequest) {
+  const conn = rpc();
+  const owner = new PublicKey(r.owner);
+  const dlmm = await poolFor(r.pool);
+  const active = await dlmm.getActiveBin();
+  const price = Number(active.pricePerToken);
+  const step = dlmm.lbPair.binStep;
+  // Sell side: bins strictly above the active bin, from start_pct to end_pct above the current price.
+  const lo = Math.max(active.binId + 1, dlmm.getBinIdFromPrice(Number(dlmm.toPricePerLamport(price * (1 + r.start_pct / 100))), true));
+  const hi = Math.max(lo, dlmm.getBinIdFromPrice(Number(dlmm.toPricePerLamport(price * (1 + r.end_pct / 100))), false));
+  const count = Math.min(r.bins, hi - lo + 1);
+  const ids = Array.from({ length: count }, (_, i) => (count === 1 ? lo : Math.round(lo + ((hi - lo) * i) / (count - 1))));
+  const unique = [...new Set(ids)];
+
+  const decimalsX = dlmm.tokenX.mint.decimals;
+  // Token-2022 coins with a transfer fee (GP charges ~3%) cost the amount plus the fee to deposit, so an order for
+  // the whole balance fails. Cap the order at what the balance can actually cover after the fee.
+  const { feeBps, maxFee } = await transferFee(conn, dlmm.tokenX.publicKey);
+  const balance = await tokenBalance(conn, owner, dlmm.tokenX.publicKey, dlmm.tokenX.owner);
+  const affordable = feeBps > 0 ? (balance * BigInt(10_000 - feeBps)) / 10_000n : balance;
+  const capped = maxFee != null && balance - affordable > maxFee ? balance - maxFee : affordable;
+  const requested = BigInt(Math.floor(r.amount * 10 ** decimalsX));
+  const total = requested > capped ? (capped * 9995n) / 10_000n : requested; // small margin for rounding
+  if (total <= 0n) throw new Error("saldo token tidak cukup");
+  const each = total / BigInt(unique.length);
+  if (each <= 0n) throw new Error("jumlah terlalu kecil untuk dibagi ke bin");
+  const bins = unique.map((id, i) => ({
+    id,
+    // The last bin takes the rounding remainder, so exactly `amount` leaves the wallet.
+    amount: new BN((i === unique.length - 1 ? total - each * BigInt(unique.length - 1) : each).toString()),
+  }));
+
+  // The order lives in a fresh account whose key must sign once, at creation. The key is made here, signs, and is
+  // dropped: the order's owner is the user's wallet, and only the owner can cancel or withdraw.
+  const orderKey = Keypair.generate();
+  const tx: Transaction = await dlmm.placeLimitOrder({
+    owner,
+    payer: owner,
+    sender: owner,
+    limitOrder: orderKey.publicKey,
+    params: { isAskSide: true, relativeBin: null, bins },
+  });
+  const { blockhash, lastValidBlockHeight } = await conn.getLatestBlockhash("confirmed");
+  tx.feePayer = owner;
+  tx.recentBlockhash = blockhash;
+  tx.lastValidBlockHeight = lastValidBlockHeight;
+  tx.partialSign(orderKey);
+  const sim = await conn.simulateTransaction(tx);
+  if (sim.value.err) {
+    throw new Error(`simulasi gagal: ${JSON.stringify(sim.value.err)} ${(sim.value.logs ?? []).slice(-3).join(" | ")}`);
+  }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Anchor account namespace is untyped in the SDK
+  const size = (dlmm as any).program.account.limitOrder.size as number | undefined;
+  const rentLamports = size ? await conn.getMinimumBalanceForRentExemption(size) : 0;
+  const binPrice = (id: number) => Number(dlmm.fromPricePerLamport(Number(getPrice(id, step))));
+  const plan = bins.map((b) => {
+    const amt = Number(b.amount.toString()) / 10 ** decimalsX;
+    const p = binPrice(b.id);
+    return { bin: b.id, price: p, amount: amt, output: amt * p };
+  });
+  return {
+    amount: Number(total) / 10 ** decimalsX,
+    amount_adjusted: total < requested,
+    transfer_fee_bps: feeBps,
+    order: orderKey.publicKey.toBase58(),
+    pool: r.pool,
+    active_price: price,
+    bins: plan,
+    expected_output: plan.reduce((n, b) => n + b.output, 0),
+    network_fee_lamports: 5000 * tx.compileMessage().header.numRequiredSignatures,
+    rent_lamports_estimate: rentLamports,
+    transaction: tx.serialize({ requireAllSignatures: false, verifySignatures: false }).toString("base64"),
+  };
+}
+
+async function transferFee(conn: Connection, mint: PublicKey): Promise<{ feeBps: number; maxFee: bigint | null }> {
+  const info = await conn.getAccountInfo(mint);
+  if (!info || !info.owner.equals(TOKEN_2022_PROGRAM_ID)) return { feeBps: 0, maxFee: null };
+  const config = getTransferFeeConfig(await getMint(conn, mint, "confirmed", TOKEN_2022_PROGRAM_ID));
+  if (!config) return { feeBps: 0, maxFee: null };
+  const epoch = BigInt((await conn.getEpochInfo()).epoch);
+  const fee = epoch >= config.newerTransferFee.epoch ? config.newerTransferFee : config.olderTransferFee;
+  return { feeBps: fee.transferFeeBasisPoints, maxFee: fee.maximumFee };
+}
+
+async function tokenBalance(conn: Connection, owner: PublicKey, mint: PublicKey, programId: PublicKey): Promise<bigint> {
+  const ata = getAssociatedTokenAddressSync(mint, owner, true, programId);
+  const res = await conn.getTokenAccountBalance(ata).catch(() => null);
+  return res ? BigInt(res.value.amount) : 0n;
+}
+
+function getPrice(binId: number, binStep: number): number {
+  return (1 + binStep / 10_000) ** binId; // price per lamport; fromPricePerLamport applies the decimals
+}
+
+export function placeLimitOrder(body: unknown) {
+  const r = parsePlace(body);
+  return serial(() => placeNow(r));
+}
+
+type CancelRequest = { owner: string; pool: string; order: string };
+
+async function cancelNow(r: CancelRequest) {
+  if (!BASE58.test(r.owner ?? "") || !BASE58.test(r.pool ?? "") || !BASE58.test(r.order ?? "")) throw new Error("alamat tidak valid");
+  const conn = rpc();
+  const owner = new PublicKey(r.owner);
+  const dlmm = await poolFor(r.pool);
+  const orderKey = new PublicKey(r.order);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- the SDK exposes the Anchor program untyped here
+  const account = await (dlmm as any).program.account.limitOrder.fetch(orderKey);
+  if (!account.owner.equals(owner)) throw new Error("order ini bukan milik wallet ini");
+  if (!account.lbPair.equals(new PublicKey(r.pool))) throw new Error("order ini bukan di pool tersebut");
+  const parsed = await dlmm.getLimitOrder(orderKey);
+  const binIds = parsed.limitOrderData.limitOrderBinData.filter((b) => !b.empty).map((b) => b.binId);
+
+  const tx: Transaction = await dlmm.cancelLimitOrder({ limitOrderPubkey: orderKey, owner, rentReceiver: owner, binIds });
+  const { blockhash, lastValidBlockHeight } = await conn.getLatestBlockhash("confirmed");
+  tx.feePayer = owner;
+  tx.recentBlockhash = blockhash;
+  tx.lastValidBlockHeight = lastValidBlockHeight;
+  const sim = await conn.simulateTransaction(tx);
+  if (sim.value.err) {
+    throw new Error(`simulasi gagal: ${JSON.stringify(sim.value.err)} ${(sim.value.logs ?? []).slice(-3).join(" | ")}`);
+  }
+  const d = parsed.limitOrderData;
+  return {
+    order: r.order,
+    // The parsed order already reports display units (checked against Meteora's own figures for a live order).
+    receive_x: Number(d.transferFeeExcludedWithdrawableAmountX),
+    receive_y: Number(d.transferFeeExcludedWithdrawableAmountY),
+    token_x: pool_symbol(dlmm.tokenX.publicKey.toBase58()),
+    token_y: pool_symbol(dlmm.tokenY.publicKey.toBase58()),
+    network_fee_lamports: 5000,
+    transaction: tx.serialize({ requireAllSignatures: false, verifySignatures: false }).toString("base64"),
+  };
+}
+
+function pool_symbol(mint: string): string | null {
+  return mint === SOL_MINT ? "SOL" : mint === USDC_MINT ? "USDC" : null; // the dashboard names the rest from the order
+}
+
+export function cancelLimitOrder(body: unknown) {
+  return serial(() => cancelNow(body as CancelRequest));
+}
+
+const PRICE_CACHE_MS = 60_000;
+const priceCache = new Map<string, { at: number; value: { price: number | null; symbol: string | null; icon: string | null } }>();
+
+/** Current price, symbol and icon per mint (Jupiter), for putting a dollar figure and a face on history rows. */
+export async function tokenInfo(mints: string[]) {
+  const now = Date.now();
+  const missing = mints.filter((m) => !(priceCache.get(m) && now - priceCache.get(m)!.at < PRICE_CACHE_MS));
+  if (missing.length) {
+    const assets = await jupiterAssets(missing);
+    for (const m of missing) {
+      const a = assets.get(m);
+      priceCache.set(m, { at: now, value: { price: typeof a?.usdPrice === "number" ? a.usdPrice : null, symbol: a?.symbol ?? null, icon: a?.icon ?? null } });
+    }
+  }
+  return Object.fromEntries(mints.map((m) => [m, priceCache.get(m)?.value ?? { price: null, symbol: null, icon: null }]));
 }
 
 function send(res: ServerResponse, status: number, body: unknown, origin: string) {
@@ -402,6 +626,34 @@ export function startClaimServer(port = config.claimPort, allowed = config.dashb
         return send(res, 200, { owner, suggestions: await swapSuggestions(owner) }, origin);
       } catch (err) {
         return send(res, 502, { detail: err instanceof Error ? err.message : "gagal mengambil quote" }, origin);
+      }
+    }
+    if (req.method === "GET" && url.pathname === "/prices") {
+      const mints = (url.searchParams.get("mints") ?? "").split(",").filter((m) => BASE58.test(m)).slice(0, 200);
+      try {
+        return send(res, 200, { tokens: await tokenInfo(mints) }, origin);
+      } catch (err) {
+        return send(res, 502, { detail: err instanceof Error ? err.message : "gagal" }, origin);
+      }
+    }
+    if (req.method === "GET" && url.pathname === "/lo-pools") {
+      const mint = url.searchParams.get("mint") ?? "";
+      if (!BASE58.test(mint)) return send(res, 400, { detail: "mint tidak valid" }, origin);
+      try {
+        return send(res, 200, { pools: await limitOrderPools(mint) }, origin);
+      } catch (err) {
+        return send(res, 502, { detail: err instanceof Error ? err.message : "gagal" }, origin);
+      }
+    }
+    if (req.method === "POST" && (url.pathname === "/limit-order" || url.pathname === "/limit-order/cancel")) {
+      try {
+        const body = await readJson(req);
+        const out = url.pathname === "/limit-order" ? await placeLimitOrder(body) : await cancelLimitOrder(body);
+        return send(res, 200, out, origin);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "gagal menyusun transaksi";
+        console.warn(`[limit-order] ${message}`);
+        return send(res, 400, { detail: message }, origin);
       }
     }
     if (req.method !== "POST" || url.pathname !== "/claim") return send(res, 404, { detail: "not found" }, origin);

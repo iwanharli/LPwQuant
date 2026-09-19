@@ -132,6 +132,17 @@ export async function fetchPoolPage(page: number, pageSize = 1000): Promise<Pool
   };
 }
 
+/** The newest pools on Meteora, by creation time and without the volume floor: a new pool has no 24h volume yet,
+ * so the volume-sorted list only reaches it hours later (median 2h17m over a week of pools). */
+export async function fetchNewestPools(limit = 50): Promise<PoolSnapshot[]> {
+  const url = `${config.meteoraApi}/pools?page=1&page_size=${limit}&sort_by=pool_created_at:desc&filter_by=is_blacklisted=false`;
+  const res = await apiFetch("meteora", "pools/newest", url, { signal: AbortSignal.timeout(15_000) });
+  if (!res.ok) throw new Error(`Meteora API ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  const body = (await res.json()) as { data: ApiPool[] };
+  const ts = Date.now();
+  return body.data.map((p) => toSnapshot(p, ts));
+}
+
 /** Top pools by 24h volume that pass the TVL/volume floor. */
 export async function fetchPools(): Promise<PoolSnapshot[]> {
   const url = `${config.meteoraApi}/pools?page=1&page_size=${config.fetchLimit}&sort_by=volume_24h:desc`;

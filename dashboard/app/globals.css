@@ -43,6 +43,12 @@ body {
   overflow-x: hidden;
 }
 
+/* Always reserve the scrollbar's width: pages (and tabs while they load) differ in height, and a scrollbar that
+   comes and goes shifted the whole layout, header included, sideways on every tab switch. */
+html {
+  scrollbar-gutter: stable;
+}
+
 body {
   background: var(--color-bg);
   color: var(--color-ink);

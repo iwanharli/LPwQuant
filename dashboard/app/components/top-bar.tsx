@@ -8,6 +8,7 @@ import WalletButton from "./wallet-button";
 
 const NAV = [
   { href: "/", label: "Screener" },
+  { href: "/new-pools", label: "Pool baru" },
   { href: "/paper", label: "Paper trading" },
   { href: "/portfolio", label: "Portofolio LP" },
   { href: "/rpc", label: "Pemakaian API" },

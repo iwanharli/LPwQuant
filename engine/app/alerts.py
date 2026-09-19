@@ -18,6 +18,7 @@ import urllib.request
 from typing import Any
 
 from . import config, flag_info
+from .scoring import RISKY_FLAGS
 
 log = logging.getLogger("alerts")
 
@@ -57,6 +58,33 @@ def is_new_pool(row: dict[str, Any]) -> bool:
     return age is not None and age <= NEW_POOL_MAX_AGE_HOURS
 
 
+# A new pool is only announced once its safety data is in and clean: the fastest detection is also where rugs live
+# (ALLINU was a day old, 99.6% held by ten wallets, its dev on token number 181).
+NEW_POOL_MIN_TVL_USD = 5_000.0
+NEW_POOL_MAX_TOP10_PCT = 50.0
+NEW_POOL_BLOCKING_FLAGS = {"serial_dev", "bundler_heavy", "top_holders_50", "security_pending", "tvl_suspect"}
+
+
+def safe_new_pool(row: dict[str, Any]) -> tuple[bool, str]:
+    """(passes, reason it does not). Pending security data is a "not yet", not a "no": the pool is checked again on
+    every refresh and announced the first time it passes."""
+    if not is_new_pool(row):
+        return False, "bukan pool baru"
+    if not row.get("security"):
+        return False, "cek RugCheck belum selesai"
+    flags = set(row.get("flags") or [])
+    bad = (flags & RISKY_FLAGS) | (flags & NEW_POOL_BLOCKING_FLAGS)
+    if bad:
+        return False, "flag " + ", ".join(sorted(bad))
+    top10 = top10_pct(row)
+    if top10 is None or top10 > NEW_POOL_MAX_TOP10_PCT:
+        return False, "sebaran holder belum diketahui atau terlalu terpusat"
+    tvl = _num(row.get("tvl"))
+    if tvl is None or tvl < NEW_POOL_MIN_TVL_USD:
+        return False, "TVL terlalu kecil"
+    return True, ""
+
+
 def passes_lp_filters(row: dict[str, Any]) -> bool:
     atr, top10, tvl = atr_pct(row), top10_pct(row), _num(row.get("tvl"))
     if atr is None or atr > LP_MAX_ATR_PCT:
@@ -81,7 +109,7 @@ def passes_gate(row: dict[str, Any]) -> bool:
 
 def matches(row: dict[str, Any], kind: str) -> bool:
     if kind == "new_pool":
-        return is_new_pool(row)
+        return safe_new_pool(row)[0]
     if kind == "new_lp":
         return is_new_pool(row) and passes_lp_filters(row)
     if kind == "gate":
@@ -113,7 +141,8 @@ TITLES = {
 }
 
 WHY = {
-    "new_pool": "Pool ini baru dibuat {age}. Belum tentu layak LP: cek dulu keamanan dan sebaran holder di bawah.",
+    "new_pool": "Pool ini baru dibuat {age} dan sudah lolos cek keamanan dasar: RugCheck bersih, holder tidak terlalu "
+    "terpusat, bukan dev serial, dan ada likuiditas. Tetap pool baru: data harganya masih sedikit.",
     "new_lp": "Pool baru ({age}) yang sudah lolos filter LP bawaan: harga cukup tenang, holder tidak terlalu "
     "terkonsentrasi, dan TVL cukup dalam.",
     "gate": "Perkiraan fee dalam {gate_h} jam sudah menutup {ratio}× biaya masuk-keluar, jadi rencana posisinya "

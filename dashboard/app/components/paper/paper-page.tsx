@@ -739,12 +739,8 @@ export default function PaperPage() {
           <h1 className="text-3xl font-bold tracking-tight text-ink sm:text-4xl">
             Paper trading{s?.profile ? <span className="text-ink-3"> · {s.profile.label}</span> : null}
           </h1>
-          <p className="mt-1 max-w-3xl text-sm leading-6 text-ink-3">
-            Posisi LP virtual dibuka otomatis dari rencana posisi live, maksimal{" "}
-            {s ? s.config.max_open_per_tier : "–"} posisi per tier dan minimal{" "}
-            {s ? usd.format(s.risk.min_position_usd) : "–"} per posisi, lalu ditutup dengan aturan exit yang sama seperti
-            backtest. Posisi baru berhenti dibuka kalau equity turun {s?.risk.max_drawdown_pct ?? "–"}% dari puncaknya. Tidak ada transaksi on-chain. PnL dihitung dalam token quote pool, jadi pergerakan harga SOL
-            sendiri tidak ikut.
+          <p className="mt-1 truncate text-sm text-ink-3">
+            LP virtual otomatis dari rencana live, tanpa transaksi on-chain.
           </p>
           </div>
           <div className="hidden rounded-lg border border-line bg-panel/70 px-3 py-2 text-right shadow-sm shadow-black/20 lg:block">

@@ -24,6 +24,7 @@ import {
 } from "../lib/format";
 import { isActivePlan, type ActivePlan, type PoolRow } from "../lib/types";
 import { AlertIcon, CandleIcon, CheckIcon, CloseIcon, CopyIcon, ExitIcon, ExternalLinkIcon, ShieldIcon } from "./icons";
+import BusyHours from "./busy-hours";
 import { Delta, Meter, PlanBadge, RegimeBadge, StatusDot, TokenAvatar } from "./ui";
 
 function Section({ title, icon, children }: { title: string; icon?: ReactNode; children: ReactNode }) {
@@ -605,6 +606,10 @@ function DrawerContent({ row, onClose }: { row: PoolRow; onClose: () => void }) 
           <Stat label="Market cap">{usdCompact.format(row.market_cap)}</Stat>
           <Stat label="Holder">{compact.format(row.holders)}</Stat>
         </dl>
+      </Section>
+
+      <Section title="Jam ramai (WIB)">
+        <BusyHours pool={row.address} />
       </Section>
 
       <IndicatorSection row={row} />

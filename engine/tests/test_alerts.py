@@ -175,3 +175,14 @@ def test_bot_answers_only_its_own_chat():
     assert "Daftar flag" in alerts.reply_for(command, "5")[0]
     assert len(alerts.flag_info.glossary()) < 4096  # Telegram's message limit
     assert alerts.reply_for({"message": {"chat": {"id": 5}, "text": "halo"}}, "5") is None
+
+
+def test_new_pool_alert_waits_for_clean_safety_data():
+    clean = {**ROW, "flags": ["new_pool", "unverified"], "security": {**ROW["security"], "mint_authority": False}}
+    assert alerts.safe_new_pool(clean)[0]
+    assert not alerts.safe_new_pool({**clean, "security": None})[0]            # RugCheck not in yet
+    assert not alerts.safe_new_pool({**clean, "flags": ["serial_dev"]})[0]      # ALLINU's dev pattern
+    assert not alerts.safe_new_pool({**clean, "flags": ["mint_authority"]})[0]  # risky flag
+    assert not alerts.safe_new_pool({**clean, "tvl": 900.0})[0]
+    assert not alerts.safe_new_pool({**clean, "security": {**clean["security"], "top10_pct": 99.6}})[0]
+    assert not alerts.safe_new_pool({**clean, "pool_age_hours": 40.0})[0]

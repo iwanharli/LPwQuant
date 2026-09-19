@@ -9,10 +9,11 @@ import {
   shortAddress,
   usd,
 } from "../../lib/format";
-import { useConnectedWallet, useWalletParam } from "../../lib/wallet";
+import { canSign, useConnectedWallet, useWalletOptions, useWalletParam } from "../../lib/wallet";
 import TopBar from "../top-bar";
 import { StatusDot } from "../ui";
 import WalletButton from "../wallet-button";
+import PortfolioHeader from "./portfolio-header";
 import PortfolioTabs from "./portfolio-tabs";
 import SwapSuggestions from "./swap-suggestions";
 
@@ -215,6 +216,7 @@ function TokenRow({
 export default function WalletPage() {
   const connected = useConnectedWallet();
   useWalletParam(connected);
+  const signer = canSign(connected, useWalletOptions());
   const { data, error, reload } = useWallet(connected?.address);
   const [showDust, setShowDust] = useState(false);
   const [query, setQuery] = useState("");
@@ -255,18 +257,11 @@ export default function WalletPage() {
     <div className="flex min-h-screen min-w-0 flex-col overflow-x-hidden">
       <TopBar />
       <main className="mx-auto w-full min-w-0 max-w-full flex-1 space-y-5 overflow-x-hidden px-4 py-6 sm:px-6 lg:py-7 2xl:px-8">
-        <div className="flex flex-wrap items-end justify-between gap-4">
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight text-ink sm:text-4xl">
-              Portofolio LP
-            </h1>
-            <p className="mt-1 max-w-3xl text-sm leading-6 text-ink-3">
-              Koin yang ada di wallet, di luar posisi LP. Harga dari Jupiter,
-              diperbarui tiap {REFRESH_MS / 1000} detik.
-            </p>
-          </div>
-          {data && (
-            <div className="flex items-center gap-3">
+        <PortfolioHeader
+          subtitle="Koin di luar posisi LP."
+          right={
+            data && (
+              <>
               <div className="text-right text-xs text-ink-3">
                 <div className="font-mono text-ink-2">
                   {shortAddress(data.owner)}
@@ -280,9 +275,10 @@ export default function WalletPage() {
               >
                 Refresh
               </button>
-            </div>
-          )}
-        </div>
+              </>
+            )
+          }
+        />
 
         <PortfolioTabs />
 
@@ -343,7 +339,7 @@ export default function WalletPage() {
               />
             </div>
 
-            {connected && data && <SwapSuggestions owner={connected.address} dustCount={dust.length} />}
+            {connected && data && <SwapSuggestions owner={connected.address} dustCount={dust.length} canSign={signer} />}
 
             <section className="overflow-hidden rounded-2xl border border-line bg-[#0e1217]/[0.97] shadow-[0_14px_42px_rgba(0,0,0,0.20)] backdrop-blur-sm">
               <div className="flex flex-wrap items-center gap-3 border-b border-line bg-raised/20 px-4 py-3">

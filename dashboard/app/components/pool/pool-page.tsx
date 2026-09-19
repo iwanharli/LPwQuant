@@ -22,6 +22,7 @@ import type {
   Timeframe,
 } from "../../lib/pool-detail-types";
 import { isActivePlan, type ActivePlan } from "../../lib/types";
+import BusyHours from "../busy-hours";
 import TopBar from "../top-bar";
 import { Delta, PlanBadge, RegimeBadge, StatusDot, TokenAvatar } from "../ui";
 import CandleChart, { type ChartLevel, type ChartMarker } from "./candle-chart";
@@ -396,6 +397,11 @@ export default function PoolPage({ address }: { address: string }) {
                   Tidak ada rencana masuk: {plan && !isActivePlan(plan) ? plan.reason : "–"}
                 </p>
               )}
+            </section>
+
+            <section className="rounded-2xl border border-line bg-panel/90 p-4 shadow-[0_14px_42px_rgba(0,0,0,0.20),inset_0_1px_0_rgba(255,255,255,0.04)]">
+              <h2 className="mb-2 text-sm font-semibold text-ink">Jam ramai (WIB)</h2>
+              <BusyHours pool={address} />
             </section>
 
             <section className="rounded-2xl border border-line bg-panel/90 p-4 shadow-[0_14px_42px_rgba(0,0,0,0.20),inset_0_1px_0_rgba(255,255,255,0.04)]">

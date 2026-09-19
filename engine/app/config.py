@@ -76,6 +76,9 @@ ALERT_KINDS = tuple(
     k.strip() for k in (os.getenv("ALERT_KINDS") or "new_pool,gate,new_lp,stale").split(",") if k.strip()
 )
 
+# The ingestor's local transaction/wallet server (ingestor/src/claim-server.ts), which holds the RPC key.
+CLAIM_SERVER_URL = (os.getenv("CLAIM_SERVER_URL") or f"http://127.0.0.1:{int(_num('CLAIM_PORT', 8010))}").rstrip("/")
+
 # Keys shared with the ingestor (ingestor/src/redis.ts).
 METEORA_API_URL = (os.getenv("METEORA_API_URL") or "https://dlmm.datapi.meteora.ag").rstrip("/")
 

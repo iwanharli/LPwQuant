@@ -123,6 +123,20 @@ export class SecurityFetcher {
     if (!this.running) void this.drain();
   }
 
+  /** Never-checked mints of brand-new pools go straight to the front: their alert waits on this check, and in
+   * volume order they would sit behind every established pool. */
+  enqueueFirst(pools: PoolSnapshot[]): void {
+    const fresh = pools.map(baseMint).filter((m) => !this.cache.has(m));
+    for (const mint of fresh.reverse()) {
+      const at = this.queue.indexOf(mint);
+      if (at > 0) this.queue.splice(at, 1);
+      // Index 1, not 0: the drain loop is working on queue[0] and removes it when done.
+      if (at !== 0) this.queue.splice(this.running && this.queue.length ? 1 : 0, 0, mint);
+      this.queued.add(mint);
+    }
+    if (!this.running) void this.drain();
+  }
+
   stop(): void {
     this.stopped = true;
   }

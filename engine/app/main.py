@@ -12,7 +12,7 @@ from . import config
 from .backtest import default_params, run_backtest
 from .charts import MAX_HOURS, load_candles, pool_paper_positions, profile_decision
 from .freshness import check_freshness
-from . import portfolio
+from . import busy_hours, portfolio
 from .service import Engine
 
 _tz = ZoneInfo(config.TIMEZONE)
@@ -33,7 +33,7 @@ app = FastAPI(title="quant engine", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
-    allow_methods=["GET"],
+    allow_methods=["GET", "POST"],  # POST: the dashboard logs actions it sent (portfolio activity)
     allow_headers=["*"],
 )
 
@@ -98,6 +98,128 @@ async def get_portfolio(wallet: str, fresh: bool = False, days: int = Query(30, 
         await portfolio.snapshot(engine.db, data)  # first visit: start the history now, not in 15 minutes
         hist = await portfolio.history(engine.db, wallet, days)
     return {**data, **hist}
+
+
+@app.get("/api/portfolio/orders")
+async def get_orders(wallet: str, fresh: bool = False) -> dict:
+    """Open Meteora limit orders of a public wallet address. Read-only."""
+    if engine.db is None:
+        raise HTTPException(status_code=503, detail="engine not ready")
+    if not portfolio.valid_wallet(wallet):
+        raise HTTPException(status_code=400, detail="alamat wallet tidak valid")
+    try:
+        return await portfolio.fetch_orders(engine.db, wallet, fresh=fresh)
+    except Exception as err:
+        raise HTTPException(status_code=502, detail=f"Meteora API gagal: {err}") from err
+
+
+def _wallet_or_400(wallet: str) -> None:
+    if engine.db is None:
+        raise HTTPException(status_code=503, detail="engine not ready")
+    if not portfolio.valid_wallet(wallet):
+        raise HTTPException(status_code=400, detail="alamat wallet tidak valid")
+
+
+@app.get("/api/portfolio/activity")
+async def get_activity(
+    wallet: str,
+    limit: int = Query(50, ge=1, le=200),
+    kind: str | None = None,
+    before_ts: int | None = None,
+    before_sig: str | None = None,
+) -> dict:
+    """One page of the wallet's history; pass the last row's ts and signature to get the next."""
+    _wallet_or_400(wallet)
+    cursor = (before_ts, before_sig) if before_ts is not None and before_sig else None
+    items = await portfolio.list_activity(engine.db, wallet, limit, kind, cursor)
+    return {"items": items, "has_more": len(items) == limit}
+
+
+@app.post("/api/portfolio/activity")
+async def post_activity(entry: dict) -> dict:
+    """Actions the dashboard sent (claims, limit orders). Only what a signature can prove matters: the chain sync
+    re-reads each one, so a wrong entry here cannot invent balances."""
+    _wallet_or_400(str(entry.get("wallet") or ""))
+    sigs = [s for s in entry.get("signatures") or [] if portfolio.valid_signature(str(s))]
+    if not sigs or entry.get("kind") not in portfolio.ACTIVITY_KINDS:
+        raise HTTPException(status_code=400, detail="signature atau jenis tidak valid")
+    for sig in sigs[:50]:
+        await portfolio.record_activity(engine.db, {**entry, "signature": sig})
+    return {"recorded": len(sigs[:50])}
+
+
+@app.get("/api/portfolio/networth")
+async def get_networth(wallet: str, days: int = Query(30, ge=1, le=365)) -> dict:
+    _wallet_or_400(wallet)
+    return {"series": await portfolio.networth_history(engine.db, wallet, days)}
+
+
+@app.get("/api/portfolio/position-history")
+async def get_position_history(wallet: str, position: str, days: int = Query(30, ge=1, le=365)) -> dict:
+    _wallet_or_400(wallet)
+    return {"series": await portfolio.position_history(engine.db, wallet, position, days)}
+
+
+@app.get("/api/busy-hours")
+async def get_busy_hours(pool: str | None = None) -> dict:
+    """When in the day (WIB) trading happens: one pool's profile with the market's beside it, or the market alone."""
+    if engine.db is None:
+        raise HTTPException(status_code=503, detail="engine not ready")
+    if pool:
+        return await busy_hours.pool_profile(engine.db, pool)
+    return {"market": await busy_hours.market_profile(engine.db)}
+
+
+@app.get("/api/portfolio/claims-daily")
+async def get_claims_daily(wallet: str) -> dict:
+    _wallet_or_400(wallet)
+    return {"days": await portfolio.claims_daily(engine.db, wallet)}
+
+
+@app.get("/api/portfolio/closed")
+async def get_closed(wallet: str, pool: str | None = None, fresh: bool = False) -> dict:
+    """Closed LP history from Meteora: every pool the wallet has closed positions in, or one pool's positions."""
+    _wallet_or_400(wallet)
+    try:
+        if pool:
+            return {"positions": await portfolio.closed_positions(engine.db, wallet, pool)}
+        return {"pools": await portfolio.closed_pools(engine.db, wallet, fresh)}
+    except Exception as err:
+        raise HTTPException(status_code=502, detail=f"Meteora API gagal: {err}") from err
+
+
+@app.get("/api/portfolio/orders/closed")
+async def get_closed_orders(wallet: str, fresh: bool = False) -> dict:
+    _wallet_or_400(wallet)
+    try:
+        return {"orders": await portfolio.closed_orders(engine.db, wallet, fresh)}
+    except Exception as err:
+        raise HTTPException(status_code=502, detail=f"Meteora API gagal: {err}") from err
+
+
+@app.get("/api/new-pools")
+async def new_pools(max_age_hours: float = Query(1.0, gt=0, le=24), min_tvl: float = Query(500, ge=0)) -> dict:
+    """Pools created within `max_age_hours` with at least `min_tvl`, newest first, each with the same safety verdict
+    the Telegram new-pool alert uses, so the page and the alert never disagree."""
+    from .alerts import safe_new_pool, top10_pct
+
+    out = []
+    for row in engine.sorted_rows():
+        age = row.get("pool_age_hours")
+        if age is None or age > max_age_hours or (row.get("tvl") or 0) < min_tvl:
+            continue
+        ok, reason = safe_new_pool({**row, "pool_age_hours": min(age, 23.9)})
+        pending = not row.get("security")
+        out.append({
+            **{k: row.get(k) for k in ("address", "name", "base_symbol", "base_mint", "bin_step", "base_fee_pct", "tvl",
+                                     "volume_24h", "fees_24h", "price", "change_pct_1h", "market_cap", "holders",
+                                     "flags", "pool_age_hours")},
+            "top10_pct": top10_pct(row),
+            "verdict": "pending" if pending else ("ok" if ok else "blocked"),
+            "reason": reason,
+        })
+    out.sort(key=lambda r: r["pool_age_hours"])
+    return {"updated_at": engine.updated_at, "pools": out}
 
 
 @app.get("/api/usage")
