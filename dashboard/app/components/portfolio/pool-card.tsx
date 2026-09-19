@@ -356,7 +356,7 @@ function PositionBlock({
           <RangeMeter pos={st.pos} severity={st.severity} />
           {history && <PnlSparkline points={history} />}
           <div className="flex flex-wrap items-center gap-2 pt-1">
-            <ActionLink href={`https://app.meteora.ag/dlmm/${pool.address}`}>View on Meteora</ActionLink>
+            <ActionLink href={`https://meteora.ag/dlmm/${pool.address}`}>View on Meteora</ActionLink>
             <ActionLink href={`https://solscan.io/account/${p.address}`}>Posisi di Solscan</ActionLink>
             {claimButton}
             <span className="ml-auto font-mono text-[11px] text-ink-3">{shortAddress(p.address)}</span>

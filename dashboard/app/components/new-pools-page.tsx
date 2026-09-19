@@ -177,7 +177,7 @@ export default function NewPoolsPage() {
                         Detail
                       </Link>
                       <a
-                        href={`https://app.meteora.ag/dlmm/${p.address}`}
+                        href={`https://meteora.ag/dlmm/${p.address}`}
                         target="_blank"
                         rel="noreferrer"
                         className="rounded-lg border border-brand-meteora/45 px-3 py-1.5 text-xs font-medium text-brand-meteora hover:bg-brand-meteora/10"
