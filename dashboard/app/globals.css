@@ -92,3 +92,28 @@ select:focus-visible,
   outline: 2px solid color-mix(in oklab, var(--color-accent) 70%, white);
   outline-offset: 2px;
 }
+
+/* Position row ready to close: a quick green "breath" on its border. .breath-soft is the near-safe stage. */
+@keyframes breath-green {
+  0%,
+  100% {
+    box-shadow: inset 0 0 0 1px rgb(52 211 153 / var(--breath-lo, 0.25)), 0 0 0 0 rgb(52 211 153 / 0);
+  }
+  50% {
+    box-shadow: inset 0 0 0 1.5px rgb(52 211 153 / var(--breath-hi, 0.95)), 0 0 14px 0 rgb(52 211 153 / var(--breath-glow, 0.28));
+  }
+}
+.breath-green {
+  animation: breath-green 1.2s ease-in-out infinite;
+}
+.breath-soft {
+  --breath-lo: 0.12;
+  --breath-hi: 0.55;
+  --breath-glow: 0.12;
+}
+@media (prefers-reduced-motion: reduce) {
+  .breath-green {
+    animation: none;
+    box-shadow: inset 0 0 0 1px rgb(52 211 153 / var(--breath-hi, 0.95));
+  }
+}

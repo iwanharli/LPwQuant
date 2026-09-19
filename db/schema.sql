@@ -377,3 +377,37 @@ create index if not exists portfolio_position_events_sig on portfolio_position_e
 alter table portfolio_activity add column if not exists network_fee_lamports bigint;
 alter table portfolio_activity add column if not exists pool_fees jsonb;          -- [{mint, amount}] in display units
 alter table portfolio_activity add column if not exists other_dex_swap boolean;   -- a swap hop outside Meteora
+
+-- Paper test of being a pool creator: the engine joins brand-new high-fee DLMM pools as their first LP (as if it had
+-- created them) and follows fees (its share of the pool's), the position's value and costs until an exit rule fires.
+create table if not exists paper_pool_runs (
+  id            bigserial primary key,
+  pool          text not null,
+  name          text not null,
+  mint          text not null,
+  quote         text not null,                -- SOL | USDC
+  base_fee_pct  double precision not null,
+  opened_at     timestamptz not null,
+  pool_age_min  double precision,             -- pool's age when joined
+  status        text not null,                -- open | closed
+  size_usd      double precision not null,
+  sol_usd       double precision not null,
+  entry_price   double precision not null,
+  range_low     double precision not null,    -- multiples of entry_price
+  range_high    double precision not null,
+  last_cum_fees double precision not null,    -- pool's lifetime fees at the last tick
+  fees_usd      double precision not null default 0,
+  in_range_ticks integer not null default 0,
+  ticks         integer not null default 0,
+  last_price    double precision,
+  last_tvl      double precision,
+  peak_fee_hour double precision not null default 0,
+  checked_at    timestamptz,
+  closed_at     timestamptz,
+  exit_reason   text,                         -- stop | below_range | fees_dried | time | vanished
+  lp_value_usd  double precision,             -- position without fees at exit
+  costs_usd     double precision,
+  create_cost_usd double precision,
+  pnl_usd       double precision              -- lp value + fees - size - costs (incl. pool creation)
+);
+create index if not exists paper_pool_runs_status on paper_pool_runs (status);

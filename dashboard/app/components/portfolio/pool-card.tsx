@@ -275,10 +275,12 @@ function PositionBlock({
   const span = p.upper_bin - p.lower_bin + 1;
 
   return (
-    <div className={`border-t border-line/80 first:border-t-0 ${
-      isSafe(p) ? "bg-emerald-400/[0.045] shadow-[inset_3px_0_0_rgba(52,211,153,0.7)]" : isNear(p) ? "shadow-[inset_3px_0_0_rgba(52,211,153,0.3)]" : ""
-    }`}>
-      <div className="grid grid-cols-2 gap-x-4 gap-y-3 px-4 py-3.5 text-sm tabular-nums md:grid-cols-[1.3fr_1fr_0.6fr_1fr_1.1fr_1.2fr_auto] md:items-center">
+    <div className={`border-t border-line/80 first:border-t-0 ${isSafe(p) ? "bg-emerald-400/[0.045]" : ""}`}>
+      <div
+        className={`grid grid-cols-2 gap-x-4 gap-y-3 rounded-xl px-4 py-3.5 text-sm tabular-nums md:grid-cols-[1.3fr_1fr_0.6fr_1fr_1.1fr_1.2fr_auto] md:items-center ${
+          isSafe(p) ? "breath-green" : isNear(p) ? "breath-green breath-soft" : ""
+        }`}
+      >
         <div>
           <div className="text-[11px] uppercase tracking-wider text-ink-3 md:hidden">Likuiditas</div>
           <div className="font-semibold text-ink">{usd.format(p.value_usd)}</div>

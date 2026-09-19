@@ -14,6 +14,7 @@ import redis.asyncio as aioredis
 from . import config
 from .alerts import Alerter, serve_commands
 from .paper_lo import PaperLimitOrders
+from .paper_pool import PaperPoolCreator
 from .portfolio import snapshot_loop as portfolio_snapshot_loop
 from .indicators import Candle, compute_indicators, flow_features, merge_market
 from .metrics import PriceHistory
@@ -127,6 +128,9 @@ class Engine:
             asyncio.create_task(self._consume_prices(), name="consume_prices"),
         ]
         self._tasks.append(asyncio.create_task(portfolio_snapshot_loop(self.db), name="portfolio_snapshots"))
+        if config.PAPER_ENABLED:
+            creator = PaperPoolCreator(self.db, lambda: self.sol_usd or config.SOL_USD_FALLBACK)
+            self._tasks.append(asyncio.create_task(creator.run(), name="paper_pool_creator"))
         if self.alerter.enabled:
             self._tasks.append(
                 asyncio.create_task(

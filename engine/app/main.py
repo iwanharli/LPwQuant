@@ -12,7 +12,7 @@ from . import config
 from .backtest import default_params, run_backtest
 from .charts import MAX_HOURS, load_candles, pool_paper_positions, profile_decision
 from .freshness import check_freshness
-from . import busy_hours, ledger, limit_recs, netpnl, paper_lo, portfolio
+from . import busy_hours, ledger, limit_recs, netpnl, paper_lo, paper_pool, portfolio
 
 log = logging.getLogger("api")
 from .service import Engine
@@ -276,6 +276,12 @@ async def limit_order_paper() -> dict:
     if engine.db is None:
         raise HTTPException(status_code=503, detail="engine not ready")
     return await paper_lo.report(engine.db)
+
+
+@app.get("/api/pool-lab/paper")
+async def get_pool_lab_paper() -> dict:
+    """Paper test of creating DLMM pools: joins new high-fee pools as their first LP and follows the result."""
+    return await paper_pool.report(engine.db)
 
 
 @app.get("/api/portfolio/netpnl")
