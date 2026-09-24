@@ -104,7 +104,7 @@ function CopyPrice({ label, value }: { label: string; value: number }) {
         setCopied(true);
         setTimeout(() => setCopied(false), 1200);
       }}
-      className="group flex w-full items-center justify-between gap-3 rounded-lg border border-line bg-bg/60 px-3 py-2 text-left transition-colors hover:border-line-strong"
+      className="group flex w-full items-center justify-between gap-3 rounded-xl border border-white/[0.08] bg-bg/60 px-3 py-2 text-left transition-colors hover:border-line-strong"
       title="Salin untuk kolom harga di Meteora"
     >
       <span className="text-xs text-ink-3">{label}</span>
@@ -295,7 +295,7 @@ export default function PoolPage({ address }: { address: string }) {
         <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
           <section className="min-w-0 overflow-hidden rounded-2xl border border-white/[0.06] bg-panel shadow-[0_14px_42px_rgba(0,0,0,0.20),inset_0_1px_0_rgba(255,255,255,0.04)]">
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line bg-white/[0.02] px-4 py-3">
-              <div role="tablist" aria-label="Timeframe" className="flex rounded-lg border border-line bg-bg/80 p-1 shadow-inner shadow-black/20">
+              <div role="tablist" aria-label="Timeframe" className="flex rounded-xl border border-white/[0.08] bg-bg/80 p-1 shadow-inner shadow-black/20">
                 {TIMEFRAMES.map((t) => (
                   <button
                     key={t.key}
@@ -414,7 +414,7 @@ export default function PoolPage({ address }: { address: string }) {
                   />
                 </div>
               ) : (
-                <p className="mt-3 rounded-lg border border-line bg-bg/55 px-3 py-2 text-sm text-ink-2">
+                <p className="mt-3 rounded-xl border border-white/[0.08] bg-bg/55 px-3 py-2 text-sm text-ink-2">
                   Tidak ada rencana masuk: {plan && !isActivePlan(plan) ? plan.reason : "–"}
                 </p>
               )}

@@ -411,7 +411,7 @@ function ResultsCard({ summary: s, profileLabel }: { summary: PaperSummary | und
           <h2 className="text-sm font-semibold text-ink">
             Hasil trading{profileLabel ? <span className="font-normal text-ink-3"> · {profileLabel}</span> : null}
           </h2>
-          <div role="tablist" className="flex rounded-lg border border-line bg-bg/80 p-1 shadow-inner shadow-black/20">
+          <div role="tablist" className="flex rounded-xl border border-white/[0.08] bg-bg/80 p-1 shadow-inner shadow-black/20">
             {tabs.map((t) => (
               <button
                 key={t.id}
@@ -638,7 +638,7 @@ function ProfileTabs({
         <h2 className="text-base font-semibold text-ink">Detail profil</h2>
         <p className="text-xs text-ink-3">Ringkasan, hasil trading dan posisi di bawah ini hanya untuk profil yang dipilih.</p>
       </div>
-      <div role="tablist" aria-label="Pilih profil" className="flex rounded-lg border border-line bg-bg/80 p-1 shadow-inner shadow-black/20">
+      <div role="tablist" aria-label="Pilih profil" className="flex rounded-xl border border-white/[0.08] bg-bg/80 p-1 shadow-inner shadow-black/20">
         {/* Same order as the comparison table and the equity cards: highest total PnL first. */}
         {[...(profiles ?? [])]
           .sort((a, b) => b.equity_usd - b.start_equity_usd - (a.equity_usd - a.start_equity_usd))
@@ -690,7 +690,7 @@ function PositionsCard({
           <h2 className="text-sm font-semibold text-ink">
             Posisi{profileLabel ? <span className="font-normal text-ink-3"> · {profileLabel}</span> : null}
           </h2>
-          <div role="tablist" className="flex rounded-lg border border-line bg-bg/80 p-1 shadow-inner shadow-black/20">
+          <div role="tablist" className="flex rounded-xl border border-white/[0.08] bg-bg/80 p-1 shadow-inner shadow-black/20">
             {tabs.map((t) => (
               <button
                 key={t.id}

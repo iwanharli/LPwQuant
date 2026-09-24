@@ -283,7 +283,7 @@ export default function NetPnl({ wallet }: { wallet: string }) {
                 setData(null);
                 setReloadKey((k) => k + 1);
               }}
-              className="h-9 rounded-lg border border-line px-3 text-sm text-ink-2 hover:border-line-strong hover:text-ink"
+              className="h-9 rounded-xl border border-white/[0.08] px-3 text-sm text-ink-2 hover:border-line-strong hover:text-ink"
             >
               Refresh
             </button>
@@ -338,7 +338,7 @@ export default function NetPnl({ wallet }: { wallet: string }) {
               setSort(e.target.value as typeof sort);
               setLimit(PAGE);
             }} aria-label="Urutkan"
-              className="h-7 rounded-full border border-line bg-white/[0.03] px-3 text-xs text-ink-2 focus:outline-none">
+              className="h-7 rounded-full border border-white/[0.08] bg-white/[0.03] px-3 text-xs text-ink-2 focus:outline-none">
               <option value="recent">Terbaru</option>
               <option value="worst">Rugi terbesar dulu</option>
               <option value="best">Untung terbesar dulu</option>

@@ -84,7 +84,7 @@ export default function WalletButton() {
         aria-expanded={open}
         className={`inline-flex h-9 items-center gap-2 rounded-lg border px-3 text-sm font-medium shadow-sm shadow-black/20 transition-colors ${
           connected
-            ? "border-line bg-panel/80 text-ink hover:border-line-strong"
+            ? "border-white/[0.06] bg-panel/80 text-ink hover:border-line-strong"
             : "border-accent/40 bg-accent/10 text-accent hover:bg-accent/15"
         }`}
       >
@@ -102,7 +102,7 @@ export default function WalletButton() {
                 <Link
                   href="/portfolio"
                   onClick={() => setOpen(false)}
-                  className="rounded-lg border border-line bg-raised/50 px-3 py-2 text-sm text-ink hover:border-line-strong"
+                  className="rounded-xl border border-white/[0.08] bg-raised/50 px-3 py-2 text-sm text-ink hover:border-line-strong"
                 >
                   Buka Portofolio LP
                 </Link>
@@ -112,7 +112,7 @@ export default function WalletButton() {
                     void disconnectWallet();
                     setOpen(false);
                   }}
-                  className="rounded-lg border border-line px-3 py-2 text-left text-sm text-ink-2 hover:border-critical/40 hover:text-ink"
+                  className="rounded-xl border border-white/[0.08] px-3 py-2 text-left text-sm text-ink-2 hover:border-critical/40 hover:text-ink"
                 >
                   Disconnect
                 </button>
@@ -126,7 +126,7 @@ export default function WalletButton() {
               </p>
               <div className="mt-3 grid gap-1.5">
                 {options.length === 0 && (
-                  <p className="rounded-lg border border-line bg-bg/40 px-3 py-2 text-xs text-ink-3">
+                  <p className="rounded-xl border border-white/[0.08] bg-bg/40 px-3 py-2 text-xs text-ink-3">
                     Tidak ada wallet Solana terdeteksi di browser ini. Pasang Jupiter Wallet, atau tempel alamat di bawah.
                   </p>
                 )}
@@ -136,7 +136,7 @@ export default function WalletButton() {
                     type="button"
                     disabled={busy !== null}
                     onClick={() => void connect(o.name)}
-                    className="flex items-center gap-3 rounded-lg border border-line bg-raised/40 px-3 py-2 text-left text-sm text-ink transition-colors hover:border-line-strong hover:bg-raised/70 disabled:opacity-60"
+                    className="flex items-center gap-3 rounded-xl border border-white/[0.08] bg-raised/40 px-3 py-2 text-left text-sm text-ink transition-colors hover:border-line-strong hover:bg-raised/70 disabled:opacity-60"
                   >
                     {/* eslint-disable-next-line @next/next/no-img-element -- wallet icons are data: URIs from the extension */}
                     <img src={o.icon} alt="" width={22} height={22} className="rounded-md" />
@@ -156,12 +156,12 @@ export default function WalletButton() {
                     onChange={(e) => setTyped(e.target.value)}
                     onKeyDown={(e) => e.key === "Enter" && watch()}
                     placeholder="Alamat wallet Solana"
-                    className="min-w-0 flex-1 rounded-lg border border-line bg-white/[0.03] px-2.5 py-1.5 font-mono text-xs text-ink placeholder:font-sans placeholder:text-ink-3 focus:border-accent/50 focus:outline-none"
+                    className="min-w-0 flex-1 rounded-xl border border-white/[0.08] bg-white/[0.03] px-2.5 py-1.5 font-mono text-xs text-ink placeholder:font-sans placeholder:text-ink-3 focus:border-accent/50 focus:outline-none"
                   />
                   <button
                     type="button"
                     onClick={watch}
-                    className="rounded-lg border border-line bg-raised/60 px-3 text-xs font-medium text-ink hover:border-line-strong"
+                    className="rounded-xl border border-white/[0.08] bg-raised/60 px-3 text-xs font-medium text-ink hover:border-line-strong"
                   >
                     Pantau
                   </button>

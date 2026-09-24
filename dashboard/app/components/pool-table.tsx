@@ -60,7 +60,7 @@ const COLUMNS: Column[] = [
 
 const CELL = "border-b border-line/80 px-2.5 py-2.5";
 const ICON_BUTTON =
-  "grid h-8 w-8 place-items-center rounded-lg border border-line bg-bg/40 text-ink-3 transition-colors hover:border-accent/70 hover:text-accent focus-visible:border-accent/70 focus-visible:text-accent";
+  "grid h-8 w-8 place-items-center rounded-xl border border-white/[0.08] bg-bg/40 text-ink-3 transition-colors hover:border-accent/70 hover:text-accent focus-visible:border-accent/70 focus-visible:text-accent";
 
 function Stack({ top, bottom, align = "right" }: { top: ReactNode; bottom: ReactNode; align?: "left" | "right" }) {
   return (

@@ -115,7 +115,7 @@ export default function Toolbar({
               Hapus
             </button>
           ) : (
-            <kbd className="pointer-events-none absolute right-3 rounded-md border border-line px-1.5 py-0.5 font-mono text-[11px] text-ink-3">
+            <kbd className="pointer-events-none absolute right-3 rounded-md border border-white/[0.08] px-1.5 py-0.5 font-mono text-[11px] text-ink-3">
               /
             </kbd>
           )}
@@ -224,7 +224,7 @@ export default function Toolbar({
             <button
               type="button"
               onClick={reset}
-              className="rounded-full border border-line px-3 py-1.5 text-xs font-medium text-ink-2 transition-colors hover:border-accent/70 hover:text-ink"
+              className="rounded-full border border-white/[0.08] px-3 py-1.5 text-xs font-medium text-ink-2 transition-colors hover:border-accent/70 hover:text-ink"
             >
               Reset filter
             </button>

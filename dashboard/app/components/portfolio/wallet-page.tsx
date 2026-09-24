@@ -351,7 +351,7 @@ export default function WalletPage() {
                     onChange={(e) => setQuery(e.target.value)}
                     placeholder="Cari koin…"
                     aria-label="Cari koin"
-                    className="h-8 w-40 rounded-full border border-line bg-white/[0.03] px-3 text-xs text-ink placeholder:text-ink-3 focus:border-accent/50 focus:outline-none"
+                    className="h-8 w-40 rounded-full border border-white/[0.08] bg-white/[0.03] px-3 text-xs text-ink placeholder:text-ink-3 focus:border-accent/50 focus:outline-none"
                   />
                 </div>
               </div>

@@ -175,7 +175,7 @@ export default function NewPoolsPage() {
                     <div className="flex items-center gap-2">
                       <Link
                         href={`/pool/${p.address}`}
-                        className="rounded-lg border border-line px-3 py-1.5 text-xs font-medium text-ink-2 hover:border-line-strong hover:text-ink"
+                        className="rounded-xl border border-white/[0.08] px-3 py-1.5 text-xs font-medium text-ink-2 hover:border-line-strong hover:text-ink"
                       >
                         Detail
                       </Link>

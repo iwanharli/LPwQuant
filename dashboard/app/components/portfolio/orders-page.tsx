@@ -375,7 +375,7 @@ export default function OrdersPage() {
                 </p>
               </div>
               <div className="flex justify-end gap-2 border-t border-line px-5 py-3.5">
-                <button type="button" onClick={() => setCancel({ phase: "idle" })} className="rounded-lg border border-line px-4 py-2 text-sm text-ink-2 hover:text-ink">
+                <button type="button" onClick={() => setCancel({ phase: "idle" })} className="rounded-xl border border-white/[0.08] px-4 py-2 text-sm text-ink-2 hover:text-ink">
                   Batal
                 </button>
                 <button

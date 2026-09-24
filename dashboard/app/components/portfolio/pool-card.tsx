@@ -247,7 +247,7 @@ function ActionLink({ href, children }: { href: string; children: React.ReactNod
       href={href}
       target="_blank"
       rel="noreferrer"
-      className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-raised/40 px-3 py-1.5 text-xs font-medium text-ink-2 transition-colors hover:border-line-strong hover:text-ink"
+      className="inline-flex items-center gap-1.5 rounded-xl border border-white/[0.08] bg-raised/40 px-3 py-1.5 text-xs font-medium text-ink-2 transition-colors hover:border-line-strong hover:text-ink"
     >
       {children} <span aria-hidden>↗</span>
     </a>
@@ -425,7 +425,7 @@ export default function PoolCard({
           ? "border-emerald-400/45 bg-[#0c1512]/[0.97] shadow-[0_14px_42px_rgba(0,0,0,0.20),0_0_0_1px_rgba(52,211,153,0.08),inset_0_1px_0_rgba(110,231,183,0.10)]"
           : near
             ? "border-emerald-400/25 bg-panel shadow-[0_14px_42px_rgba(0,0,0,0.20),inset_0_1px_0_rgba(255,255,255,0.04)]"
-            : "border-line bg-panel shadow-[0_14px_42px_rgba(0,0,0,0.20),inset_0_1px_0_rgba(255,255,255,0.04)]"
+            : "border-white/[0.06] bg-panel shadow-[0_14px_42px_rgba(0,0,0,0.20),inset_0_1px_0_rgba(255,255,255,0.04)]"
       }`}
     >
       <div

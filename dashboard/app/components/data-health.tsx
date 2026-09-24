@@ -113,7 +113,7 @@ export default function DataHealth({
         className={`inline-flex items-center gap-2 whitespace-nowrap rounded-full border px-3 py-1.5 font-medium shadow-sm shadow-black/20 transition-colors ${
           severity === "warning" || severity === "critical"
             ? "border-warning/40 bg-warning/10 text-ink hover:bg-warning/15"
-            : "border-line bg-panel/80 text-ink-2 hover:text-ink"
+            : "border-white/[0.06] bg-panel/80 text-ink-2 hover:text-ink"
         }`}
       >
         <StatusDot severity={severity} />

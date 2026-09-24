@@ -127,13 +127,13 @@ export default function PositionFilters({
           onChange={(e) => onChange({ ...filters, query: e.target.value })}
           placeholder="Cari token…"
           aria-label="Cari token"
-          className="h-8 w-40 rounded-full border border-line bg-white/[0.03] px-3 text-xs text-ink placeholder:text-ink-3 focus:border-accent/50 focus:outline-none"
+          className="h-8 w-40 rounded-full border border-white/[0.08] bg-white/[0.03] px-3 text-xs text-ink placeholder:text-ink-3 focus:border-accent/50 focus:outline-none"
         />
         <select
           value={filters.sort}
           onChange={(e) => onChange({ ...filters, sort: e.target.value as SortKey })}
           aria-label="Urutkan"
-          className="h-8 rounded-full border border-line bg-white/[0.03] px-3 text-xs text-ink-2 focus:border-accent/50 focus:outline-none"
+          className="h-8 rounded-full border border-white/[0.08] bg-white/[0.03] px-3 text-xs text-ink-2 focus:border-accent/50 focus:outline-none"
         >
           {SORT_OPTIONS.map((o) => (
             <option key={o.value} value={o.value}>

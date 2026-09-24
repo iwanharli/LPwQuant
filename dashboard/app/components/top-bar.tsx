@@ -94,7 +94,7 @@ export default function TopBar({
             className={`grid h-9 w-9 place-items-center rounded-lg border transition-colors ${
               pathname.startsWith("/rpc")
                 ? "border-accent/50 bg-accent/10 text-accent"
-                : "border-line bg-panel/60 text-ink-3 hover:border-line-strong hover:text-ink"
+                : "border-white/[0.06] bg-panel/60 text-ink-3 hover:border-line-strong hover:text-ink"
             }`}
           >
             <svg viewBox="0 0 20 20" width={16} height={16} fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" aria-hidden>

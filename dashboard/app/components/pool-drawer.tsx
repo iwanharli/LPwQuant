@@ -42,7 +42,7 @@ function Section({ title, icon, children }: { title: string; icon?: ReactNode; c
 
 function Stat({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div className="rounded-lg border border-line bg-bg/55 px-3 py-2 shadow-inner shadow-black/10">
+    <div className="rounded-xl border border-white/[0.08] bg-bg/55 px-3 py-2 shadow-inner shadow-black/10">
       <dt className="text-[11px] text-ink-3">{label}</dt>
       <dd className="mt-0.5 text-sm font-medium tabular-nums text-ink">{children}</dd>
     </div>
@@ -87,7 +87,7 @@ function PriceField({ label, value, hint }: { label: string; value: number; hint
     setTimeout(() => setCopied(false), 1200);
   };
   return (
-    <div className="rounded-lg border border-line bg-bg/55 px-3 py-2 shadow-inner shadow-black/10">
+    <div className="rounded-xl border border-white/[0.08] bg-bg/55 px-3 py-2 shadow-inner shadow-black/10">
       <div className="flex items-center justify-between text-[11px] text-ink-3">
         <span>{label}</span>
         <button onClick={copy} aria-label={`Salin ${label}`} className="text-ink-3 transition-colors hover:text-ink">
@@ -256,7 +256,7 @@ function ExitSection({ plan }: { plan: ActivePlan }) {
   ];
   return (
     <Section title="Aturan exit" icon={<ExitIcon width={13} height={13} />}>
-      <dl className="divide-y divide-line rounded-lg border border-line">
+      <dl className="divide-y divide-line rounded-xl border border-white/[0.08]">
         {rules.map(([label, value]) => (
           <div key={label} className="flex items-center justify-between gap-4 px-3 py-2 text-sm">
             <dt className="text-ink-3">{label}</dt>
@@ -300,7 +300,7 @@ function IndicatorSection({ row }: { row: PoolRow }) {
   const regime = m.regime ? REGIME_META[m.regime] : null;
   return (
     <Section title={`Indikator teknikal · candle 30m (${m.candles})`}>
-        <div className="mb-3 flex items-center justify-between gap-3 rounded-lg border border-line bg-bg/55 px-3 py-2.5 shadow-inner shadow-black/10">
+        <div className="mb-3 flex items-center justify-between gap-3 rounded-xl border border-white/[0.08] bg-bg/55 px-3 py-2.5 shadow-inner shadow-black/10">
         <RegimeBadge regime={m.regime} />
         <span className="text-right text-xs text-ink-3">{regime?.hint ?? "Belum cukup candle untuk ADX"}</span>
       </div>
@@ -324,7 +324,7 @@ function IndicatorSection({ row }: { row: PoolRow }) {
         <Stat label="Drawdown 24j">{fmtSignedPct(m.drawdown_pct)}</Stat>
       </dl>
 
-      <div className="mt-4 space-y-3 rounded-lg border border-line bg-bg/55 px-3 py-3 shadow-inner shadow-black/10">
+      <div className="mt-4 space-y-3 rounded-xl border border-white/[0.08] bg-bg/55 px-3 py-3 shadow-inner shadow-black/10">
         <div className="flex items-center justify-between text-xs">
           <span className="font-medium text-ink-2">Arus transaksi</span>
           {m.buy_ratio_h1 != null ? (
@@ -401,13 +401,13 @@ function InsiderSection({ row }: { row: PoolRow }) {
       )}
 
       {buy != null && sell != null && buy + sell > 0 && (
-        <div className="mt-3 rounded-lg border border-line bg-bg/55 px-3 py-3 shadow-inner shadow-black/10">
+        <div className="mt-3 rounded-xl border border-white/[0.08] bg-bg/55 px-3 py-3 shadow-inner shadow-black/10">
           <FlowBar ratio={buy / (buy + sell)} label={`Volume USD 1 jam (${usdCompact.format(buy + sell)})`} />
         </div>
       )}
 
       {tagEntries.length > 0 ? (
-        <div className="mt-3 overflow-hidden rounded-lg border border-line">
+        <div className="mt-3 overflow-hidden rounded-xl border border-white/[0.08]">
           <table className="w-full text-sm">
             <thead className="bg-bg/60 text-[11px] font-medium uppercase tracking-[0.08em] text-ink-3">
               <tr>
@@ -517,7 +517,7 @@ function SecuritySection({ row }: { row: PoolRow }) {
   const issuer = row.flags.includes("issuer_controlled");
   return (
     <Section title={`Keamanan ${row.base_symbol ?? "token"}`} icon={<ShieldIcon width={13} height={13} />}>
-      <div className="mb-3 flex items-center justify-between rounded-lg border border-line bg-bg/55 px-3 py-2.5 shadow-inner shadow-black/10">
+      <div className="mb-3 flex items-center justify-between rounded-xl border border-white/[0.08] bg-bg/55 px-3 py-2.5 shadow-inner shadow-black/10">
         <span className="text-sm text-ink-2">Skor keamanan</span>
         <span className="flex items-center gap-3">
           <Meter value={row.safety} max={30} width="w-24" />
@@ -576,7 +576,7 @@ function DrawerContent({ row, onClose }: { row: PoolRow; onClose: () => void }) 
 
   return (
     <div className="flex min-h-full flex-col">
-      <div className="sticky top-0 z-10 border-b border-line bg-panel/92 px-5 py-4 shadow-[0_10px_32px_rgba(0,0,0,0.22)] backdrop-blur-xl">
+      <div className="sticky top-0 z-10 border-b border-white/[0.06] bg-panel/92 px-5 py-4 shadow-[0_10px_32px_rgba(0,0,0,0.22)] backdrop-blur-xl">
         <div className="flex items-start gap-3">
           <TokenAvatar symbol={row.base_symbol} />
           <div className="min-w-0 flex-1">
@@ -592,7 +592,7 @@ function DrawerContent({ row, onClose }: { row: PoolRow; onClose: () => void }) 
             href={`/pool/${row.address}`}
             aria-label="Buka grafik pool"
             title="Buka grafik pool"
-            className="rounded-lg border border-line p-1.5 text-ink-2 transition-colors hover:border-accent/70 hover:text-ink"
+            className="rounded-xl border border-white/[0.08] p-1.5 text-ink-2 transition-colors hover:border-accent/70 hover:text-ink"
           >
             <CandleIcon />
           </Link>
@@ -622,13 +622,13 @@ function DrawerContent({ row, onClose }: { row: PoolRow; onClose: () => void }) 
           </div>
         </div>
         {isActivePlan(plan) && (
-          <p className="mt-3 rounded-lg border border-line bg-bg/55 px-3 py-2 text-xs leading-5 text-ink-2 shadow-inner shadow-black/10">
+          <p className="mt-3 rounded-xl border border-white/[0.08] bg-bg/55 px-3 py-2 text-xs leading-5 text-ink-2 shadow-inner shadow-black/10">
             {plan.tier_reason}
             <span className="block text-ink-3">{TIER_META[plan.tier].hint}</span>
           </p>
         )}
         {!isActivePlan(plan) && (
-          <p className="mt-3 flex items-center gap-2 rounded-lg border border-line bg-bg/55 px-3 py-2 text-sm text-ink-2 shadow-inner shadow-black/10">
+          <p className="mt-3 flex items-center gap-2 rounded-xl border border-white/[0.08] bg-bg/55 px-3 py-2 text-sm text-ink-2 shadow-inner shadow-black/10">
             <AlertIcon className="shrink-0 text-ink-3" /> {plan.reason}
           </p>
         )}
@@ -758,7 +758,7 @@ export default function PoolDrawer({ row, onClose }: { row: PoolRow | null; onCl
         role="dialog"
         aria-modal="true"
         aria-label={row ? `Detail ${row.name}` : "Detail pool"}
-        className={`fixed inset-y-0 right-0 z-50 w-full max-w-[500px] overflow-y-auto border-l border-line bg-panel shadow-2xl shadow-black/70 transition-transform duration-200 ease-out ${
+        className={`fixed inset-y-0 right-0 z-50 w-full max-w-[500px] overflow-y-auto border-l border-white/[0.06] bg-panel shadow-2xl shadow-black/70 transition-transform duration-200 ease-out ${
           row ? "translate-x-0" : "translate-x-full"
         }`}
       >

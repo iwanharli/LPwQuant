@@ -170,7 +170,7 @@ export default function EquityChart({
 
   if (!hasData) {
     return (
-      <div className="grid h-72 place-items-center rounded-lg border border-line bg-bg/35 text-sm text-ink-3">
+      <div className="grid h-72 place-items-center rounded-xl border border-white/[0.08] bg-bg/35 text-sm text-ink-3">
         <div className="text-center">
           <div className="text-base font-medium text-ink">Menunggu titik equity</div>
           <div className="mt-1">Kurva muncul setelah beberapa siklus engine (sekitar 1 menit per titik).</div>
@@ -180,7 +180,7 @@ export default function EquityChart({
   }
 
   return (
-    <div className="relative overflow-hidden rounded-lg border border-line bg-bg/35">
+    <div className="relative overflow-hidden rounded-xl border border-white/[0.08] bg-bg/35">
       <div className="grid grid-cols-1 gap-2 border-b border-line px-4 py-3 sm:grid-cols-2 lg:grid-cols-4">
         {/* Highest PnL on the left, by the latest point rather than the hovered one, so the cards do not jump
             around while the crosshair moves. */}
@@ -199,7 +199,7 @@ export default function EquityChart({
           return (
             <div
               key={s.key}
-              className={`rounded-md border px-3 py-2 ${active ? "border-line-strong bg-raised/60" : "border-line bg-panel/60"}`}
+              className={`rounded-md border px-3 py-2 ${active ? "border-line-strong bg-raised/60" : "border-white/[0.06] bg-panel/60"}`}
             >
               <div className="flex items-center gap-2 text-xs text-ink-2">
                 <span className="h-0.5 w-4 rounded-full" style={{ background: s.color }} aria-hidden />

@@ -72,7 +72,7 @@ export default function FilterPanel({ open, onClose, filters, onChange, shown, t
   return (
     <div className="fixed inset-0 z-40 flex justify-end">
       <button type="button" aria-label="Tutup filter" onClick={onClose} className="absolute inset-0 bg-black/60" />
-      <aside className="relative flex h-full w-full max-w-md flex-col border-l border-line bg-panel shadow-2xl">
+      <aside className="relative flex h-full w-full max-w-md flex-col border-l border-white/[0.06] bg-panel shadow-2xl">
         <header className="flex items-center justify-between border-b border-line px-4 py-3">
           <div>
             <h2 className="text-base font-semibold text-ink">Filter</h2>
@@ -84,7 +84,7 @@ export default function FilterPanel({ open, onClose, filters, onChange, shown, t
             <button
               type="button"
               onClick={() => onChange(defaultFilters())}
-              className="rounded-full border border-line px-3 py-1.5 text-xs font-medium text-ink-2 transition-colors hover:border-accent/70 hover:text-ink"
+              className="rounded-full border border-white/[0.08] px-3 py-1.5 text-xs font-medium text-ink-2 transition-colors hover:border-accent/70 hover:text-ink"
             >
               Default LP
             </button>
@@ -92,7 +92,7 @@ export default function FilterPanel({ open, onClose, filters, onChange, shown, t
               <button
                 type="button"
                 onClick={() => onChange(emptyFilters())}
-                className="rounded-full border border-line px-3 py-1.5 text-xs font-medium text-ink-2 transition-colors hover:border-accent/70 hover:text-ink"
+                className="rounded-full border border-white/[0.08] px-3 py-1.5 text-xs font-medium text-ink-2 transition-colors hover:border-accent/70 hover:text-ink"
               >
                 Hapus semua
               </button>
@@ -150,7 +150,7 @@ export default function FilterPanel({ open, onClose, filters, onChange, shown, t
                   }
                 }}
                 placeholder="Nama preset"
-                className="h-10 w-full rounded-lg border border-line bg-white/[0.03] px-3 text-sm text-ink placeholder:text-ink-3 outline-none transition-colors focus:border-accent/70"
+                className="h-10 w-full rounded-xl border border-white/[0.08] bg-white/[0.03] px-3 text-sm text-ink placeholder:text-ink-3 outline-none transition-colors focus:border-accent/70"
               />
               <button
                 type="button"
@@ -159,7 +159,7 @@ export default function FilterPanel({ open, onClose, filters, onChange, shown, t
                   setPresets(savePreset(presetName, filters));
                   setPresetName("");
                 }}
-                className="h-10 shrink-0 rounded-lg border border-line px-3 text-xs font-medium text-ink-2 transition-colors enabled:hover:border-accent/70 enabled:hover:text-ink disabled:opacity-40"
+                className="h-10 shrink-0 rounded-xl border border-white/[0.08] px-3 text-xs font-medium text-ink-2 transition-colors enabled:hover:border-accent/70 enabled:hover:text-ink disabled:opacity-40"
               >
                 Simpan
               </button>
@@ -183,7 +183,7 @@ export default function FilterPanel({ open, onClose, filters, onChange, shown, t
                       value={r.min ?? ""}
                       onChange={(e) => setRange(f.key, "min", e.target.value)}
                       placeholder="Min"
-                      className="h-10 w-full rounded-lg border border-line bg-white/[0.03] px-3 text-sm text-ink placeholder:text-ink-3 outline-none transition-colors focus:border-accent/70"
+                      className="h-10 w-full rounded-xl border border-white/[0.08] bg-white/[0.03] px-3 text-sm text-ink placeholder:text-ink-3 outline-none transition-colors focus:border-accent/70"
                     />
                     <span className="text-ink-3">–</span>
                     <input
@@ -191,7 +191,7 @@ export default function FilterPanel({ open, onClose, filters, onChange, shown, t
                       value={r.max ?? ""}
                       onChange={(e) => setRange(f.key, "max", e.target.value)}
                       placeholder="Maks"
-                      className="h-10 w-full rounded-lg border border-line bg-white/[0.03] px-3 text-sm text-ink placeholder:text-ink-3 outline-none transition-colors focus:border-accent/70"
+                      className="h-10 w-full rounded-xl border border-white/[0.08] bg-white/[0.03] px-3 text-sm text-ink placeholder:text-ink-3 outline-none transition-colors focus:border-accent/70"
                     />
                   </span>
                 </label>

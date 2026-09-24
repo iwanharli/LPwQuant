@@ -229,7 +229,7 @@ function PositionCard({ p, pool, cost, net }: { p: ClosedPosition; pool?: string
 
 function Chips<T extends string>({ value, onChange, options }: { value: T; onChange: (v: T) => void; options: { value: T; label: string }[] }) {
   return (
-    <div className="flex gap-1 rounded-full border border-line bg-white/[0.03] p-0.5">
+    <div className="flex gap-1 rounded-full border border-white/[0.08] bg-white/[0.03] p-0.5">
       {options.map((o) => (
         <button
           key={o.value}
@@ -461,7 +461,7 @@ export function ClosedPositions({ wallet }: { wallet: string }) {
             value={exit}
             onChange={(e) => setExit(e.target.value as typeof exit)}
             aria-label="Akhir posisi"
-            className="h-8 rounded-full border border-line bg-white/[0.03] px-3 text-xs text-ink-2 focus:outline-none"
+            className="h-8 rounded-full border border-white/[0.08] bg-white/[0.03] px-3 text-xs text-ink-2 focus:outline-none"
           >
             <option value="all">Akhir: semua</option>
             <option value="below">Jatuh keluar range</option>
@@ -472,7 +472,7 @@ export function ClosedPositions({ wallet }: { wallet: string }) {
             value={sort}
             onChange={(e) => setSort(e.target.value as typeof sort)}
             aria-label="Urutkan"
-            className="h-8 rounded-full border border-line bg-white/[0.03] px-3 text-xs text-ink-2 focus:outline-none"
+            className="h-8 rounded-full border border-white/[0.08] bg-white/[0.03] px-3 text-xs text-ink-2 focus:outline-none"
           >
             <option value="recent">Terbaru ditutup</option>
             <option value="best">Hasil terbaik</option>
@@ -484,7 +484,7 @@ export function ClosedPositions({ wallet }: { wallet: string }) {
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Cari token"
             aria-label="Cari posisi"
-            className="h-8 w-36 rounded-full border border-line bg-white/[0.03] px-3 text-xs text-ink placeholder:text-ink-3 focus:border-accent/70 focus:outline-none"
+            className="h-8 w-36 rounded-full border border-white/[0.08] bg-white/[0.03] px-3 text-xs text-ink placeholder:text-ink-3 focus:border-accent/70 focus:outline-none"
           />
         </div>
       </div>
@@ -502,7 +502,7 @@ export function ClosedPositions({ wallet }: { wallet: string }) {
               <button
                 type="button"
                 onClick={() => setPeriod(period === "1d" ? "7d" : period === "7d" ? "30d" : "all")}
-                className="mt-3 rounded-full border border-line px-4 py-1.5 text-xs text-ink-2 transition-colors hover:border-line-strong hover:text-ink"
+                className="mt-3 rounded-full border border-white/[0.08] px-4 py-1.5 text-xs text-ink-2 transition-colors hover:border-line-strong hover:text-ink"
               >
                 Lihat rentang yang lebih panjang
               </button>

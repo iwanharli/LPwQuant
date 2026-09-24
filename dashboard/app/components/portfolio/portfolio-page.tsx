@@ -312,7 +312,7 @@ function ClaimReview({
           <button
             type="button"
             onClick={onCancel}
-            className="rounded-lg border border-line px-4 py-2 text-sm text-ink-2 hover:border-line-strong hover:text-ink"
+            className="rounded-xl border border-white/[0.08] px-4 py-2 text-sm text-ink-2 hover:border-line-strong hover:text-ink"
           >
             Batal
           </button>
