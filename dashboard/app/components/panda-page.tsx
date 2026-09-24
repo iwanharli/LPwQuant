@@ -263,7 +263,7 @@ export default function PandaPage() {
       <TopBar />
       <main className="mx-auto w-full min-w-0 max-w-full flex-1 space-y-5 overflow-x-hidden px-4 py-6 sm:px-6 lg:py-7 2xl:px-8">
         <PageHeader
-          title="Uji Panda Strat"
+          title="Uji" accent="Panda Strat"
           subtitle="Paper, tanpa transaksi: seleksi ketat, range lebar satu sisi, keluar di pantulan pertama."
         />
 

@@ -41,12 +41,13 @@ export default function TopBar({
             </svg>
           </span>
           <div className="hidden leading-tight sm:block">
-            <div className="text-base font-bold tracking-tight text-ink">Quant</div>
+            <div className="text-base font-extrabold tracking-tight text-ink">Quant</div>
             <div className="text-[11px] text-ink-3">Meteora DLMM · LP Screener</div>
           </div>
         </Link>
 
-        <nav className="absolute left-1/2 hidden -translate-x-1/2 items-center gap-7 text-sm font-medium md:flex">
+        {/* Pills rather than underlines: the active page reads at a glance, the way the reference sets its nav. */}
+        <nav className="absolute left-1/2 hidden -translate-x-1/2 items-center gap-1 rounded-full border border-white/[0.06] bg-white/[0.03] p-1 text-sm font-medium md:flex">
           {NAV.map((item) => {
             const active = item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
             return (
@@ -54,7 +55,9 @@ export default function TopBar({
                 key={item.href}
                 href={item.href}
                 aria-current={active ? "page" : undefined}
-                className={`whitespace-nowrap transition-colors ${active ? "text-accent" : "text-ink-2 hover:text-ink"}`}
+                className={`whitespace-nowrap rounded-full px-3.5 py-1.5 transition-colors ${
+                  active ? "bg-white/[0.08] text-ink shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]" : "text-ink-3 hover:text-ink-2"
+                }`}
               >
                 {item.label}
               </Link>

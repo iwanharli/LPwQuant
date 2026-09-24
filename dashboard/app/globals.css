@@ -8,18 +8,19 @@
 /* Single committed dark theme. Status hues follow the validated dataviz status palette. */
 @theme {
   /* Neutral charcoal surfaces with a lime accent; status and data-series hues are unchanged. */
-  --color-bg: #0b0e13;
-  --color-panel: #161b22;
-  --color-raised: #1d232c;
-  --color-hover: #232b36;
-  --color-line: #262d38;
-  --color-line-strong: #3a4350;
+  --color-bg: #08090c;
+  --color-panel: #101116;
+  --color-raised: #17191f;
+  --color-hover: #1e2027;
+  --color-line: #23252d;
+  --color-line-strong: #363943;
 
   --color-ink: #f5f7fa;
   --color-ink-2: #b3bac5;
   --color-ink-3: #7d8594;
 
-  --color-accent: #c7f284;
+  --color-accent: #ff8a3d;
+  --color-accent-2: #ffb347;
   --color-good: #22c55e;
   --color-warning: #f5b84b;
   --color-serious: #f08a5d;
@@ -56,6 +57,8 @@ body {
 }
 
 /* Fixed full-screen artwork behind every page, dimmed so panels and text keep their contrast. */
+/* Near-black ground with a faint grid and one warm glow behind the header: the page reads as a dark surface with
+   depth, and panels keep their contrast because the glow never gets near their brightness. */
 body::before {
   position: fixed;
   inset: 0;
@@ -63,8 +66,10 @@ body::before {
   pointer-events: none;
   content: "";
   background:
-    linear-gradient(180deg, rgba(7, 9, 13, 0.72) 0%, rgba(7, 9, 13, 0.5) 30%, rgba(7, 9, 13, 0.35) 55%, rgba(7, 9, 13, 0.7) 100%),
-    url("/background.webp") center bottom / cover no-repeat,
+    radial-gradient(60rem 28rem at 50% -8rem, rgba(255, 138, 61, 0.16), transparent 70%),
+    radial-gradient(40rem 24rem at 85% 10%, rgba(255, 138, 61, 0.05), transparent 70%),
+    linear-gradient(rgba(255, 255, 255, 0.022) 1px, transparent 1px) 0 0 / 100% 56px,
+    linear-gradient(90deg, rgba(255, 255, 255, 0.022) 1px, transparent 1px) 0 0 / 56px 100%,
     var(--color-bg);
 }
 
@@ -116,4 +121,26 @@ select:focus-visible,
     animation: none;
     box-shadow: inset 0 0 0 1px rgb(52 211 153 / var(--breath-hi, 0.95));
   }
+}
+
+/* Headings: heavy and tight, the way the reference sets them. The accent half of a title uses the gradient. */
+h1 {
+  letter-spacing: -0.03em;
+}
+
+.text-accent-gradient {
+  background: linear-gradient(92deg, var(--color-accent) 0%, var(--color-accent-2) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* The one call-to-action style: solid accent with its own glow. */
+.btn-accent {
+  background: linear-gradient(92deg, var(--color-accent) 0%, var(--color-accent-2) 100%);
+  color: #20130a;
+  box-shadow: 0 8px 24px rgba(255, 138, 61, 0.28);
+}
+.btn-accent:hover {
+  filter: brightness(1.06);
 }

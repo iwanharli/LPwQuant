@@ -76,7 +76,7 @@ export default function Dashboard() {
       <TopBar status={status} lastMessageAt={lastMessageAt} />
 
       <main className="mx-auto w-full min-w-0 max-w-full flex-1 space-y-5 overflow-x-hidden px-4 py-6 sm:px-6 lg:py-7 2xl:px-8">
-        <PageHeader title="Pool DLMM" subtitle="Pool diurutkan per tingkat risiko dan skor peluang fee." />
+        <PageHeader title="Pool" accent="DLMM" subtitle="Pool diurutkan per tingkat risiko dan skor peluang fee." />
 
         <KpiStrip rows={all} />
 

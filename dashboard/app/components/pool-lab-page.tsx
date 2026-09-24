@@ -108,7 +108,7 @@ export default function PoolLabPage() {
     <div className="flex min-h-screen min-w-0 flex-col overflow-x-hidden">
       <TopBar />
       <main className="mx-auto w-full min-w-0 max-w-full flex-1 space-y-5 overflow-x-hidden px-4 py-6 sm:px-6 lg:py-7 2xl:px-8">
-        <PageHeader title="Uji pembuat pool" subtitle="Paper, tanpa transaksi: jadi LP pertama di pool baru ber-fee tinggi." />
+        <PageHeader title="Uji" accent="pembuat pool" subtitle="Paper, tanpa transaksi: jadi LP pertama di pool baru ber-fee tinggi." />
 
         {error && !r && (
           <p className="rounded-2xl border border-line bg-[#0e1217]/[0.97] px-4 py-8 text-sm text-ink-3">Engine tidak bisa dihubungi.</p>

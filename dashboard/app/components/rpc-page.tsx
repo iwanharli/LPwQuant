@@ -14,7 +14,7 @@ export default function RpcPage() {
     <div className="flex min-h-screen min-w-0 flex-col overflow-x-hidden">
       <TopBar />
       <main className="mx-auto w-full min-w-0 max-w-full flex-1 space-y-5 overflow-x-hidden px-4 py-6 sm:px-6 lg:py-7 2xl:px-8">
-        <PageHeader title="Sumber data & pemakaian API" subtitle="Dari mana tiap angka berasal, seberapa segar, dan berapa panggilan yang dipakai." />
+        <PageHeader title="Sumber data &" accent="pemakaian API" subtitle="Dari mana tiap angka berasal, seberapa segar, dan berapa panggilan yang dipakai." />
         <SourcesPanel items={items} />
         <UsagePanel onItems={setItems} />
       </main>
