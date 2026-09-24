@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ENGINE_URL, fmtDateTime, fmtNum, fmtSignedPct, shortAddress, usd } from "../../lib/format";
+import { ENGINE_URL, TIMEZONE, fmtDateTime, fmtNum, fmtSignedPct, shortAddress, usd } from "../../lib/format";
 import { useUrlState } from "../../lib/url-state";
 
 type ClosedPosition = {
@@ -251,8 +251,26 @@ const now = () => Date.now(); // outside the component: the purity lint cannot t
 
 type Period = "1d" | "7d" | "30d" | "all";
 const PERIODS = ["1d", "7d", "30d", "all"] as const;
-const PERIOD_DAYS: Record<Period, number | null> = { "1d": 1, "7d": 7, "30d": 30, all: null };
-const PERIOD_LABEL: Record<Period, string> = { "1d": "24 jam", "7d": "7 hari", "30d": "30 hari", all: "Semua" };
+const PERIOD_DAYS: Record<Period, number | null> = { "1d": 0, "7d": 6, "30d": 29, all: null };
+const PERIOD_LABEL: Record<Period, string> = { "1d": "Hari ini", "7d": "7 hari", "30d": "30 hari", all: "Semua" };
+const PERIOD_HINT: Record<Period, string> = {
+  "1d": "hari ini",
+  "7d": "7 hari kalender terakhir",
+  "30d": "30 hari kalender terakhir",
+  all: "sejak awal",
+};
+
+/** Midnight in Jakarta, `daysBack` calendar days ago, as a timestamp. Calendar days, not a rolling window, so the
+ * period matches the daily figures on the summary page. */
+function midnightWib(daysBack: number): number {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: TIMEZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date(now() - daysBack * 86_400_000));
+  return new Date(`${parts}T00:00:00+07:00`).getTime();
+}
 
 type RecentPosition = ClosedPosition & {
   pool: string;
@@ -330,7 +348,7 @@ export function ClosedPositions({ wallet }: { wallet: string }) {
     return <p className="rounded-2xl border border-line bg-[#0e1217]/[0.97] px-4 py-8 text-sm text-ink-3">Memuat riwayat posisi…</p>;
 
   const days = PERIOD_DAYS[period];
-  const since = days == null ? 0 : now() - days * 86_400_000;
+  const since = days == null ? 0 : midnightWib(days);
   const all = positions.filter((p) => (p.closed_at ?? 0) >= since);
   const shown = all
     .filter((p) => (query.trim() ? p.name.toLowerCase().includes(query.trim().toLowerCase()) : true))
@@ -361,9 +379,9 @@ export function ClosedPositions({ wallet }: { wallet: string }) {
           label="Hasil bersih"
           value={netAll == null ? "…" : signed(netAll)}
           cls={netAll == null ? "text-ink-3" : tone(netAll)}
-          hint={days == null ? "Semua posisi yang sudah dimuat, setelah swap dan biaya" : `Ditutup dalam ${PERIOD_LABEL[period].toLowerCase()} terakhir, setelah swap dan biaya`}
+          hint={days == null ? "Semua posisi yang sudah dimuat, setelah swap dan biaya" : `Ditutup ${PERIOD_HINT[period]}, setelah swap dan biaya`}
         />
-        <Stat label="Modal masuk" value={usd.format(deposits)} hint={`${all.length} posisi · ${PERIOD_LABEL[period].toLowerCase()}`} />
+        <Stat label="Modal masuk" value={usd.format(deposits)} hint={`${all.length} posisi · ${PERIOD_HINT[period]}`} />
         <Stat label="Fee terkumpul" value={usd.format(fees)} cls="text-emerald-300" hint="Fee yang dipungut posisi-posisi itu" />
         <Stat
           label="Posisi untung"
@@ -374,7 +392,7 @@ export function ClosedPositions({ wallet }: { wallet: string }) {
 
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-line bg-[#0e1217]/[0.97] px-3 py-2.5">
         <h2 className="text-sm font-semibold text-ink">
-          Posisi ditutup · {days == null ? "sejak awal" : `${PERIOD_LABEL[period].toLowerCase()} terakhir`}
+          Posisi ditutup · {PERIOD_HINT[period]}
           {shown.length !== all.length ? ` · ${shown.length} dari ${all.length}` : ""}
           {partial && <span className="ml-1 font-normal text-ink-3">(memuat bertahap)</span>}
         </h2>
