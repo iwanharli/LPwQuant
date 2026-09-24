@@ -90,7 +90,7 @@ type Costs = { positions: Record<string, PositionCost>; costs_known_txs: number;
 
 function Tile({ label, value, hint, cls }: { label: string; value: string; hint?: string; cls?: string }) {
   return (
-    <div className="rounded-xl border border-white/[0.07] bg-white/[0.045] px-3.5 py-3 transition-colors hover:border-white/[0.12] hover:bg-white/[0.06]">
+    <div className="rounded-xl border border-white/[0.07] bg-[#1b222c] px-3.5 py-3 transition-colors hover:border-white/[0.14] hover:bg-[#222a36]">
       <div className="text-[10px] font-medium uppercase tracking-[0.08em] text-ink-3">{label}</div>
       <div className={`mt-1.5 text-[19px] font-semibold leading-none tabular-nums ${cls ?? "text-ink"}`}>{value}</div>
       {hint && <div className="mt-1.5 text-[11px] leading-4 text-ink-3">{hint}</div>}
@@ -106,11 +106,11 @@ function RangeBar({ min, max, last, positive }: { min: number; max: number; last
   const px = (v: number) => fmtNum(v, v < 1 ? 8 : 4);
   return (
     <div className="mt-4">
-      <div className="relative h-2.5 rounded-full bg-white/[0.07] ring-1 ring-inset ring-white/[0.06]">
+      <div className="relative h-2.5 rounded-full bg-[#232b36] ring-1 ring-inset ring-white/[0.06]">
         {at != null && (
           <>
             <span
-              className={`absolute inset-y-0 left-0 rounded-full ${positive ? "bg-gradient-to-r from-emerald-400/25 to-emerald-400/60" : "bg-gradient-to-r from-rose-400/25 to-rose-400/55"}`}
+              className={`absolute inset-y-0 left-0 rounded-full ${positive ? "bg-gradient-to-r from-emerald-500/40 to-emerald-400" : "bg-gradient-to-r from-rose-500/40 to-rose-400"}`}
               style={{ width: `${at * 100}%` }}
             />
             <span
@@ -147,12 +147,12 @@ function PositionCard({ p, pool, cost }: { p: ClosedPosition; pool?: string; cos
   const positive = (net ?? 0) >= 0;
   return (
     <div
-      className={`relative overflow-hidden rounded-2xl border bg-gradient-to-br p-4 shadow-[0_18px_44px_rgba(0,0,0,0.35)] sm:p-5 ${
+      className={`relative overflow-hidden rounded-2xl border p-4 shadow-[0_18px_44px_rgba(0,0,0,0.35)] sm:p-5 ${
         net == null
-          ? "border-white/[0.08] from-white/[0.05] to-white/[0.015]"
+          ? "border-white/[0.08] bg-[#151b24]"
           : positive
-            ? "border-emerald-400/25 from-emerald-400/[0.10] via-white/[0.03] to-white/[0.015]"
-            : "border-rose-400/25 from-rose-400/[0.09] via-white/[0.03] to-white/[0.015]"
+            ? "border-emerald-400/25 bg-[#122019]"
+            : "border-rose-400/25 bg-[#1f1419]"
       }`}
     >
       <span
@@ -180,7 +180,7 @@ function PositionCard({ p, pool, cost }: { p: ClosedPosition; pool?: string; cos
         </div>
         <div className="flex flex-wrap items-center justify-end gap-2">
           {exit && <span className={`rounded-full border px-2.5 py-1 text-[11px] font-medium ${exit.chip}`}>{exit.label}</span>}
-          <span className="rounded-full border border-line bg-black/20 px-2.5 py-1 text-[11px] tabular-nums text-ink-3">
+          <span className="rounded-full border border-line bg-[#11161d] px-2.5 py-1 text-[11px] tabular-nums text-ink-3">
             {p.opened_at ? fmtDateTime(p.opened_at) : "–"} → {p.closed_at ? fmtDateTime(p.closed_at) : "–"}
           </span>
         </div>
