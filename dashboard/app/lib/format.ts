@@ -1,6 +1,8 @@
-export const ENGINE_URL = process.env.NEXT_PUBLIC_ENGINE_URL ?? "http://127.0.0.1:8000";
+// Same-origin proxies (app/api/engine, app/api/tx): the engine and the transaction builder stay on localhost and
+// every call carries the login session. NEXT_PUBLIC_* still overrides them for a direct-to-engine setup.
+export const ENGINE_URL = process.env.NEXT_PUBLIC_ENGINE_URL ?? "/api/engine";
 /** Builds unsigned claim-fee transactions (ingestor/src/claim-server.ts); never signs anything. */
-export const CLAIM_URL = process.env.NEXT_PUBLIC_CLAIM_URL ?? "http://127.0.0.1:8010";
+export const CLAIM_URL = process.env.NEXT_PUBLIC_CLAIM_URL ?? "/api/tx";
 export const TIMEZONE = "Asia/Jakarta"; // GMT+7
 
 export const usdCompact = new Intl.NumberFormat("en-US", {

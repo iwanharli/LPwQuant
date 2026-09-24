@@ -431,3 +431,29 @@ create table if not exists auto_close (
   created_at   timestamptz not null default now(),
   updated_at   timestamptz not null default now()
 );
+
+-- Passkey login for the dashboard (WebAuthn): the credential's public key only, never a password or a private key.
+create table if not exists auth_credentials (
+  id            text primary key,          -- credential id, base64url
+  label         text not null,             -- what the user called this device
+  public_key    bytea not null,
+  counter       bigint not null default 0,
+  transports    text[],
+  backed_up     boolean not null default false,
+  created_at    timestamptz not null default now(),
+  last_used_at  timestamptz
+);
+-- Short-lived WebAuthn challenges, and the browser sessions a successful login creates.
+create table if not exists auth_challenges (
+  challenge  text primary key,
+  kind       text not null,                -- register | login
+  expires_at timestamptz not null
+);
+create table if not exists auth_sessions (
+  token_hash text primary key,             -- sha256 of the cookie value; the cookie itself is never stored
+  credential text,
+  created_at timestamptz not null default now(),
+  expires_at timestamptz not null,
+  user_agent text
+);
+create index if not exists auth_sessions_expires on auth_sessions (expires_at);
