@@ -61,8 +61,18 @@ async def sync_positions(db, wallet: str) -> None:
         )
         if r["last"]
     }
+    # Pools whose indexed positions are still missing their price range (added later than the rest of the index)
+    # are fetched again even when nothing has closed since.
+    incomplete = {
+        r["pool"]
+        for r in await db.fetch(
+            """select distinct pool from portfolio_positions_index
+               where wallet = $1 and status = 'closed' and min_price is null""",
+            wallet,
+        )
+    }
     for p in closed_pools:
-        if p.get("closed_at") and known.get(p["address"], 0) >= p["closed_at"]:
+        if p.get("closed_at") and known.get(p["address"], 0) >= p["closed_at"] and p["address"] not in incomplete:
             continue
         for q in await portfolio.closed_positions(db, wallet, p["address"]):
             positions.append((q["address"], p["address"], p.get("mint_x"), p.get("mint_y"), p.get("token_x"), p.get("token_y"),
