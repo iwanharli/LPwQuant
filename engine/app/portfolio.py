@@ -640,6 +640,43 @@ async def closed_pools(db, wallet: str, fresh: bool = False) -> list[dict[str, A
         await _record_usage(db, 1, 0)
 
 
+async def range_behaviour(db, pool: str, positions: list[dict[str, Any]]) -> None:
+    """Fill in how each position actually behaved inside its range, from the 30m candles this app stores.
+
+    Meteora reports the result but not the story: a position can be green because it was closed early, or red
+    because the price walked out the bottom hours before it was closed. `in_range_pct` says how much of its life
+    the price was inside the range (fees only accrue there), and `exit_side` says where the price sat at the end.
+    Candles are kept for about a week, so older positions simply get None.
+    """
+    if db is None or not positions:
+        return
+    spans = [(p["opened_at"], p["closed_at"]) for p in positions if p.get("opened_at") and p.get("closed_at")]
+    if not spans:
+        return
+    rows = await db.fetch(
+        """select (extract(epoch from ts) * 1000)::bigint as ts, close
+           from candles where address = $1 and timeframe = '30m'
+             and ts between to_timestamp($2 / 1000.0) and to_timestamp($3 / 1000.0)
+           order by ts""",
+        pool, min(a for a, _ in spans), max(b for _, b in spans),
+    )
+    candles = [(r["ts"], float(r["close"])) for r in rows]
+    for p in positions:
+        opened, closed = p.get("opened_at"), p.get("closed_at")
+        lo, hi = p.get("min_price") or 0.0, p.get("max_price") or 0.0
+        window = [c for ts, c in candles if opened and closed and opened <= ts <= closed] if lo and hi else []
+        if not window:
+            p["in_range_pct"] = None
+            p["exit_side"] = None
+            p["last_price"] = None
+            continue
+        inside = sum(1 for c in window if lo <= c <= hi)
+        last = window[-1]
+        p["in_range_pct"] = inside / len(window) * 100
+        p["last_price"] = last
+        p["exit_side"] = "below" if last < lo else "above" if last > hi else "inside"
+
+
 async def closed_positions(db, wallet: str, pool: str) -> list[dict[str, Any]]:
     try:
         return await asyncio.to_thread(_cached, f"cpp:{wallet}:{pool}", False, lambda: _closed_positions(wallet, pool))

@@ -184,7 +184,9 @@ async def get_closed(wallet: str, pool: str | None = None, fresh: bool = False) 
     _wallet_or_400(wallet)
     try:
         if pool:
-            return {"positions": await portfolio.closed_positions(engine.db, wallet, pool)}
+            positions = await portfolio.closed_positions(engine.db, wallet, pool)
+            await portfolio.range_behaviour(engine.db, pool, positions)
+            return {"positions": positions}
         return {"pools": await portfolio.closed_pools(engine.db, wallet, fresh)}
     except Exception as err:
         raise HTTPException(status_code=502, detail=f"Meteora API gagal: {err}") from err

@@ -88,3 +88,20 @@ def test_entry_refuses_an_old_break_that_has_fallen_from_the_high():
     faded = candles([100 - i for i in range(25)] + [75 + 2 * i for i in range(40)] + [154 - 1.5 * i for i in range(6)])
     ok, why = entry_signal(faded)
     assert not ok and ("puncak" in why or "candle lalu" in why)
+
+
+def test_range_behaviour_reads_time_in_range_and_where_it_ended():
+    import asyncio
+
+    from app import portfolio
+
+    class FakeDb:
+        async def fetch(self, *_args):
+            # closes: inside, inside, below the range
+            return [{"ts": 1000, "close": 10.0}, {"ts": 2000, "close": 11.0}, {"ts": 3000, "close": 4.0}]
+
+    positions = [{"opened_at": 1000, "closed_at": 3000, "min_price": 9.0, "max_price": 12.0}]
+    asyncio.run(portfolio.range_behaviour(FakeDb(), "pool", positions))
+    assert positions[0]["in_range_pct"] == 2 / 3 * 100
+    assert positions[0]["exit_side"] == "below"
+    assert positions[0]["last_price"] == 4.0

@@ -29,6 +29,10 @@ type ClosedPosition = {
   fees_usd: number;
   pnl_usd: number;
   pnl_pct: number;
+  /** From the app's own 30m candles, null for positions older than the ~1 week they are kept. */
+  in_range_pct: number | null;
+  exit_side: "below" | "above" | "inside" | null;
+  last_price: number | null;
 };
 type ClosedOrder = {
   address: string;
@@ -119,6 +123,8 @@ function PoolPositions({ wallet, pool, costs }: { wallet: string; pool: string; 
           <tr>
             <th className="py-1.5 text-left font-medium">Dibuka → ditutup</th>
             <th className="py-1.5 text-left font-medium">Lama</th>
+            <th className="py-1.5 text-left font-medium" title="Bagian dari umur posisi saat harga ada di dalam range; hanya saat itu fee mengalir">Di range</th>
+            <th className="py-1.5 text-left font-medium" title="Di mana harga berada saat posisi ditutup, dibanding range-nya">Akhir</th>
             <th className="py-1.5 text-left font-medium">Range harga</th>
             <th className="py-1.5 text-right font-medium">Modal</th>
             <th className="py-1.5 text-right font-medium">Fee</th>
@@ -134,6 +140,26 @@ function PoolPositions({ wallet, pool, costs }: { wallet: string; pool: string; 
                 {p.opened_at ? fmtDateTime(p.opened_at) : "–"} → {p.closed_at ? fmtDateTime(p.closed_at) : "–"}
               </td>
               <td className="py-1.5 text-ink-3">{duration(p.opened_at, p.closed_at)}</td>
+              <td className="py-1.5">
+                {p.in_range_pct == null ? (
+                  <span className="text-ink-3/60" title="Candle untuk periode ini sudah tidak disimpan">–</span>
+                ) : (
+                  <span className={p.in_range_pct >= 70 ? "text-emerald-300/90" : p.in_range_pct >= 30 ? "text-amber-300/90" : "text-rose-300/90"}>
+                    {fmtNum(p.in_range_pct, 0)}%
+                  </span>
+                )}
+              </td>
+              <td className="py-1.5 text-[11px]">
+                {p.exit_side == null ? (
+                  <span className="text-ink-3/60">–</span>
+                ) : p.exit_side === "below" ? (
+                  <span className="text-rose-300/90" title="Harga jatuh keluar range: posisi berakhir memegang token">jatuh keluar</span>
+                ) : p.exit_side === "above" ? (
+                  <span className="text-emerald-300/90" title="Harga naik keluar range: posisi berakhir memegang SOL/USDC">naik keluar</span>
+                ) : (
+                  <span className="text-ink-2" title="Harga masih di dalam range saat ditutup">masih di range</span>
+                )}
+              </td>
               <td className="py-1.5 text-ink-3">
                 {fmtNum(p.min_price, p.min_price < 1 ? 8 : 4)} – {fmtNum(p.max_price, p.max_price < 1 ? 8 : 4)}
                 <span className="ml-1.5 text-ink-3/70">±{fmtNum(p.min_price > 0 ? ((p.max_price / p.min_price - 1) * 100) / 2 : 0, 0)}%</span>
