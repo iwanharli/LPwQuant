@@ -29,7 +29,6 @@ type Run = {
 };
 type Report = {
   params: {
-    size_sol: number;
     max_open: number;
     range_low_pct: number;
     size_usd: number;
@@ -95,7 +94,7 @@ function Rules({ p, approximations }: { p: Report["params"]; approximations: str
     },
     {
       title: "Posisi",
-      body: `${p.size_sol} SOL, hanya sisi SOL/USDC, tersebar rata dari harga sampai ${p.range_low_pct}% di bawahnya pada ${p.bins} bin. Maksimal ${p.max_open} posisi sekaligus.`,
+      body: `${usd.format(p.size_usd)}, hanya sisi SOL/USDC, tersebar rata dari harga sampai ${p.range_low_pct}% di bawahnya pada ${p.bins} bin. Maksimal ${p.max_open} posisi sekaligus.`,
     },
     {
       title: "Exit",
