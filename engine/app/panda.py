@@ -5,7 +5,7 @@ Nothing is sent on chain. Every TICK_S the engine:
   * screens live pools against the strategy's own gates (market cap, volume, holders, concentration, insiders,
     bundling, fee/TVL, organic volume, security),
   * waits for the entry trigger on 15-minute candles -- price above Supertrend, having just flipped up, near the
-    recent high -- and then opens a paper position of SIZE_SOL, quote only (SOL/USDC), spread evenly from the price
+    recent high -- and then opens a paper position of SIZE_USD, quote only (SOL/USDC), spread evenly from the price
     down to RANGE_LOW_PCT across BINS bins,
   * follows it: as the price falls through the bins the quote converts to the token at each bin's price, and the
     position earns its share of the fees the pool actually collected,
@@ -30,7 +30,7 @@ from .scoring import RISKY_FLAGS
 log = logging.getLogger("panda")
 
 TICK_S = 300
-SIZE_SOL = 10.0  # the corpus' own minimum position size; smaller ones lose to the open-bin rent
+SIZE_USD = 100.0  # what the user is willing to risk per position while this is only a test
 MAX_OPEN = 6  # "diversifikasi ke >= 6 posisi"
 RANGE_LOW_PCT = -90.0  # the -86%..-94% band, at its middle
 BINS = 100
@@ -308,7 +308,7 @@ class PandaPaper:
                      entry_price, range_low_pct, bins, last_cum_fees, last_price, last_tvl, min_ratio, checked_at)
                    values ($1,$2,$3,$4,$5,'open',$6,$7,$8,$9,$10,$11,$8,$12,1,$5)""",
                 row["address"], row.get("name") or "?", row.get("base_mint") or "", (row.get("name") or "-").rsplit("-", 1)[-1],
-                now, SIZE_SOL * sol, sol, price, RANGE_LOW_PCT, BINS,
+                now, SIZE_USD, sol, price, RANGE_LOW_PCT, BINS,
                 await self._pool_cum_fees(row["address"]), _f(row.get("tvl")) or 0.0,
             )
             open_mints.add(row.get("base_mint") or "")
@@ -353,7 +353,7 @@ async def report(db, rows: dict[str, dict[str, Any]] | None = None) -> dict[str,
         })
     return {
         "params": {
-            "size_sol": SIZE_SOL, "max_open": MAX_OPEN, "range_low_pct": RANGE_LOW_PCT, "bins": BINS,
+            "size_usd": SIZE_USD, "max_open": MAX_OPEN, "range_low_pct": RANGE_LOW_PCT, "bins": BINS,
             "position_rent_sol": POSITION_RENT_SOL, "new_bin_array_sol": NEW_BIN_ARRAY_SOL,
             "max_hold_h": MAX_HOLD_H, "min_market_cap": MIN_MARKET_CAP,
             "min_volume_24h": MIN_VOLUME_24H, "min_fee_tvl_24h": MIN_FEE_TVL_24H, "min_holders": MIN_HOLDERS,
