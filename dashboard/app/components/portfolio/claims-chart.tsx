@@ -105,7 +105,7 @@ export default function ClaimsChart({ wallet }: { wallet: string }) {
       </div>
 
       <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-4">
-        <div className="text-[11px] uppercase tracking-wider text-ink-3">{hover != null ? dayLabel(sel.day) : "Hari terakhir"}</div>
+        <div className="text-[11px] font-medium uppercase tracking-[0.08em] text-ink-3">{hover != null ? dayLabel(sel.day) : "Hari terakhir"}</div>
         <div className="mt-1 text-2xl font-semibold tabular-nums tracking-tight text-emerald-300">+{usd.format(sel.total)}</div>
         <div className="text-xs text-ink-3">
           {sel.claims} transaksi claim · {usd.format(sel.stable)} dalam SOL/USDC

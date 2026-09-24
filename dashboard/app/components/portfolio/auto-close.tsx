@@ -85,7 +85,7 @@ export default function AutoCloseToggle({ owner, pool, position }: { owner: stri
         disabled={busy}
         onChange={(e) => void save(on, Number(e.target.value))}
         aria-label="Target hasil bersih"
-        className="rounded-md border border-line bg-bg/70 px-1.5 py-0.5 text-ink"
+        className="rounded-md border border-line bg-white/[0.03] px-1.5 py-0.5 text-ink"
       >
         {TARGETS.map((t) => (
           <option key={t} value={t}>

@@ -179,7 +179,7 @@ export default function OrdersPage() {
               <button
                 type="button"
                 onClick={reload}
-                className="inline-flex h-9 items-center rounded-lg border border-line bg-panel px-3 text-sm font-medium text-ink-2 hover:border-line-strong hover:text-ink"
+                className="inline-flex h-9 items-center rounded-lg border border-white/[0.06] bg-panel px-3 text-sm font-medium text-ink-2 hover:border-line-strong hover:text-ink"
               >
                 Refresh
               </button>
@@ -191,7 +191,7 @@ export default function OrdersPage() {
         <PortfolioTabs />
 
         {!connected ? (
-          <div className="grid place-items-center rounded-2xl border border-line bg-panel px-6 py-16 text-center">
+          <div className="grid place-items-center rounded-2xl border border-white/[0.06] bg-panel px-6 py-16 text-center">
             <div className="text-lg font-semibold text-ink">Hubungkan wallet untuk melihat limit order</div>
             <div className="mt-5">
               <WalletButton />
@@ -254,7 +254,7 @@ export default function OrdersPage() {
                   hint: "Termasuk bonus fee, belum ditarik",
                 },
               ].map((t) => (
-                <div key={t.label} className="rounded-2xl border border-line bg-panel px-4 py-3.5 backdrop-blur-sm">
+                <div key={t.label} className="rounded-2xl border border-white/[0.06] bg-panel px-4 py-3.5 backdrop-blur-sm">
                   <div className="text-xs font-medium text-ink-3">{t.label}</div>
                   <div className="mt-2 text-2xl font-semibold tabular-nums text-ink">{t.value}</div>
                   <div className="mt-1 text-xs text-ink-3">{t.hint}</div>
@@ -262,8 +262,8 @@ export default function OrdersPage() {
               ))}
             </div>
 
-            <section className="overflow-hidden rounded-2xl border border-line bg-panel backdrop-blur-sm">
-              <div className="border-b border-line bg-raised/20 px-4 py-3">
+            <section className="overflow-hidden rounded-2xl border border-white/[0.06] bg-panel backdrop-blur-sm">
+              <div className="border-b border-line bg-white/[0.02] px-4 py-3">
                 <h2 className="text-sm font-semibold text-ink">Limit order terbuka</h2>
               </div>
               {!data ? (
@@ -352,7 +352,7 @@ export default function OrdersPage() {
               role="dialog"
               aria-modal="true"
               onClick={(e) => e.stopPropagation()}
-              className="w-full max-w-md overflow-hidden rounded-2xl border border-line bg-panel shadow-[0_24px_64px_rgba(0,0,0,0.6)]"
+              className="w-full max-w-md overflow-hidden rounded-2xl border border-white/[0.06] bg-panel shadow-[0_24px_64px_rgba(0,0,0,0.6)]"
             >
               <div className="border-b border-line px-5 py-4">
                 <h2 className="text-base font-semibold text-ink">{cancel.o.filled_pct >= 99.9 ? "Tarik hasil order" : "Batalkan limit order"}</h2>

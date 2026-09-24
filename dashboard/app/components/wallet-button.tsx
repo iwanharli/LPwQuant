@@ -93,7 +93,7 @@ export default function WalletButton() {
       </button>
 
       {open && (
-        <div className="absolute right-0 top-11 z-40 w-[min(20rem,calc(100vw-2rem))] overflow-hidden rounded-xl border border-line bg-panel shadow-[0_18px_48px_rgba(0,0,0,0.45)]">
+        <div className="absolute right-0 top-11 z-40 w-[min(20rem,calc(100vw-2rem))] overflow-hidden rounded-xl border border-white/[0.06] bg-panel shadow-[0_18px_48px_rgba(0,0,0,0.45)]">
           {connected ? (
             <div className="p-3">
               <div className="text-xs text-ink-3">{connected.wallet ? `Terhubung lewat ${connected.wallet}` : "Dipantau (tanpa extension)"}</div>
@@ -156,7 +156,7 @@ export default function WalletButton() {
                     onChange={(e) => setTyped(e.target.value)}
                     onKeyDown={(e) => e.key === "Enter" && watch()}
                     placeholder="Alamat wallet Solana"
-                    className="min-w-0 flex-1 rounded-lg border border-line bg-bg/50 px-2.5 py-1.5 font-mono text-xs text-ink placeholder:font-sans placeholder:text-ink-3 focus:border-accent/50 focus:outline-none"
+                    className="min-w-0 flex-1 rounded-lg border border-line bg-white/[0.03] px-2.5 py-1.5 font-mono text-xs text-ink placeholder:font-sans placeholder:text-ink-3 focus:border-accent/50 focus:outline-none"
                   />
                   <button
                     type="button"

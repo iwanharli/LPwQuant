@@ -409,7 +409,7 @@ function InsiderSection({ row }: { row: PoolRow }) {
       {tagEntries.length > 0 ? (
         <div className="mt-3 overflow-hidden rounded-lg border border-line">
           <table className="w-full text-sm">
-            <thead className="bg-bg/60 text-[11px] uppercase tracking-wider text-ink-3">
+            <thead className="bg-bg/60 text-[11px] font-medium uppercase tracking-[0.08em] text-ink-3">
               <tr>
                 <th className="px-3 py-2 text-left font-medium">Jenis wallet</th>
                 <th className="px-3 py-2 text-right font-medium">Wallet</th>

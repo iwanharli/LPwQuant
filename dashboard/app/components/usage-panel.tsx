@@ -38,7 +38,7 @@ const KIND_ORDER: UsageItem["kind"][] = ["http", "http_error", "ws_subscribe", "
 
 function Tile({ label, value, hint }: { label: ReactNode; value: ReactNode; hint: ReactNode }) {
   return (
-    <div className="relative min-w-0 overflow-hidden rounded-2xl border border-line bg-panel/90 px-4 py-3.5 shadow-[0_12px_32px_rgba(0,0,0,0.18),inset_0_1px_0_rgba(255,255,255,0.04)]">
+    <div className="relative min-w-0 overflow-hidden rounded-2xl border border-white/[0.06] bg-panel px-4 py-3.5 shadow-[0_12px_32px_rgba(0,0,0,0.18),inset_0_1px_0_rgba(255,255,255,0.04)]">
       <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/14 to-transparent" />
       <div className="flex min-w-0 items-center gap-2 truncate text-xs font-medium text-ink-3">{label}</div>
       <div className="mt-2 text-2xl font-semibold tracking-tight tabular-nums text-ink">{value}</div>
@@ -142,8 +142,8 @@ export default function UsagePanel({ onItems }: { onItems?: (items: UsageItem[])
         />
       </div>
 
-      <section className="overflow-hidden rounded-2xl border border-line bg-panel/90 shadow-[0_14px_42px_rgba(0,0,0,0.20),inset_0_1px_0_rgba(255,255,255,0.04)]">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line bg-raised/20 px-4 py-3">
+      <section className="overflow-hidden rounded-2xl border border-white/[0.06] bg-panel shadow-[0_14px_42px_rgba(0,0,0,0.20),inset_0_1px_0_rgba(255,255,255,0.04)]">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line bg-white/[0.02] px-4 py-3">
           <h2 className="text-sm font-semibold text-ink">Hitungan panggilan per sumber</h2>
           <span className="text-xs text-ink-3">
             Jumlah panggilan dan pesan, bukan kredit
@@ -158,7 +158,7 @@ export default function UsagePanel({ onItems }: { onItems?: (items: UsageItem[])
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[720px] text-sm tabular-nums">
-              <thead className="text-[11px] uppercase tracking-wider text-ink-3">
+              <thead className="text-[11px] font-medium uppercase tracking-[0.08em] text-ink-3">
                 <tr className="border-b border-line">
                   <th className="px-4 py-2.5 text-left font-medium">Provider</th>
                   <th className="px-3 py-2.5 text-left font-medium">Jenis</th>

@@ -191,7 +191,7 @@ export default function HistoryPage() {
         <PortfolioTabs />
 
         {!connected ? (
-          <div className="grid place-items-center rounded-2xl border border-line bg-panel px-6 py-16 text-center">
+          <div className="grid place-items-center rounded-2xl border border-white/[0.06] bg-panel px-6 py-16 text-center">
             <div className="text-lg font-semibold text-ink">Hubungkan wallet untuk melihat riwayat</div>
             <div className="mt-5">
               <WalletButton />
@@ -199,8 +199,8 @@ export default function HistoryPage() {
           </div>
         ) : (
           <>
-            <section className="overflow-hidden rounded-2xl border border-line bg-panel backdrop-blur-sm">
-              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line bg-raised/20 px-4 py-3">
+            <section className="overflow-hidden rounded-2xl border border-white/[0.06] bg-panel backdrop-blur-sm">
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line bg-white/[0.02] px-4 py-3">
                 <h2 className="text-sm font-semibold text-ink">Kekayaan total</h2>
                 {last && (
                   <span className="flex flex-wrap items-center gap-4 text-xs tabular-nums">
@@ -232,8 +232,8 @@ export default function HistoryPage() {
               </div>
             </section>
 
-            <section className="overflow-hidden rounded-2xl border border-line bg-panel backdrop-blur-sm">
-              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line bg-raised/20 px-4 py-3">
+            <section className="overflow-hidden rounded-2xl border border-white/[0.06] bg-panel backdrop-blur-sm">
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line bg-white/[0.02] px-4 py-3">
                 <h2 className="text-sm font-semibold text-ink">Fee di-claim per hari</h2>
                 <span className="text-xs text-ink-3">Dari riwayat transaksi · fee yang ikut keluar saat posisi ditutup tidak termasuk</span>
               </div>
@@ -242,8 +242,8 @@ export default function HistoryPage() {
               </div>
             </section>
 
-            <section className="overflow-hidden rounded-2xl border border-line bg-panel backdrop-blur-sm">
-              <div className="flex flex-wrap items-center gap-2 border-b border-line bg-raised/20 px-4 py-3">
+            <section className="overflow-hidden rounded-2xl border border-white/[0.06] bg-panel backdrop-blur-sm">
+              <div className="flex flex-wrap items-center gap-2 border-b border-line bg-white/[0.02] px-4 py-3">
                 <h2 className="mr-2 text-sm font-semibold text-ink">Aktivitas</h2>
                 {FILTERS.map((k) => (
                   <button

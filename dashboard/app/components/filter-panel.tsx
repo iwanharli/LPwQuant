@@ -150,7 +150,7 @@ export default function FilterPanel({ open, onClose, filters, onChange, shown, t
                   }
                 }}
                 placeholder="Nama preset"
-                className="h-10 w-full rounded-lg border border-line bg-bg/70 px-3 text-sm text-ink placeholder:text-ink-3 outline-none transition-colors focus:border-accent/70"
+                className="h-10 w-full rounded-lg border border-line bg-white/[0.03] px-3 text-sm text-ink placeholder:text-ink-3 outline-none transition-colors focus:border-accent/70"
               />
               <button
                 type="button"
@@ -183,7 +183,7 @@ export default function FilterPanel({ open, onClose, filters, onChange, shown, t
                       value={r.min ?? ""}
                       onChange={(e) => setRange(f.key, "min", e.target.value)}
                       placeholder="Min"
-                      className="h-10 w-full rounded-lg border border-line bg-bg/70 px-3 text-sm text-ink placeholder:text-ink-3 outline-none transition-colors focus:border-accent/70"
+                      className="h-10 w-full rounded-lg border border-line bg-white/[0.03] px-3 text-sm text-ink placeholder:text-ink-3 outline-none transition-colors focus:border-accent/70"
                     />
                     <span className="text-ink-3">–</span>
                     <input
@@ -191,7 +191,7 @@ export default function FilterPanel({ open, onClose, filters, onChange, shown, t
                       value={r.max ?? ""}
                       onChange={(e) => setRange(f.key, "max", e.target.value)}
                       placeholder="Maks"
-                      className="h-10 w-full rounded-lg border border-line bg-bg/70 px-3 text-sm text-ink placeholder:text-ink-3 outline-none transition-colors focus:border-accent/70"
+                      className="h-10 w-full rounded-lg border border-line bg-white/[0.03] px-3 text-sm text-ink placeholder:text-ink-3 outline-none transition-colors focus:border-accent/70"
                     />
                   </span>
                 </label>

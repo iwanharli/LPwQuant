@@ -57,8 +57,8 @@ function useLedger(wallet: string | undefined) {
 
 function Card({ title, right, children }: { title: string; right?: ReactNode; children: ReactNode }) {
   return (
-    <section className="overflow-hidden rounded-2xl border border-line bg-panel backdrop-blur-sm">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line bg-raised/20 px-4 py-3">
+    <section className="overflow-hidden rounded-2xl border border-white/[0.06] bg-panel backdrop-blur-sm">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line bg-white/[0.02] px-4 py-3">
         <h2 className="text-sm font-semibold text-ink">{title}</h2>
         {right}
       </div>
@@ -173,7 +173,7 @@ function Days({ days }: { days: Day[] }) {
   return (
     <div className="overflow-x-auto">
       <table className="w-full min-w-[640px] text-sm tabular-nums">
-        <thead className="text-[11px] uppercase tracking-wider text-ink-3">
+        <thead className="text-[11px] font-medium uppercase tracking-[0.08em] text-ink-3">
           <tr className="border-b border-line">
             <th className="px-4 py-2.5 text-left font-medium">Hari</th>
             <th className="px-3 py-2.5 text-right font-medium">LP</th>
@@ -225,12 +225,12 @@ export default function SummaryPage() {
         <PortfolioTabs />
 
         {!connected ? (
-          <div className="grid place-items-center rounded-2xl border border-line bg-panel px-6 py-16 text-center">
+          <div className="grid place-items-center rounded-2xl border border-white/[0.06] bg-panel px-6 py-16 text-center">
             <div className="text-lg font-semibold text-ink">Hubungkan wallet untuk melihat ringkasan</div>
             <div className="mt-5"><WalletButton /></div>
           </div>
         ) : !l ? (
-          <p className="rounded-2xl border border-line bg-panel px-4 py-10 text-sm text-ink-3">{error ?? "Menghitung…"}</p>
+          <p className="rounded-2xl border border-white/[0.06] bg-panel px-4 py-10 text-sm text-ink-3">{error ?? "Menghitung…"}</p>
         ) : (
           <>
             {/* The one number that matters, in rupiah first: what went in, what is left. */}

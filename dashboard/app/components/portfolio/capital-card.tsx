@@ -255,7 +255,7 @@ function CapitalDialog({
       aria-modal="true"
       aria-label="Modal"
       onClick={(e) => e.stopPropagation()}
-      className="flex max-h-[88vh] w-full max-w-xl flex-col overflow-hidden rounded-2xl border border-line bg-panel shadow-[0_24px_64px_rgba(0,0,0,0.6)]"
+      className="flex max-h-[88vh] w-full max-w-xl flex-col overflow-hidden rounded-2xl border border-white/[0.06] bg-panel shadow-[0_24px_64px_rgba(0,0,0,0.6)]"
     >
       <div className="flex flex-wrap items-start justify-between gap-4 border-b border-line px-5 py-4">
         <div>
@@ -347,7 +347,7 @@ export default function CapitalButtons({ wallet, capital, rate, onChange }: { wa
         <button
           type="button"
           onClick={() => setOpen({ mode: null })}
-          className="inline-flex h-9 items-center gap-2 rounded-xl border border-line bg-panel px-3.5 text-sm text-ink-2 transition-colors hover:border-line-strong hover:text-ink"
+          className="inline-flex h-9 items-center gap-2 rounded-xl border border-white/[0.06] bg-panel px-3.5 text-sm text-ink-2 transition-colors hover:border-line-strong hover:text-ink"
         >
           <span className="text-ink-3">Modal</span>
           <span className="font-semibold tabular-nums text-ink">{rpShort(capital.idr)}</span>

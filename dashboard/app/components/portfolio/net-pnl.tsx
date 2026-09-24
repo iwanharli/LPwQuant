@@ -78,23 +78,23 @@ function CoinRow({ c }: { c: Coin }) {
         </span>
         <span className="hidden text-right text-xs tabular-nums sm:block">
           <span className={`block ${tone(traded)}`}>{money(traded)}</span>
-          <span className="text-[10px] uppercase tracking-wider text-ink-3">swap</span>
+          <span className="text-[10px] font-medium uppercase tracking-[0.08em] text-ink-3">swap</span>
         </span>
         <span className="hidden text-right text-xs tabular-nums sm:block">
           <span className={`block ${tone(lp)}`}>{money(lp)}</span>
-          <span className="text-[10px] uppercase tracking-wider text-ink-3">LP + fee</span>
+          <span className="text-[10px] font-medium uppercase tracking-[0.08em] text-ink-3">LP + fee</span>
         </span>
         <span className="hidden text-right text-xs tabular-nums sm:block">
           <span className={`block ${c.positions.length ? tone(meteora) : "text-ink-3"}`}>{c.positions.length ? money(meteora) : "–"}</span>
-          <span className="text-[10px] uppercase tracking-wider text-ink-3">kata Meteora</span>
+          <span className="text-[10px] font-medium uppercase tracking-[0.08em] text-ink-3">kata Meteora</span>
         </span>
         <span className="hidden text-right text-xs tabular-nums sm:block" title="Biaya jaringan + fee swap Meteora. Sudah termasuk di angka bersih.">
           <span className="block text-amber-300/90">{usd.format(c.costs.total)}</span>
-          <span className="text-[10px] uppercase tracking-wider text-ink-3">biaya</span>
+          <span className="text-[10px] font-medium uppercase tracking-[0.08em] text-ink-3">biaya</span>
         </span>
         <span className="text-right tabular-nums">
           <span className={`block text-sm font-semibold ${tone(c.net)}`}>{money(c.net)}</span>
-          <span className="text-[10px] uppercase tracking-wider text-ink-3">bersih</span>
+          <span className="text-[10px] font-medium uppercase tracking-[0.08em] text-ink-3">bersih</span>
         </span>
         <svg viewBox="0 0 20 20" width={14} height={14} className={`text-ink-3 transition-transform ${open ? "rotate-90" : ""}`} aria-hidden>
           <path d="m7.5 5 5 5-5 5" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
@@ -134,7 +134,7 @@ function CoinRow({ c }: { c: Coin }) {
           {c.positions.length > 0 ? (
             <div className="overflow-x-auto">
               <table className="w-full min-w-[640px] text-xs tabular-nums">
-                <thead className="text-[10px] uppercase tracking-wider text-ink-3">
+                <thead className="text-[10px] font-medium uppercase tracking-[0.08em] text-ink-3">
                   <tr>
                     <th className="py-1.5 text-left font-medium">Posisi</th>
                     <th className="py-1.5 text-right font-medium">LP (Meteora)</th>
@@ -229,10 +229,10 @@ export default function NetPnl({ wallet }: { wallet: string }) {
     };
   }, [wallet, reloadKey]);
 
-  if (error) return <p className="rounded-2xl border border-line bg-panel px-4 py-8 text-sm text-ink-3">{error}</p>;
+  if (error) return <p className="rounded-2xl border border-white/[0.06] bg-panel px-4 py-8 text-sm text-ink-3">{error}</p>;
   if (!data)
     return (
-      <p className="rounded-2xl border border-line bg-panel px-4 py-8 text-sm text-ink-3">
+      <p className="rounded-2xl border border-white/[0.06] bg-panel px-4 py-8 text-sm text-ink-3">
         Menghitung ulang semua transaksi… (pertama kali bisa sampai 2 menit)
       </p>
     );
@@ -264,8 +264,8 @@ export default function NetPnl({ wallet }: { wallet: string }) {
   return (
     <div className="space-y-4">
       {/* The reconciliation first: the parts must add up to the total, or something is wrong and shows here. */}
-      <section className="overflow-hidden rounded-2xl border border-line bg-panel backdrop-blur-sm">
-        <div className="flex flex-wrap items-end justify-between gap-3 border-b border-line bg-raised/20 px-4 py-3">
+      <section className="overflow-hidden rounded-2xl border border-white/[0.06] bg-panel backdrop-blur-sm">
+        <div className="flex flex-wrap items-end justify-between gap-3 border-b border-line bg-white/[0.02] px-4 py-3">
           <div>
             <h2 className="text-sm font-semibold text-ink">Hasil bersih: dari mana saja</h2>
             <p className="mt-0.5 text-xs text-ink-3">Setiap transaksi dihitung sekali. Jumlah semua baris = total untung/rugi di tab Ringkasan.</p>
@@ -321,8 +321,8 @@ export default function NetPnl({ wallet }: { wallet: string }) {
         </p>
       </section>
 
-      <section className="overflow-hidden rounded-2xl border border-line bg-panel backdrop-blur-sm">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line bg-raised/20 px-4 py-3">
+      <section className="overflow-hidden rounded-2xl border border-white/[0.06] bg-panel backdrop-blur-sm">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line bg-white/[0.02] px-4 py-3">
           <h2 className="text-sm font-semibold text-ink">Per koin · {coins.length}</h2>
           <div className="flex flex-wrap gap-2">
             {([["all", "Semua"], ["lp", "Dengan LP"], ["swap", "Hanya swap"]] as const).map(([k, label]) => (
@@ -338,7 +338,7 @@ export default function NetPnl({ wallet }: { wallet: string }) {
               setSort(e.target.value as typeof sort);
               setLimit(PAGE);
             }} aria-label="Urutkan"
-              className="h-7 rounded-full border border-line bg-bg/50 px-3 text-xs text-ink-2 focus:outline-none">
+              className="h-7 rounded-full border border-line bg-white/[0.03] px-3 text-xs text-ink-2 focus:outline-none">
               <option value="recent">Terbaru</option>
               <option value="worst">Rugi terbesar dulu</option>
               <option value="best">Untung terbesar dulu</option>

@@ -137,7 +137,7 @@ function PlaceDialog({ rec, owner, side, onClose }: { rec: Rec; owner: string; s
   const built = state.phase === "review" ? state.built : null;
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/65 px-4 backdrop-blur-sm" onClick={onClose}>
-      <div role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()} className="w-full max-w-md overflow-hidden rounded-2xl border border-line bg-panel shadow-[0_24px_64px_rgba(0,0,0,0.6)]">
+      <div role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()} className="w-full max-w-md overflow-hidden rounded-2xl border border-white/[0.06] bg-panel shadow-[0_24px_64px_rgba(0,0,0,0.6)]">
         <div className="border-b border-line px-5 py-4">
           <h2 className="text-base font-semibold text-ink">
             {side === "buy" ? `Order beli ${base}` : `Order jual ${base}`} · {rec.name.replace("-", "/")}
@@ -283,7 +283,7 @@ function RecCard({ rec, onPlace, canSign }: { rec: Rec; onPlace: (side: "buy" | 
 function Param({ label, pct, price, cls, hint }: { label: string; pct: string; price: string; cls: string; hint: string }) {
   return (
     <div className="rounded-xl bg-white/[0.03] px-2 py-2" title={hint}>
-      <div className="text-[10px] uppercase tracking-wider text-ink-3">{label}</div>
+      <div className="text-[10px] font-medium uppercase tracking-[0.08em] text-ink-3">{label}</div>
       <div className={`text-sm font-semibold ${cls}`}>{pct}</div>
       <div className="truncate text-[10px] text-ink-3">{price}</div>
     </div>
@@ -295,8 +295,8 @@ export default function LimitRecs({ owner, canSign }: { owner: string | null; ca
   const recs = useRecs();
   const [placing, setPlacing] = useState<{ rec: Rec; side: "buy" | "sell" } | null>(null);
   return (
-    <section className="overflow-hidden rounded-2xl border border-line bg-panel backdrop-blur-sm">
-      <div className="border-b border-line bg-raised/20 px-4 py-3">
+    <section className="overflow-hidden rounded-2xl border border-white/[0.06] bg-panel backdrop-blur-sm">
+      <div className="border-b border-line bg-white/[0.02] px-4 py-3">
         <h2 className="text-sm font-semibold text-ink">Rekomendasi: beli rendah, jual tinggi</h2>
         <p className="mt-0.5 text-xs leading-5 text-ink-3">
           Pool aman, ramai, dan harganya bolak-balik. Jarak order = pergerakan rata-rata 30 menit pool itu (ATR). Diurutkan dari yang harganya paling sering

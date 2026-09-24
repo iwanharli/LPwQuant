@@ -144,7 +144,7 @@ export default function PoolTable({
                   scope="col"
                   title={c.title}
                   aria-sort={active ? (sortDesc ? "descending" : "ascending") : undefined}
-                  className={`sticky top-16 z-10 whitespace-nowrap border-b border-line bg-panel/95 px-2.5 py-3 text-[11px] font-semibold uppercase tracking-wider text-ink-3 backdrop-blur first:pl-4 last:pr-4 ${
+                  className={`sticky top-16 z-10 whitespace-nowrap border-b border-white/[0.06] bg-panel/95 px-2.5 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-3 backdrop-blur first:pl-4 last:pr-4 ${
                     c.align === "left" ? "text-left" : "text-right"
                   }`}
                 >

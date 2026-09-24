@@ -81,7 +81,7 @@ export default function Dashboard() {
         <KpiStrip rows={all} />
 
         {/* Collapsed by default: a reference for timing entries, not something to read on every visit. */}
-        <details className="group rounded-2xl border border-line bg-panel/90 shadow-[0_12px_32px_rgba(0,0,0,0.18)]">
+        <details className="group rounded-2xl border border-white/[0.06] bg-panel shadow-[0_12px_32px_rgba(0,0,0,0.18)]">
           <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-sm font-semibold text-ink [&::-webkit-details-marker]:hidden">
             <svg viewBox="0 0 20 20" width={14} height={14} className="text-ink-3 transition-transform group-open:rotate-90" aria-hidden>
               <path d="m7.5 5 5 5-5 5" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
@@ -94,7 +94,7 @@ export default function Dashboard() {
           </div>
         </details>
 
-        <section className="max-w-full overflow-x-clip rounded-2xl border border-line bg-panel/95 shadow-[0_18px_55px_rgba(0,0,0,0.24),inset_0_1px_0_rgba(255,255,255,0.04)]">
+        <section className="max-w-full overflow-x-clip rounded-2xl border border-white/[0.06] bg-panel shadow-[0_18px_55px_rgba(0,0,0,0.24),inset_0_1px_0_rgba(255,255,255,0.04)]">
           <Toolbar
             tierFilter={tierFilter}
             onTierFilter={setTierFilter}

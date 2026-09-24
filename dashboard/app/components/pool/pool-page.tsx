@@ -87,7 +87,7 @@ function cssColor(name: string, fallback: string) {
 function Stat({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="min-w-0">
-      <div className="text-[11px] uppercase tracking-wider text-ink-3">{label}</div>
+      <div className="text-[11px] font-medium uppercase tracking-[0.08em] text-ink-3">{label}</div>
       <div className="mt-0.5 truncate text-sm font-medium tabular-nums text-ink">{children}</div>
     </div>
   );
@@ -293,8 +293,8 @@ export default function PoolPage({ address }: { address: string }) {
         )}
 
         <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
-          <section className="min-w-0 overflow-hidden rounded-2xl border border-line bg-panel/90 shadow-[0_14px_42px_rgba(0,0,0,0.20),inset_0_1px_0_rgba(255,255,255,0.04)]">
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line bg-raised/20 px-4 py-3">
+          <section className="min-w-0 overflow-hidden rounded-2xl border border-white/[0.06] bg-panel shadow-[0_14px_42px_rgba(0,0,0,0.20),inset_0_1px_0_rgba(255,255,255,0.04)]">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line bg-white/[0.02] px-4 py-3">
               <div role="tablist" aria-label="Timeframe" className="flex rounded-lg border border-line bg-bg/80 p-1 shadow-inner shadow-black/20">
                 {TIMEFRAMES.map((t) => (
                   <button
@@ -390,7 +390,7 @@ export default function PoolPage({ address }: { address: string }) {
           </section>
 
           <aside className="space-y-5">
-            <section className="rounded-2xl border border-line bg-panel/90 p-4 shadow-[0_14px_42px_rgba(0,0,0,0.20),inset_0_1px_0_rgba(255,255,255,0.04)]">
+            <section className="rounded-2xl border border-white/[0.06] bg-panel p-4 shadow-[0_14px_42px_rgba(0,0,0,0.20),inset_0_1px_0_rgba(255,255,255,0.04)]">
               <div className="flex items-center justify-between gap-2">
                 <h2 className="text-sm font-semibold text-ink">Rekomendasi range</h2>
                 {pool?.regime && <RegimeBadge regime={pool.regime} />}
@@ -420,12 +420,12 @@ export default function PoolPage({ address }: { address: string }) {
               )}
             </section>
 
-            <section className="rounded-2xl border border-line bg-panel/90 p-4 shadow-[0_14px_42px_rgba(0,0,0,0.20),inset_0_1px_0_rgba(255,255,255,0.04)]">
+            <section className="rounded-2xl border border-white/[0.06] bg-panel p-4 shadow-[0_14px_42px_rgba(0,0,0,0.20),inset_0_1px_0_rgba(255,255,255,0.04)]">
               <h2 className="mb-2 text-sm font-semibold text-ink">Jam ramai (WIB)</h2>
               <BusyHours pool={address} />
             </section>
 
-            <section className="rounded-2xl border border-line bg-panel/90 p-4 shadow-[0_14px_42px_rgba(0,0,0,0.20),inset_0_1px_0_rgba(255,255,255,0.04)]">
+            <section className="rounded-2xl border border-white/[0.06] bg-panel p-4 shadow-[0_14px_42px_rgba(0,0,0,0.20),inset_0_1px_0_rgba(255,255,255,0.04)]">
               <h2 className="text-sm font-semibold text-ink">Keputusan per profil</h2>
               <p className="mt-0.5 text-xs text-ink-3">Slot posisi dan cooldown bisa menunda masuk yang diizinkan aturan.</p>
               <ul className="mt-1 divide-y divide-line">
@@ -437,8 +437,8 @@ export default function PoolPage({ address }: { address: string }) {
           </aside>
         </div>
 
-        <section className="overflow-hidden rounded-2xl border border-line bg-panel/90 shadow-[0_14px_42px_rgba(0,0,0,0.20),inset_0_1px_0_rgba(255,255,255,0.04)]">
-          <div className="flex items-center justify-between gap-3 border-b border-line bg-raised/20 px-4 py-3">
+        <section className="overflow-hidden rounded-2xl border border-white/[0.06] bg-panel shadow-[0_14px_42px_rgba(0,0,0,0.20),inset_0_1px_0_rgba(255,255,255,0.04)]">
+          <div className="flex items-center justify-between gap-3 border-b border-line bg-white/[0.02] px-4 py-3">
             <h2 className="text-sm font-semibold text-ink">Posisi paper di pool ini</h2>
             <span className="text-xs text-ink-3">Semua profil · ditandai panah di grafik</span>
           </div>
@@ -447,7 +447,7 @@ export default function PoolPage({ address }: { address: string }) {
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full min-w-[860px] text-sm tabular-nums">
-                <thead className="text-[11px] uppercase tracking-wider text-ink-3">
+                <thead className="text-[11px] font-medium uppercase tracking-[0.08em] text-ink-3">
                   <tr className="border-b border-line">
                     <th className="px-4 py-2.5 text-left font-medium">Profil</th>
                     <th className="px-3 py-2.5 text-left font-medium">Status</th>

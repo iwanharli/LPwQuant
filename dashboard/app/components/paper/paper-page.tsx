@@ -123,20 +123,20 @@ function Card({
     </>
   );
   return (
-    <section className="overflow-hidden rounded-2xl border border-line bg-panel/90 shadow-[0_14px_42px_rgba(0,0,0,0.20),inset_0_1px_0_rgba(255,255,255,0.04)]">
+    <section className="overflow-hidden rounded-2xl border border-white/[0.06] bg-panel shadow-[0_14px_42px_rgba(0,0,0,0.20),inset_0_1px_0_rgba(255,255,255,0.04)]">
       {collapsible ? (
         <button
           type="button"
           onClick={() => setOpen((o) => !o)}
           aria-expanded={open}
-          className={`flex w-full items-center justify-between gap-3 bg-raised/20 px-4 py-3 text-left transition-colors hover:bg-raised/40 ${
+          className={`flex w-full items-center justify-between gap-3 bg-white/[0.02] px-4 py-3 text-left transition-colors hover:bg-raised/40 ${
             open ? "border-b border-line" : ""
           }`}
         >
           {header}
         </button>
       ) : (
-        <div className="flex items-center justify-between gap-3 border-b border-line bg-raised/20 px-4 py-3">{header}</div>
+        <div className="flex items-center justify-between gap-3 border-b border-line bg-white/[0.02] px-4 py-3">{header}</div>
       )}
       {open && children}
     </section>
@@ -145,7 +145,7 @@ function Card({
 
 function Tile({ label, value, hint }: { label: string; value: ReactNode; hint: ReactNode }) {
   return (
-    <div className="relative min-w-0 overflow-hidden rounded-2xl border border-line bg-panel/90 px-4 py-3.5 shadow-[0_12px_32px_rgba(0,0,0,0.18),inset_0_1px_0_rgba(255,255,255,0.04)]">
+    <div className="relative min-w-0 overflow-hidden rounded-2xl border border-white/[0.06] bg-panel px-4 py-3.5 shadow-[0_12px_32px_rgba(0,0,0,0.18),inset_0_1px_0_rgba(255,255,255,0.04)]">
       <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/14 to-transparent" />
       <div className="text-xs font-medium text-ink-3">{label}</div>
       <div className="mt-2 text-2xl font-semibold tracking-tight text-ink">{value}</div>
@@ -207,7 +207,7 @@ function StatsTable({ rows }: { rows: { key: string; label: ReactNode; stats: Tr
   return (
     <div className="overflow-x-auto">
       <table className="w-full min-w-[860px] text-sm tabular-nums">
-        <thead className="text-[11px] uppercase tracking-wider text-ink-3">
+        <thead className="text-[11px] font-medium uppercase tracking-[0.08em] text-ink-3">
           <tr>
             <th className="px-4 py-2.5 text-left font-medium">Grup</th>
             <th className="px-3 py-2.5 text-right font-medium">Trade</th>
@@ -282,7 +282,7 @@ function OpenTable({ positions }: { positions: PaperPosition[] }) {
   return (
     <div className="overflow-x-auto">
       <table className="w-full min-w-[1160px] text-sm tabular-nums">
-        <thead className="text-[11px] uppercase tracking-wider text-ink-3">
+        <thead className="text-[11px] font-medium uppercase tracking-[0.08em] text-ink-3">
           <tr>
             <th className="px-4 py-2.5 text-left font-medium">Pool</th>
             <th className="px-3 py-2.5 text-left font-medium">Tier</th>
@@ -351,7 +351,7 @@ function ClosedTable({ positions }: { positions: PaperPosition[] }) {
   return (
     <div className="overflow-x-auto">
       <table className="w-full min-w-[1060px] text-sm tabular-nums">
-        <thead className="text-[11px] uppercase tracking-wider text-ink-3">
+        <thead className="text-[11px] font-medium uppercase tracking-[0.08em] text-ink-3">
           <tr>
             <th className="px-4 py-2.5 text-left font-medium">Pool</th>
             <th className="px-3 py-2.5 text-left font-medium">Tier</th>
@@ -405,8 +405,8 @@ function ResultsCard({ summary: s, profileLabel }: { summary: PaperSummary | und
     { id: "strategy" as const, label: "Per strategi" },
   ];
   return (
-    <section className="overflow-hidden rounded-2xl border border-line bg-panel/90 shadow-[0_14px_42px_rgba(0,0,0,0.20),inset_0_1px_0_rgba(255,255,255,0.04)]">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line bg-raised/20 px-4 py-3">
+    <section className="overflow-hidden rounded-2xl border border-white/[0.06] bg-panel shadow-[0_14px_42px_rgba(0,0,0,0.20),inset_0_1px_0_rgba(255,255,255,0.04)]">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line bg-white/[0.02] px-4 py-3">
         <div className="flex items-center gap-3">
           <h2 className="text-sm font-semibold text-ink">
             Hasil trading{profileLabel ? <span className="font-normal text-ink-3"> · {profileLabel}</span> : null}
@@ -502,8 +502,8 @@ function ProfileCompareCard({
   onSelect: (key: string) => void;
 }) {
   return (
-    <section className="overflow-hidden rounded-2xl border border-line bg-panel/90 shadow-[0_14px_42px_rgba(0,0,0,0.20),inset_0_1px_0_rgba(255,255,255,0.04)]">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line bg-raised/20 px-4 py-3">
+    <section className="overflow-hidden rounded-2xl border border-white/[0.06] bg-panel shadow-[0_14px_42px_rgba(0,0,0,0.20),inset_0_1px_0_rgba(255,255,255,0.04)]">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line bg-white/[0.02] px-4 py-3">
         <h2 className="text-sm font-semibold text-ink">Perbandingan profil risiko</h2>
         <span className="text-xs text-ink-3">
           Modal awal dan data live sama untuk semua profil. Klik baris untuk melihat detail profil.
@@ -514,7 +514,7 @@ function ProfileCompareCard({
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full min-w-[1080px] text-sm tabular-nums">
-            <thead className="text-[11px] uppercase tracking-wider text-ink-3">
+            <thead className="text-[11px] font-medium uppercase tracking-[0.08em] text-ink-3">
               <tr className="border-b border-line">
                 <th className="px-4 py-2.5 text-left font-medium">Profil</th>
                 <th className="px-3 py-2.5 text-left font-medium">Aturan</th>
@@ -684,8 +684,8 @@ function PositionsCard({
     { id: "closed" as const, label: "Ditutup", count: closed.length },
   ];
   return (
-    <section className="overflow-hidden rounded-2xl border border-line bg-panel/90 shadow-[0_14px_42px_rgba(0,0,0,0.20),inset_0_1px_0_rgba(255,255,255,0.04)]">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line bg-raised/20 px-4 py-3">
+    <section className="overflow-hidden rounded-2xl border border-white/[0.06] bg-panel shadow-[0_14px_42px_rgba(0,0,0,0.20),inset_0_1px_0_rgba(255,255,255,0.04)]">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line bg-white/[0.02] px-4 py-3">
         <div className="flex items-center gap-3">
           <h2 className="text-sm font-semibold text-ink">
             Posisi{profileLabel ? <span className="font-normal text-ink-3"> · {profileLabel}</span> : null}
@@ -739,8 +739,8 @@ export default function PaperPage() {
           title={<>Paper trading{s?.profile ? <span className="text-ink-3"> · {s.profile.label}</span> : null}</>}
           subtitle="LP virtual otomatis dari rencana live, tanpa transaksi on-chain."
           right={
-            <div className="hidden rounded-lg border border-line bg-panel/70 px-3 py-2 text-right shadow-sm shadow-black/20 lg:block">
-              <div className="text-[11px] uppercase tracking-wider text-ink-3">Portfolio</div>
+            <div className="hidden rounded-lg border border-white/[0.06] bg-panel/70 px-3 py-2 text-right shadow-sm shadow-black/20 lg:block">
+              <div className="text-[11px] font-medium uppercase tracking-[0.08em] text-ink-3">Portfolio</div>
               <div className="text-sm font-semibold text-ink">{s ? usd.format(s.equity_usd) : "Menunggu data"}</div>
             </div>
           }

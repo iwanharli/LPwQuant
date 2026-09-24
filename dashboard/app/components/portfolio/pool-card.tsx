@@ -282,20 +282,20 @@ function PositionBlock({
         }`}
       >
         <div>
-          <div className="text-[11px] uppercase tracking-wider text-ink-3 md:hidden">Likuiditas</div>
+          <div className="text-[11px] font-medium uppercase tracking-[0.08em] text-ink-3 md:hidden">Likuiditas</div>
           <div className="font-semibold text-ink">{usd.format(p.value_usd)}</div>
           <div className="text-[11px] text-ink-3">
             {fmtNum(p.amount_x, 2)} {pool.token_x} · {fmtNum(p.amount_y, 4)} {pool.token_y}
           </div>
         </div>
         <div>
-          <div className="text-[11px] uppercase tracking-wider text-ink-3 md:hidden">Bin range</div>
+          <div className="text-[11px] font-medium uppercase tracking-[0.08em] text-ink-3 md:hidden">Bin range</div>
           <div className="text-ink">
             {p.lower_bin} – {p.upper_bin} <span className="text-ink-3">({span})</span>
           </div>
         </div>
         <div>
-          <div className="text-[11px] uppercase tracking-wider text-ink-3 md:hidden">Active bin</div>
+          <div className="text-[11px] font-medium uppercase tracking-[0.08em] text-ink-3 md:hidden">Active bin</div>
           <div className="text-ink">{active ?? "–"}</div>
         </div>
         <div>
@@ -309,14 +309,14 @@ function PositionBlock({
           </span>
         </div>
         <div className="md:text-right">
-          <div className="text-[11px] uppercase tracking-wider text-ink-3 md:hidden">Fee belum di-claim</div>
+          <div className="text-[11px] font-medium uppercase tracking-[0.08em] text-ink-3 md:hidden">Fee belum di-claim</div>
           <div className="font-medium text-ink">{usd.format(p.unclaimed_fees_usd)}</div>
           <div className="text-[11px] text-ink-3">
             {fmtNum(p.unclaimed_fee_x, 2)} {pool.token_x} · {fmtNum(p.unclaimed_fee_y, 4)} {pool.token_y}
           </div>
         </div>
         <div className="md:text-right">
-          <div className="text-[11px] uppercase tracking-wider text-ink-3 md:hidden">PnL</div>
+          <div className="text-[11px] font-medium uppercase tracking-[0.08em] text-ink-3 md:hidden">PnL</div>
           <div className={`font-semibold ${tone(p.pnl_usd)}`}>
             {signedUsd(p.pnl_usd)} <span className="text-xs font-normal">({fmtSignedPct(p.pnl_pct, 1)})</span>
           </div>
@@ -449,7 +449,7 @@ export default function PoolCard({
           </span>
         </span>
       </div>
-      <div className="hidden grid-cols-[1.3fr_1fr_0.6fr_1fr_1.1fr_1.2fr_auto] gap-x-4 border-b border-line px-4 py-2 text-[11px] uppercase tracking-wider text-ink-3 md:grid">
+      <div className="hidden grid-cols-[1.3fr_1fr_0.6fr_1fr_1.1fr_1.2fr_auto] gap-x-4 border-b border-line px-4 py-2 text-[11px] font-medium uppercase tracking-[0.08em] text-ink-3 md:grid">
         <span>Likuiditas</span>
         <span>Bin range</span>
         <span>Active</span>

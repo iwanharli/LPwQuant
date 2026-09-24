@@ -76,7 +76,7 @@ function duration(from: number | null, to: number | null): string {
 
 function Stat({ label, value, hint, cls = "text-ink" }: { label: string; value: string; hint?: string; cls?: string }) {
   return (
-    <div className="rounded-2xl border border-line bg-panel px-4 py-3.5 backdrop-blur-sm">
+    <div className="rounded-2xl border border-white/[0.06] bg-panel px-4 py-3.5 backdrop-blur-sm">
       <div className="text-xs font-medium text-ink-3">{label}</div>
       <div className={`mt-2 text-2xl font-semibold tabular-nums tracking-tight ${cls}`}>{value}</div>
       {hint && <div className="mt-1 text-xs text-ink-3">{hint}</div>}
@@ -229,7 +229,7 @@ function PositionCard({ p, pool, cost, net }: { p: ClosedPosition; pool?: string
 
 function Chips<T extends string>({ value, onChange, options }: { value: T; onChange: (v: T) => void; options: { value: T; label: string }[] }) {
   return (
-    <div className="flex gap-1 rounded-full border border-line bg-bg/50 p-0.5">
+    <div className="flex gap-1 rounded-full border border-line bg-white/[0.03] p-0.5">
       {options.map((o) => (
         <button
           key={o.value}
@@ -291,14 +291,14 @@ function HistorySkeleton() {
     <div className="space-y-4" aria-busy="true">
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {[0, 1, 2, 3].map((i) => (
-          <div key={i} className="rounded-2xl border border-line bg-panel px-4 py-3.5">
+          <div key={i} className="rounded-2xl border border-white/[0.06] bg-panel px-4 py-3.5">
             <div className="h-3 w-24 animate-pulse rounded bg-white/[0.07]" />
             <div className="mt-2.5 h-7 w-32 animate-pulse rounded bg-white/[0.09]" />
             <div className="mt-2 h-3 w-40 animate-pulse rounded bg-white/[0.05]" />
           </div>
         ))}
       </div>
-      <p className="rounded-2xl border border-line bg-panel px-4 py-3 text-sm text-ink-3">Memuat riwayat posisi…</p>
+      <p className="rounded-2xl border border-white/[0.06] bg-panel px-4 py-3 text-sm text-ink-3">Memuat riwayat posisi…</p>
       <div className="grid gap-3 lg:grid-cols-2 2xl:grid-cols-3">
         {[0, 1, 2, 3].map((i) => (
           <div key={i} className="rounded-2xl border border-white/[0.06] bg-[#151b24] p-4">
@@ -375,7 +375,7 @@ export function ClosedPositions({ wallet }: { wallet: string }) {
   const { positions, error, loading, done, loadMore } = useClosedPositions(wallet);
 
   if (error && positions.length === 0)
-    return <p className="rounded-2xl border border-line bg-panel px-4 py-8 text-sm text-ink-3">Gagal memuat riwayat posisi.</p>;
+    return <p className="rounded-2xl border border-white/[0.06] bg-panel px-4 py-8 text-sm text-ink-3">Gagal memuat riwayat posisi.</p>;
   if (positions.length === 0 && loading) return <HistorySkeleton />;
 
   const days = PERIOD_DAYS[period];
@@ -436,7 +436,7 @@ export function ClosedPositions({ wallet }: { wallet: string }) {
         />
       </div>
 
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-line bg-panel px-3 py-2.5">
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/[0.06] bg-panel px-3 py-2.5">
         <h2 className="text-sm font-semibold text-ink">
           Posisi ditutup · {PERIOD_HINT[period]}
           {shown.length !== all.length ? ` · ${shown.length} dari ${all.length}` : ""}
@@ -461,7 +461,7 @@ export function ClosedPositions({ wallet }: { wallet: string }) {
             value={exit}
             onChange={(e) => setExit(e.target.value as typeof exit)}
             aria-label="Akhir posisi"
-            className="h-8 rounded-full border border-line bg-bg/50 px-3 text-xs text-ink-2 focus:outline-none"
+            className="h-8 rounded-full border border-line bg-white/[0.03] px-3 text-xs text-ink-2 focus:outline-none"
           >
             <option value="all">Akhir: semua</option>
             <option value="below">Jatuh keluar range</option>
@@ -472,7 +472,7 @@ export function ClosedPositions({ wallet }: { wallet: string }) {
             value={sort}
             onChange={(e) => setSort(e.target.value as typeof sort)}
             aria-label="Urutkan"
-            className="h-8 rounded-full border border-line bg-bg/50 px-3 text-xs text-ink-2 focus:outline-none"
+            className="h-8 rounded-full border border-line bg-white/[0.03] px-3 text-xs text-ink-2 focus:outline-none"
           >
             <option value="recent">Terbaru ditutup</option>
             <option value="best">Hasil terbaik</option>
@@ -484,7 +484,7 @@ export function ClosedPositions({ wallet }: { wallet: string }) {
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Cari token"
             aria-label="Cari posisi"
-            className="h-8 w-36 rounded-full border border-line bg-bg/50 px-3 text-xs text-ink placeholder:text-ink-3 focus:border-accent/70 focus:outline-none"
+            className="h-8 w-36 rounded-full border border-line bg-white/[0.03] px-3 text-xs text-ink placeholder:text-ink-3 focus:border-accent/70 focus:outline-none"
           />
         </div>
       </div>
@@ -494,7 +494,7 @@ export function ClosedPositions({ wallet }: { wallet: string }) {
           <PositionCard key={p.address} p={p} pool={p.name} cost={p.cost_usd} net={p.net_usd} />
         ))}
         {shown.length === 0 && (
-          <div className="rounded-2xl border border-line bg-panel px-4 py-10 text-center lg:col-span-2 2xl:col-span-3">
+          <div className="rounded-2xl border border-white/[0.06] bg-panel px-4 py-10 text-center lg:col-span-2 2xl:col-span-3">
             <p className="text-sm text-ink-2">
               {all.length === 0 ? `Belum ada posisi yang ditutup ${PERIOD_HINT[period]}.` : "Tidak ada posisi yang cocok dengan filter."}
             </p>
@@ -516,7 +516,7 @@ export function ClosedPositions({ wallet }: { wallet: string }) {
           type="button"
           onClick={loadMore}
           disabled={loading}
-          className="w-full rounded-2xl border border-line bg-panel py-3 text-xs text-ink-2 transition-colors hover:border-line-strong hover:text-ink disabled:opacity-50"
+          className="w-full rounded-2xl border border-white/[0.06] bg-panel py-3 text-xs text-ink-2 transition-colors hover:border-line-strong hover:text-ink disabled:opacity-50"
         >
           {loading ? "Memuat…" : "Muat posisi yang lebih lama"}
         </button>
@@ -529,8 +529,8 @@ export function ClosedPositions({ wallet }: { wallet: string }) {
 /** Limit orders that are finished: how much filled, what came back, realized PnL. */
 export function ClosedOrders({ wallet }: { wallet: string }) {
   const { data, error } = useJson<{ orders: ClosedOrder[] }>(`${ENGINE_URL}/api/portfolio/orders/closed?wallet=${wallet}`);
-  if (error) return <p className="rounded-2xl border border-line bg-panel px-4 py-8 text-sm text-ink-3">Gagal memuat riwayat limit order.</p>;
-  if (!data) return <p className="rounded-2xl border border-line bg-panel px-4 py-8 text-sm text-ink-3">Memuat riwayat limit order…</p>;
+  if (error) return <p className="rounded-2xl border border-white/[0.06] bg-panel px-4 py-8 text-sm text-ink-3">Gagal memuat riwayat limit order.</p>;
+  if (!data) return <p className="rounded-2xl border border-white/[0.06] bg-panel px-4 py-8 text-sm text-ink-3">Memuat riwayat limit order…</p>;
   const orders = data.orders;
   const pnl = orders.reduce((n, o) => n + o.pnl_usd, 0);
   const bonus = orders.reduce((n, o) => n + o.bonus_usd, 0);
@@ -543,8 +543,8 @@ export function ClosedOrders({ wallet }: { wallet: string }) {
         <Stat label="Bonus fee order" value={usd.format(bonus)} cls="text-emerald-300" hint="Fee yang diterima saat order terisi" />
         <Stat label="Terisi penuh" value={`${full} / ${orders.length}`} hint="Sisanya dibatalkan sebelum penuh" />
       </div>
-      <section className="overflow-hidden rounded-2xl border border-line bg-panel backdrop-blur-sm">
-        <div className="border-b border-line bg-raised/20 px-4 py-3">
+      <section className="overflow-hidden rounded-2xl border border-white/[0.06] bg-panel backdrop-blur-sm">
+        <div className="border-b border-line bg-white/[0.02] px-4 py-3">
           <h2 className="text-sm font-semibold text-ink">Limit order selesai</h2>
         </div>
         {orders.length === 0 ? (
@@ -566,7 +566,7 @@ export function ClosedOrders({ wallet }: { wallet: string }) {
                   <span className="block text-ink-2">
                     {fmtNum(o.lower_price, 6)} – {fmtNum(o.upper_price, 6)}
                   </span>
-                  <span className="text-[10px] uppercase tracking-wider text-ink-3">rentang harga</span>
+                  <span className="text-[10px] font-medium uppercase tracking-[0.08em] text-ink-3">rentang harga</span>
                 </span>
                 <span className="hidden sm:block">
                   <span className="flex items-center gap-2 text-xs tabular-nums">
@@ -581,7 +581,7 @@ export function ClosedOrders({ wallet }: { wallet: string }) {
                 </span>
                 <span className="hidden text-right text-xs tabular-nums sm:block">
                   <span className="block text-ink-2">{usd.format(o.deposit_usd)}</span>
-                  <span className="text-[10px] uppercase tracking-wider text-ink-3">dipasang</span>
+                  <span className="text-[10px] font-medium uppercase tracking-[0.08em] text-ink-3">dipasang</span>
                 </span>
                 <span className="flex items-center gap-3 text-right tabular-nums">
                   <span>

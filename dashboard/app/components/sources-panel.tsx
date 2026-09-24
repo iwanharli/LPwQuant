@@ -110,8 +110,8 @@ export default function SourcesPanel({ items }: { items: UsageItem[] | null }) {
     (items ?? []).filter((i) => i.provider === provider && i.kind === kind).reduce((n, i) => n + i.last_24h, 0);
 
   return (
-    <section className="overflow-hidden rounded-2xl border border-line bg-panel/90 shadow-[0_14px_42px_rgba(0,0,0,0.20),inset_0_1px_0_rgba(255,255,255,0.04)]">
-      <div className="border-b border-line bg-raised/20 px-4 py-3">
+    <section className="overflow-hidden rounded-2xl border border-white/[0.06] bg-panel shadow-[0_14px_42px_rgba(0,0,0,0.20),inset_0_1px_0_rgba(255,255,255,0.04)]">
+      <div className="border-b border-line bg-white/[0.02] px-4 py-3">
         <h2 className="text-sm font-semibold text-ink">Dari mana datanya</h2>
         <p className="mt-0.5 text-xs text-ink-3">Tujuh sumber, masing-masing dengan tugasnya sendiri. Kalau satu diam, yang berhenti hanya bagian itu.</p>
       </div>
@@ -162,7 +162,7 @@ export default function SourcesPanel({ items }: { items: UsageItem[] | null }) {
         })}
       </ul>
       <div className="border-t border-line bg-raised/10 px-4 py-3">
-        <div className="text-[11px] uppercase tracking-wider text-ink-3">Tidak terhitung di tabel panggilan</div>
+        <div className="text-[11px] font-medium uppercase tracking-[0.08em] text-ink-3">Tidak terhitung di tabel panggilan</div>
         <ul className="mt-1 space-y-0.5 text-xs text-ink-2">
           {OTHERS.map((o) => (
             <li key={o.name}>

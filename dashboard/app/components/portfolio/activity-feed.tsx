@@ -284,7 +284,7 @@ function Row({ e, info }: { e: Entry; info: Record<string, TokenInfo> }) {
             >
               {d.value == null ? "–" : `${d.tone === "gain" ? "+" : d.tone === "cost" ? "−" : ""}${usd.format(d.value)}`}
             </div>
-            <div className="text-[10px] uppercase tracking-wider text-ink-3">{KIND_STYLE[e.kind]?.label ?? "Lainnya"}</div>
+            <div className="text-[10px] font-medium uppercase tracking-[0.08em] text-ink-3">{KIND_STYLE[e.kind]?.label ?? "Lainnya"}</div>
           </div>
           {many ? (
             <button

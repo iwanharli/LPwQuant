@@ -66,8 +66,8 @@ export default function PaperLimitOrders() {
   const c = r.counts;
   const done = (c.closed ?? 0) + (c.expired ?? 0);
   return (
-    <section className="overflow-hidden rounded-2xl border border-line bg-panel backdrop-blur-sm">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line bg-raised/20 px-4 py-3">
+    <section className="overflow-hidden rounded-2xl border border-white/[0.06] bg-panel backdrop-blur-sm">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line bg-white/[0.02] px-4 py-3">
         <div>
           <h2 className="text-sm font-semibold text-ink">Uji coba engine · paper, tanpa transaksi</h2>
           <p className="mt-0.5 text-xs text-ink-3">
@@ -106,7 +106,7 @@ export default function PaperLimitOrders() {
 
       <div className="overflow-x-auto">
         <table className="w-full min-w-[760px] text-sm tabular-nums">
-          <thead className="text-[11px] uppercase tracking-wider text-ink-3">
+          <thead className="text-[11px] font-medium uppercase tracking-[0.08em] text-ink-3">
             <tr className="border-b border-line">
               <th className="px-4 py-2.5 text-left font-medium">Pool</th>
               <th className="px-3 py-2.5 text-left font-medium">Status</th>

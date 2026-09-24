@@ -61,7 +61,7 @@ export default function LoginPage() {
   const first = status?.registered === 0;
   return (
     <main className="grid min-h-screen place-items-center px-4">
-      <div className="w-full max-w-sm rounded-2xl border border-line bg-panel p-6 shadow-[0_24px_64px_rgba(0,0,0,0.5)]">
+      <div className="w-full max-w-sm rounded-2xl border border-white/[0.06] bg-panel p-6 shadow-[0_24px_64px_rgba(0,0,0,0.5)]">
         <h1 className="text-2xl font-extrabold tracking-tight text-ink">
           Quant<span className="text-accent-gradient"> DLMM</span>
         </h1>

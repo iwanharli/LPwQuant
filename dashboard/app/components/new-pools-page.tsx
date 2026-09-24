@@ -126,7 +126,7 @@ export default function NewPoolsPage() {
           ))}
         </div>
 
-        <section className="overflow-hidden rounded-2xl border border-line bg-panel shadow-[0_14px_42px_rgba(0,0,0,0.20)] backdrop-blur-sm">
+        <section className="overflow-hidden rounded-2xl border border-white/[0.06] bg-panel shadow-[0_14px_42px_rgba(0,0,0,0.20)] backdrop-blur-sm">
           {!data ? (
             <p className="px-4 py-10 text-sm text-ink-3">{error ? "Gagal memuat." : "Memuat…"}</p>
           ) : shown.length === 0 ? (
@@ -208,7 +208,7 @@ export default function NewPoolsPage() {
 function Metric({ label, value, cls = "text-ink" }: { label: string; value: string; cls?: string }) {
   return (
     <div className="tabular-nums">
-      <div className="text-[10px] uppercase tracking-wider text-ink-3">{label}</div>
+      <div className="text-[10px] font-medium uppercase tracking-[0.08em] text-ink-3">{label}</div>
       <div className={`text-sm font-medium ${cls}`}>{value}</div>
     </div>
   );

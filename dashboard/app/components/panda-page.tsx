@@ -71,7 +71,7 @@ const tone = (v: number) => (v > 0 ? "text-emerald-300" : v < 0 ? "text-rose-300
 function Kpi({ label, value, hint, cls }: { label: string; value: string; hint?: string; cls?: string }) {
   return (
     <div className="bg-panel px-4 py-3.5">
-      <div className="text-[11px] uppercase tracking-wider text-ink-3">{label}</div>
+      <div className="text-[11px] font-medium uppercase tracking-[0.08em] text-ink-3">{label}</div>
       <div className={`mt-1 text-xl font-semibold tabular-nums ${cls ?? "text-ink"}`}>{value}</div>
       {hint && <div className="mt-0.5 text-[11px] text-ink-3">{hint}</div>}
     </div>
@@ -107,7 +107,7 @@ function Rules({ p, approximations }: { p: Report["params"]; approximations: str
   ];
   return (
     <div className="grid gap-3 lg:grid-cols-2">
-      <section className="rounded-2xl border border-line bg-panel p-4">
+      <section className="rounded-2xl border border-white/[0.06] bg-panel p-4">
         <h2 className="text-sm font-semibold text-ink">Aturan yang dijalankan</h2>
         <dl className="mt-3 space-y-3">
           {rows.map((r) => (
@@ -118,7 +118,7 @@ function Rules({ p, approximations }: { p: Report["params"]; approximations: str
           ))}
         </dl>
       </section>
-      <section className="rounded-2xl border border-line bg-panel p-4">
+      <section className="rounded-2xl border border-white/[0.06] bg-panel p-4">
         <h2 className="text-sm font-semibold text-ink">Yang tidak bisa ditiru persis</h2>
         <ul className="mt-3 space-y-2 text-xs leading-5 text-ink-2">
           {approximations.map((a) => (
@@ -142,7 +142,7 @@ function Funnel({ funnel }: { funnel: Record<string, number> }) {
   const total = rows.reduce((n, [, v]) => n + v, 0);
   const passed = funnel.lolos ?? 0;
   return (
-    <section className="rounded-2xl border border-line bg-panel p-4">
+    <section className="rounded-2xl border border-white/[0.06] bg-panel p-4">
       <h2 className="text-sm font-semibold text-ink">Corong seleksi · {total} pool dicek sekarang</h2>
       <p className="mt-0.5 text-xs text-ink-3">Panda menyebut seleksi sebagai 70% pekerjaannya. Ini alasan tiap pool gugur.</p>
       <div className="mt-3 flex items-center justify-between gap-3 rounded-xl border border-emerald-400/25 bg-emerald-400/[0.07] px-3 py-2.5">
@@ -167,12 +167,12 @@ function Funnel({ funnel }: { funnel: Record<string, number> }) {
 }
 
 function RunTable({ runs, empty }: { runs: Run[]; empty: string }) {
-  if (runs.length === 0) return <p className="rounded-2xl border border-line bg-panel px-4 py-10 text-center text-sm text-ink-3">{empty}</p>;
+  if (runs.length === 0) return <p className="rounded-2xl border border-white/[0.06] bg-panel px-4 py-10 text-center text-sm text-ink-3">{empty}</p>;
   return (
-    <section className="overflow-hidden rounded-2xl border border-line bg-panel">
+    <section className="overflow-hidden rounded-2xl border border-white/[0.06] bg-panel">
       <div className="overflow-x-auto">
         <table className="w-full min-w-[860px] text-sm tabular-nums">
-          <thead className="text-[11px] uppercase tracking-wider text-ink-3">
+          <thead className="text-[11px] font-medium uppercase tracking-[0.08em] text-ink-3">
             <tr className="border-b border-line">
               <th className="px-4 py-2.5 text-left font-medium">Pool</th>
               <th className="px-3 py-2.5 text-left font-medium">Status</th>
@@ -267,11 +267,11 @@ export default function PandaPage() {
           subtitle="Paper, tanpa transaksi: seleksi ketat, range lebar satu sisi, keluar di pantulan pertama."
         />
 
-        {error && !r && <p className="rounded-2xl border border-line bg-panel px-4 py-8 text-sm text-ink-3">Engine tidak bisa dihubungi.</p>}
+        {error && !r && <p className="rounded-2xl border border-white/[0.06] bg-panel px-4 py-8 text-sm text-ink-3">Engine tidak bisa dihubungi.</p>}
 
         {r && p && (
           <>
-            <section className="overflow-hidden rounded-2xl border border-line bg-panel">
+            <section className="overflow-hidden rounded-2xl border border-white/[0.06] bg-panel">
               <div className="grid grid-cols-2 gap-px bg-line/40 sm:grid-cols-4">
                 <Kpi
                   label="Hasil bersih"

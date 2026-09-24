@@ -102,7 +102,7 @@ export default function PositionFilters({
 }) {
   const changed = filters.status !== "all" || filters.query !== "" || filters.sort !== "value";
   return (
-    <div className="flex flex-wrap items-center gap-x-4 gap-y-3 rounded-2xl border border-line bg-panel px-4 py-3 shadow-[0_14px_42px_rgba(0,0,0,0.20)] backdrop-blur-sm">
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-3 rounded-2xl border border-white/[0.06] bg-panel px-4 py-3 shadow-[0_14px_42px_rgba(0,0,0,0.20)] backdrop-blur-sm">
       <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Filter status posisi">
         {STATUS_OPTIONS.map((o) => (
           <button
@@ -127,13 +127,13 @@ export default function PositionFilters({
           onChange={(e) => onChange({ ...filters, query: e.target.value })}
           placeholder="Cari token…"
           aria-label="Cari token"
-          className="h-8 w-40 rounded-full border border-line bg-bg/50 px-3 text-xs text-ink placeholder:text-ink-3 focus:border-accent/50 focus:outline-none"
+          className="h-8 w-40 rounded-full border border-line bg-white/[0.03] px-3 text-xs text-ink placeholder:text-ink-3 focus:border-accent/50 focus:outline-none"
         />
         <select
           value={filters.sort}
           onChange={(e) => onChange({ ...filters, sort: e.target.value as SortKey })}
           aria-label="Urutkan"
-          className="h-8 rounded-full border border-line bg-bg/50 px-3 text-xs text-ink-2 focus:border-accent/50 focus:outline-none"
+          className="h-8 rounded-full border border-line bg-white/[0.03] px-3 text-xs text-ink-2 focus:border-accent/50 focus:outline-none"
         >
           {SORT_OPTIONS.map((o) => (
             <option key={o.value} value={o.value}>
