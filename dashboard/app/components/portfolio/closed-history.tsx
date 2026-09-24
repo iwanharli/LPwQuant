@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { ENGINE_URL, fmtDateTime, fmtNum, fmtSignedPct, shortAddress, usd } from "../../lib/format";
+import { useUrlState } from "../../lib/url-state";
 
 type ClosedPosition = {
   address: string;
@@ -252,6 +253,13 @@ function Chips<T extends string>({ value, onChange, options }: { value: T; onCha
   );
 }
 
+const now = () => Date.now(); // outside the component: the purity lint cannot tell filters from render output
+
+type Period = "1d" | "7d" | "30d" | "all";
+const PERIODS = ["1d", "7d", "30d", "all"] as const;
+const PERIOD_DAYS: Record<Period, number | null> = { "1d": 1, "7d": 7, "30d": 30, all: null };
+const PERIOD_LABEL: Record<Period, string> = { "1d": "24 jam", "7d": "7 hari", "30d": "30 hari", all: "Semua" };
+
 type RecentPosition = ClosedPosition & { pool: string; name: string };
 
 /** Closed positions as one stream, newest first. Grouping by pool hid the thing that matters most -- what you did
@@ -259,6 +267,7 @@ type RecentPosition = ClosedPosition & { pool: string; name: string };
 export function ClosedPositions({ wallet }: { wallet: string }) {
   const [limit, setLimit] = useState(PAGE);
   const [query, setQuery] = useState("");
+  const [period, setPeriod] = useUrlState<Period>("periode", "7d", PERIODS);
   const [result, setResult] = useState<"all" | "win" | "loss">("all");
   const [exit, setExit] = useState<"all" | "below" | "above" | "inside">("all");
   const [sort, setSort] = useState<"recent" | "best" | "worst" | "size">("recent");
@@ -269,7 +278,9 @@ export function ClosedPositions({ wallet }: { wallet: string }) {
   if (error) return <p className="rounded-2xl border border-line bg-[#0e1217]/[0.97] px-4 py-8 text-sm text-ink-3">Gagal memuat riwayat posisi.</p>;
   if (!data) return <p className="rounded-2xl border border-line bg-[#0e1217]/[0.97] px-4 py-8 text-sm text-ink-3">Memuat riwayat posisi…</p>;
 
-  const all = data.positions;
+  const days = PERIOD_DAYS[period];
+  const since = days == null ? 0 : now() - days * 86_400_000;
+  const all = data.positions.filter((p) => (p.closed_at ?? 0) >= since);
   const net = (p: RecentPosition) => costs?.positions[p.address]?.net ?? null;
   const shown = all
     .filter((p) => (query.trim() ? p.name.toLowerCase().includes(query.trim().toLowerCase()) : true))
@@ -297,9 +308,9 @@ export function ClosedPositions({ wallet }: { wallet: string }) {
           label="Hasil bersih"
           value={netAll == null ? "…" : signed(netAll)}
           cls={netAll == null ? "text-ink-3" : tone(netAll)}
-          hint="Semua posisi ditutup, setelah swap masuk-keluar dan biaya"
+          hint={days == null ? "Semua posisi ditutup, setelah swap dan biaya" : `Ditutup dalam ${PERIOD_LABEL[period].toLowerCase()} terakhir, setelah swap dan biaya`}
         />
-        <Stat label="Modal masuk" value={usd.format(deposits)} hint={`${all.length} posisi`} />
+        <Stat label="Modal masuk" value={usd.format(deposits)} hint={`${all.length} posisi · ${PERIOD_LABEL[period].toLowerCase()}`} />
         <Stat label="Fee terkumpul" value={usd.format(fees)} cls="text-emerald-300" hint="Fee yang dipungut posisi-posisi itu" />
         <Stat
           label="Posisi untung"
@@ -310,9 +321,18 @@ export function ClosedPositions({ wallet }: { wallet: string }) {
 
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-line bg-[#0e1217]/[0.97] px-3 py-2.5">
         <h2 className="text-sm font-semibold text-ink">
-          Posisi terakhir ditutup{shown.length !== all.length ? ` · ${shown.length} dari ${all.length}` : ""}
+          Posisi ditutup · {days == null ? "sejak awal" : `${PERIOD_LABEL[period].toLowerCase()} terakhir`}
+          {shown.length !== all.length ? ` · ${shown.length} dari ${all.length}` : ""}
         </h2>
         <div className="flex flex-wrap items-center gap-2">
+          <Chips
+            value={period}
+            onChange={(v) => {
+              setPeriod(v);
+              setLimit(PAGE);
+            }}
+            options={PERIODS.map((v) => ({ value: v as Period, label: PERIOD_LABEL[v] }))}
+          />
           <Chips
             value={result}
             onChange={(v) => {
@@ -370,7 +390,9 @@ export function ClosedPositions({ wallet }: { wallet: string }) {
       </div>
       <div className="space-y-3">
         {shown.length === 0 && (
-          <p className="rounded-2xl border border-line bg-[#0e1217]/[0.97] px-4 py-8 text-center text-sm text-ink-3">Tidak ada posisi yang cocok.</p>
+          <p className="rounded-2xl border border-line bg-[#0e1217]/[0.97] px-4 py-8 text-center text-sm text-ink-3 lg:col-span-2 2xl:col-span-3">
+            Tidak ada posisi yang ditutup pada rentang ini.
+          </p>
         )}
         {shown.length > limit && (
           <button
