@@ -124,7 +124,7 @@ function PoolPositions({ wallet, pool, costs }: { wallet: string; pool: string; 
             <th className="py-1.5 text-right font-medium">Fee</th>
             <th className="py-1.5 text-right font-medium" title="PnL di dalam posisi menurut Meteora: fee dikurangi IL">PnL LP</th>
             <th className="py-1.5 text-right font-medium" title="Biaya jaringan + fee swap Meteora dari transaksi posisi ini dan swap di sekitarnya">Biaya</th>
-            <th className="py-1.5 text-right font-medium" title="Hasil bersih posisi setelah swap dan biaya (lihat tampilan Hasil bersih)">Bersih</th>
+            <th className="py-1.5 text-right font-medium" title="PnL Meteora ditambah hasil swap masuk dan keluar untuk koin ini, dikurangi biaya: yang benar-benar kembali ke wallet">Bersih</th>
           </tr>
         </thead>
         <tbody>
@@ -136,6 +136,7 @@ function PoolPositions({ wallet, pool, costs }: { wallet: string; pool: string; 
               <td className="py-1.5 text-ink-3">{duration(p.opened_at, p.closed_at)}</td>
               <td className="py-1.5 text-ink-3">
                 {fmtNum(p.min_price, p.min_price < 1 ? 8 : 4)} – {fmtNum(p.max_price, p.max_price < 1 ? 8 : 4)}
+                <span className="ml-1.5 text-ink-3/70">±{fmtNum(p.min_price > 0 ? ((p.max_price / p.min_price - 1) * 100) / 2 : 0, 0)}%</span>
               </td>
               <td className="py-1.5 text-right text-ink-2">{usd.format(p.deposit_usd)}</td>
               <td className="py-1.5 text-right text-emerald-300/90">{usd.format(p.fees_usd)}</td>
