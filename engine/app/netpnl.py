@@ -181,7 +181,15 @@ async def refresh_loop(db) -> None:
         try:
             for r in await db.fetch("select address from portfolio_wallets"):
                 try:
-                    await compute(db, r["address"])
+                    started = time.time()
+                    # `fresh` skips the in-memory cache: the point of this loop is to redo the accounting and write
+                    # the per-position results, which a cache hit would skip.
+                    result = await compute(db, r["address"], fresh=True)
+                    log.info(
+                        "netpnl refreshed %s... in %.1fs: %d coins, P/L %+.2f",
+                        r["address"][:4], time.time() - started, len(result.get("coins") or []),
+                        result.get("total_pl_usd") or 0.0,
+                    )
                 except Exception as err:
                     log.warning("netpnl refresh failed for %s...: %s", r["address"][:4], err)
         except asyncio.CancelledError:
