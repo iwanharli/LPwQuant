@@ -505,14 +505,53 @@ function RangeNotice({
   );
 }
 
-type View = "open" | "closed" | "net" | "orders";
+type View = "open" | "history" | "orders";
 
 /** Open positions, or the history of closed positions and finished limit orders, on the same tab. */
+/**
+ * One place for "what happened": by coin (every transaction, including coins never put in a pool) or by LP pool
+ * (what each position did inside its range). They answer different questions on the same wallet, so they live
+ * behind one switch instead of two tabs that sound alike.
+ */
+function HistoryAndNet({ wallet }: { wallet: string }) {
+  const [by, setBy] = useState<"coin" | "pool">("coin");
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="flex gap-1 rounded-xl border border-line bg-[#0e1217]/[0.97] p-1" role="tablist" aria-label="Kelompokkan">
+          {([
+            { key: "coin", label: "Per koin" },
+            { key: "pool", label: "Per pool LP" },
+          ] as const).map((o) => (
+            <button
+              key={o.key}
+              type="button"
+              role="tab"
+              aria-selected={by === o.key}
+              onClick={() => setBy(o.key)}
+              className={`rounded-lg px-3.5 py-1.5 text-sm font-medium transition-colors ${
+                by === o.key ? "bg-accent/15 text-accent" : "text-ink-2 hover:bg-raised/50 hover:text-ink"
+              }`}
+            >
+              {o.label}
+            </button>
+          ))}
+        </div>
+        <p className="text-xs text-ink-3">
+          {by === "coin"
+            ? "Semua transaksi tiap koin: beli, LP, jual, dan yang masih dipegang. Termasuk koin yang tidak pernah di-LP."
+            : "Tiap posisi LP menurut Meteora: fee, IL, berapa lama harganya di dalam range, dan keluar lewat mana."}
+        </p>
+      </div>
+      {by === "coin" ? <NetPnl wallet={wallet} /> : <ClosedPositions wallet={wallet} />}
+    </div>
+  );
+}
+
 function ViewSwitch({ view, onChange, openCount }: { view: View; onChange: (v: View) => void; openCount: number | null }) {
   const options: { value: View; label: string }[] = [
     { value: "open", label: openCount != null ? `Posisi terbuka (${openCount})` : "Posisi terbuka" },
-    { value: "closed", label: "Riwayat posisi" },
-    { value: "net", label: "Hasil bersih" },
+    { value: "history", label: "Riwayat & hasil" },
     { value: "orders", label: "Riwayat limit order" },
   ];
   return (
@@ -604,9 +643,8 @@ export default function PortfolioPage() {
         ) : (
           <>
             <ViewSwitch view={view} onChange={setView} openCount={data?.summary.positions ?? null} />
-            {view === "closed" && <ClosedPositions wallet={connected.address} />}
+            {view === "history" && <HistoryAndNet wallet={connected.address} />}
             {view === "orders" && <ClosedOrders wallet={connected.address} />}
-            {view === "net" && <NetPnl wallet={connected.address} />}
             {view === "open" && (
           <>
             {error && (
