@@ -285,6 +285,38 @@ type RecentPosition = ClosedPosition & {
  * last -- behind a click, and most pools here hold a single position anyway. */
 const PAGE_SIZE = 60;
 
+/** The shape of the page while the first rows are still coming, so the layout does not jump when they land. */
+function HistorySkeleton() {
+  return (
+    <div className="space-y-4" aria-busy="true">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {[0, 1, 2, 3].map((i) => (
+          <div key={i} className="rounded-2xl border border-line bg-[#0e1217]/[0.97] px-4 py-3.5">
+            <div className="h-3 w-24 animate-pulse rounded bg-white/[0.07]" />
+            <div className="mt-2.5 h-7 w-32 animate-pulse rounded bg-white/[0.09]" />
+            <div className="mt-2 h-3 w-40 animate-pulse rounded bg-white/[0.05]" />
+          </div>
+        ))}
+      </div>
+      <p className="rounded-2xl border border-line bg-[#0e1217]/[0.97] px-4 py-3 text-sm text-ink-3">Memuat riwayat posisi…</p>
+      <div className="grid gap-3 lg:grid-cols-2 2xl:grid-cols-3">
+        {[0, 1, 2, 3].map((i) => (
+          <div key={i} className="rounded-2xl border border-white/[0.06] bg-[#151b24] p-4">
+            <div className="h-4 w-28 animate-pulse rounded bg-white/[0.08]" />
+            <div className="mt-3 h-7 w-36 animate-pulse rounded bg-white/[0.09]" />
+            <div className="mt-4 h-2.5 w-full animate-pulse rounded-full bg-white/[0.06]" />
+            <div className="mt-4 grid grid-cols-2 gap-2.5">
+              {[0, 1, 2, 3, 4, 5].map((t) => (
+                <div key={t} className="h-[74px] animate-pulse rounded-xl bg-white/[0.04]" />
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 type Page = { positions: RecentPosition[]; done: boolean };
 
 /** Closed positions, newest first, fetched a page at a time and kept in one list. Everything comes from this app's
@@ -344,8 +376,7 @@ export function ClosedPositions({ wallet }: { wallet: string }) {
 
   if (error && positions.length === 0)
     return <p className="rounded-2xl border border-line bg-[#0e1217]/[0.97] px-4 py-8 text-sm text-ink-3">Gagal memuat riwayat posisi.</p>;
-  if (positions.length === 0 && loading)
-    return <p className="rounded-2xl border border-line bg-[#0e1217]/[0.97] px-4 py-8 text-sm text-ink-3">Memuat riwayat posisi…</p>;
+  if (positions.length === 0 && loading) return <HistorySkeleton />;
 
   const days = PERIOD_DAYS[period];
   const since = days == null ? 0 : midnightWib(days);
@@ -365,7 +396,8 @@ export function ClosedPositions({ wallet }: { wallet: string }) {
     );
 
   const nets = all.map((p) => p.net_usd).filter((n): n is number => n != null);
-  const netAll = nets.length ? nets.reduce((a, b) => a + b, 0) : null;
+  const pending = all.length - nets.length; // positions the cost accounting has not reached yet
+  const netAll = all.length === 0 ? 0 : nets.length ? nets.reduce((a, b) => a + b, 0) : null;
   const wins = nets.filter((n) => n > 0).length;
   const deposits = all.reduce((n, p) => n + (p.deposited_usd ?? p.deposit_usd), 0);
   const fees = all.reduce((n, p) => n + p.fees_usd, 0);
@@ -379,14 +411,28 @@ export function ClosedPositions({ wallet }: { wallet: string }) {
           label="Hasil bersih"
           value={netAll == null ? "…" : signed(netAll)}
           cls={netAll == null ? "text-ink-3" : tone(netAll)}
-          hint={days == null ? "Semua posisi yang sudah dimuat, setelah swap dan biaya" : `Ditutup ${PERIOD_HINT[period]}, setelah swap dan biaya`}
+          hint={
+            all.length === 0
+              ? `Tidak ada posisi ditutup ${PERIOD_HINT[period]}`
+              : pending > 0
+                ? `${pending} posisi masih dihitung`
+                : days == null
+                  ? "Semua posisi yang sudah dimuat, setelah swap dan biaya"
+                  : `Ditutup ${PERIOD_HINT[period]}, setelah swap dan biaya`
+          }
         />
         <Stat label="Modal masuk" value={usd.format(deposits)} hint={`${all.length} posisi · ${PERIOD_HINT[period]}`} />
         <Stat label="Fee terkumpul" value={usd.format(fees)} cls="text-emerald-300" hint="Fee yang dipungut posisi-posisi itu" />
         <Stat
           label="Posisi untung"
-          value={nets.length ? `${wins} / ${nets.length}` : "…"}
-          hint={nets.length ? `${fmtNum((wins / nets.length) * 100, 0)}% posisi pulang membawa untung` : "menghitung…"}
+          value={all.length === 0 ? "–" : nets.length ? `${wins} / ${nets.length}` : "…"}
+          hint={
+            all.length === 0
+              ? "belum ada yang ditutup"
+              : nets.length
+                ? `${fmtNum((wins / nets.length) * 100, 0)}% posisi pulang membawa untung`
+                : "menghitung…"
+          }
         />
       </div>
 
@@ -448,9 +494,20 @@ export function ClosedPositions({ wallet }: { wallet: string }) {
           <PositionCard key={p.address} p={p} pool={p.name} cost={p.cost_usd} net={p.net_usd} />
         ))}
         {shown.length === 0 && (
-          <p className="rounded-2xl border border-line bg-[#0e1217]/[0.97] px-4 py-8 text-center text-sm text-ink-3 lg:col-span-2 2xl:col-span-3">
-            Tidak ada posisi yang ditutup pada rentang ini.
-          </p>
+          <div className="rounded-2xl border border-line bg-[#0e1217]/[0.97] px-4 py-10 text-center lg:col-span-2 2xl:col-span-3">
+            <p className="text-sm text-ink-2">
+              {all.length === 0 ? `Belum ada posisi yang ditutup ${PERIOD_HINT[period]}.` : "Tidak ada posisi yang cocok dengan filter."}
+            </p>
+            {period !== "all" && (
+              <button
+                type="button"
+                onClick={() => setPeriod(period === "1d" ? "7d" : period === "7d" ? "30d" : "all")}
+                className="mt-3 rounded-full border border-line px-4 py-1.5 text-xs text-ink-2 transition-colors hover:border-line-strong hover:text-ink"
+              >
+                Lihat rentang yang lebih panjang
+              </button>
+            )}
+          </div>
         )}
       </div>
 
