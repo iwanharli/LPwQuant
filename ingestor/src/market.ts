@@ -236,3 +236,22 @@ async function saveFlows(flows: PoolFlow[]): Promise<void> {
   );
   await redis.hset(FLOW_KEY, Object.fromEntries(flows.map((f) => [f.address, JSON.stringify(f)])));
 }
+
+
+/** Rejects if `promise` has not settled in `ms`. Used to bound a whole poll cycle: the individual fetches have
+ * their own timeouts, but a hung socket or a stalled database call would otherwise stop the loop for good. */
+export function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (err) => {
+        clearTimeout(timer);
+        reject(err);
+      },
+    );
+  });
+}

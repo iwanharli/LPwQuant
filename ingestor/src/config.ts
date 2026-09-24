@@ -45,6 +45,8 @@ export const config = {
   redisUrl: process.env.REDIS_URL || "redis://localhost:6379/0",
   meteoraApi: process.env.METEORA_API_URL || "https://dlmm.datapi.meteora.ag",
   pollIntervalMs: num("POLL_INTERVAL_SEC", 60) * 1000,
+  // A cycle that takes longer than this is treated as hung and abandoned, so the next one can start.
+  pollTimeoutMs: num("POLL_TIMEOUT_SEC", 180) * 1000,
   fetchLimit: num("POOL_FETCH_LIMIT", 1000),
   poolLimit: num("POOL_LIMIT", 300),
   minTvl: num("MIN_TVL", 10_000),

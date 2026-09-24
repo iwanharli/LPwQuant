@@ -11,7 +11,7 @@ import { startClaimServer } from "./claim-server";
 import { WalletHistory } from "./wallet-history";
 import { NewPoolFeed } from "./new-pools";
 import { GmgnFetcher } from "./gmgn";
-import { CandleFetcher, FlowFetcher } from "./market";
+import { CandleFetcher, FlowFetcher, withTimeout } from "./market";
 import { SecurityFetcher } from "./security";
 import { PoolWatcher, type PriceTick } from "./watcher";
 
@@ -110,6 +110,18 @@ async function main(): Promise<void> {
     polling = true;
     const started = Date.now();
     try {
+      await withTimeout(pollOnce(started), config.pollTimeoutMs, "poll");
+    } catch (err) {
+      console.error("[poller] failed", err);
+    }
+    polling = false;
+    if (!stopped) timer = setTimeout(poll, config.pollIntervalMs);
+  };
+
+  // One cycle. Everything it awaits has its own timeout, but a socket that never answers still hangs the whole
+  // loop, and the process then looks alive while collecting nothing -- which is exactly what happened on
+  // 2026-09-25. The caller therefore bounds the cycle as a whole.
+  const pollOnce = async (started: number) => {
       const pinned = await redis.smembers(PAPER_OPEN_POOLS_KEY);
       const listed = await fetchPools();
       const known = new Set(listed.map((p) => p.address));
@@ -133,11 +145,6 @@ async function main(): Promise<void> {
       console.log(
         `[poller] ${pools.length} pools (${fresh.length} baru), watching ${watcher?.size ?? 0}, security ${security.known} known/${security.pending} queued, organic ${organic.known}, pump ${pump.known}, candles ${candles.tracked} pools/${candles.pending} queued, flow ${flow.lastCount}, gmgn ${gmgn?.known ?? "off"}, bins ${bins?.lastCount ?? "off"}, ${usageSummary}, ${Date.now() - started}ms`,
       );
-    } catch (err) {
-      console.error("[poller] failed", err);
-    }
-    polling = false;
-    if (!stopped) timer = setTimeout(poll, config.pollIntervalMs);
   };
 
   const shutdown = async () => {
