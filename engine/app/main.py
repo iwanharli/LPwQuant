@@ -194,7 +194,7 @@ async def get_closed(wallet: str, pool: str | None = None, fresh: bool = False) 
 
 
 @app.get("/api/portfolio/positions/recent")
-async def get_recent_positions(wallet: str, limit: int = Query(20, ge=1, le=100), before: int | None = None) -> dict:
+async def get_recent_positions(wallet: str, limit: int = Query(20, ge=1, le=500), before: int | None = None) -> dict:
     """Closed LP positions newest first, as one stream: the flows in and out, the range, and how it behaved."""
     _wallet_or_400(wallet)
     positions = await portfolio.recent_closed_positions(engine.db, wallet, limit, before)
