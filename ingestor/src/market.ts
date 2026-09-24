@@ -13,9 +13,13 @@ const CANDLE_REFRESH_MS = 10 * 60_000;
 const CANDLE_REQUEST_GAP_MS = 2_000;
 
 export const FLOW_KEY = "flow:latest"; // hash: pool address -> PoolFlow JSON (read by engine)
-const FLOW_REFRESH_MS = 2 * 60_000;
+const FLOW_REFRESH_MS = 3 * 60_000;
+// GeckoTerminal answered 429 on 136 cycles in a day: retrying on the same schedule just collects more refusals.
+// Each refusal doubles the wait, a clean cycle resets it.
+const FLOW_BACKOFF_START_MS = 10 * 60_000;
+const FLOW_BACKOFF_MAX_MS = 60 * 60_000;
 const FLOW_BATCH = 30; // GeckoTerminal maximum per multi request
-const FLOW_REQUEST_GAP_MS = 2_500; // public API allows ~30 calls/min
+const FLOW_REQUEST_GAP_MS = 4_000; // public API allows ~30 calls/min, and refuses well before that in practice
 const GECKO_MULTI_URL = "https://api.geckoterminal.com/api/v2/networks/solana/pools/multi";
 
 const RATE_LIMIT_BACKOFF_MS = 60_000;
@@ -185,11 +189,14 @@ export function normalizeFlow(pool: GeckoPool, ourBaseMint: string | undefined, 
 export class FlowFetcher {
   private lastRun = 0;
   private running = false;
+  private backoffUntil = 0;
+  private backoffMs = 0;
   lastCount = 0;
 
   maybeRefresh(pools: PoolSnapshot[]): void {
-    if (this.running || Date.now() - this.lastRun < FLOW_REFRESH_MS) return;
-    this.lastRun = Date.now();
+    const now = Date.now();
+    if (this.running || now < this.backoffUntil || now - this.lastRun < FLOW_REFRESH_MS) return;
+    this.lastRun = now;
     void this.refresh(pools);
   }
 
@@ -206,9 +213,12 @@ export class FlowFetcher {
           signal: AbortSignal.timeout(30_000),
         });
         if (res.status === 429) {
-          console.warn("[flow] geckoterminal rate limited, skipping rest of this cycle");
+          this.backoffMs = Math.min(this.backoffMs ? this.backoffMs * 2 : FLOW_BACKOFF_START_MS, FLOW_BACKOFF_MAX_MS);
+          this.backoffUntil = Date.now() + this.backoffMs;
+          console.warn(`[flow] geckoterminal rate limited, berhenti ${Math.round(this.backoffMs / 60_000)} menit`);
           break;
         }
+        this.backoffMs = 0;
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const body = (await res.json()) as { data?: GeckoPool[] };
         const now = Date.now();
