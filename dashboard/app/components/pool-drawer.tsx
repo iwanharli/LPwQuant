@@ -22,6 +22,7 @@ import {
   usd,
   usdCompact,
 } from "../lib/format";
+import PumpWarning from "./pump-warning";
 import { isActivePlan, type ActivePlan, type PoolRow, type RiskyRange } from "../lib/types";
 import { AlertIcon, CandleIcon, CheckIcon, CloseIcon, CopyIcon, ExitIcon, ExternalLinkIcon, ShieldIcon } from "./icons";
 import BusyHours from "./busy-hours";
@@ -632,6 +633,8 @@ function DrawerContent({ row, onClose }: { row: PoolRow; onClose: () => void }) 
           </p>
         )}
       </div>
+
+      <PumpWarning changePct1h={row.change_pct_1h} />
 
       <Section title="Pasar">
         <dl className="grid grid-cols-2 gap-2 sm:grid-cols-3">

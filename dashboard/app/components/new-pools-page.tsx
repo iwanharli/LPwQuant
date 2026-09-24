@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { ENGINE_URL, fmtNum, fmtSignedPct, usdCompact } from "../lib/format";
 import { flagMeta } from "../lib/flags";
+import PumpWarning from "./pump-warning";
 import TopBar from "./top-bar";
 import { StatusDot } from "./ui";
 
@@ -146,6 +147,9 @@ export default function NewPoolsPage() {
                       <Link href={`/pool/${p.address}`} className="block truncate text-[15px] font-semibold text-ink hover:text-accent">
                         {p.name.replace("-", "/")}
                       </Link>
+                      <div className="mt-0.5 empty:hidden">
+                        <PumpWarning changePct1h={p.change_pct_1h} compact />
+                      </div>
                       <div className="text-[11px] tabular-nums text-ink-3">
                         dibuat {ageText(p.pool_age_hours)} · {p.bin_step}bps{p.base_fee_pct != null ? ` · fee ${fmtNum(p.base_fee_pct, 2)}%` : ""}
                       </div>

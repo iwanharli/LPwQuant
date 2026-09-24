@@ -24,6 +24,7 @@ import type {
 import { isActivePlan, type ActivePlan } from "../../lib/types";
 import BusyHours from "../busy-hours";
 import TopBar from "../top-bar";
+import PumpWarning from "../pump-warning";
 import { Delta, PlanBadge, RegimeBadge, StatusDot, TokenAvatar } from "../ui";
 import CandleChart, { type ChartLevel, type ChartMarker } from "./candle-chart";
 
@@ -281,6 +282,8 @@ export default function PoolPage({ address }: { address: string }) {
             </div>
           )}
         </div>
+
+        {pool && <PumpWarning changePct1h={pool.change_pct_1h} />}
 
         {detail.error && (
           <p className="flex items-center gap-2 rounded-2xl border border-critical/30 bg-critical/10 px-4 py-3 text-sm text-ink-2">
