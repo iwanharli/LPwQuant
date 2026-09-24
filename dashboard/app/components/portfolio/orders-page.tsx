@@ -8,6 +8,7 @@ import TopBar from "../top-bar";
 import { StatusDot } from "../ui";
 import WalletButton from "../wallet-button";
 import { ClosedOrders } from "./closed-history";
+import { useUrlState } from "../../lib/url-state";
 import PortfolioHeader from "./portfolio-header";
 import LimitRecs from "./limit-recs";
 import PaperLimitOrders from "./paper-lo";
@@ -110,7 +111,11 @@ type CancelState =
   | { phase: "done"; signature: string }
   | { phase: "error"; message: string };
 
+type OrdersView = "open" | "recs" | "history" | "paper";
+const ORDERS_VIEWS = ["open", "recs", "history", "paper"] as const;
+
 export default function OrdersPage() {
+  const [view, setView] = useUrlState<OrdersView>("view", "open", ORDERS_VIEWS);
   const connected = useConnectedWallet();
   useWalletParam(connected);
   const walletOptions = useWalletOptions();
@@ -213,6 +218,32 @@ export default function OrdersPage() {
               </p>
             )}
 
+            <div className="flex flex-wrap gap-1 border-b border-line" role="tablist" aria-label="Tampilan limit order">
+              {(
+                [
+                  { value: "open", label: `Order terbuka${orders.length ? ` (${orders.length})` : ""}` },
+                  { value: "recs", label: "Rekomendasi" },
+                  { value: "history", label: "Riwayat" },
+                  { value: "paper", label: "Uji engine" },
+                ] as const
+              ).map((o) => (
+                <button
+                  key={o.value}
+                  type="button"
+                  role="tab"
+                  aria-selected={view === o.value}
+                  onClick={() => setView(o.value)}
+                  className={`-mb-px border-b-2 px-4 py-2.5 text-sm font-medium transition-colors ${
+                    view === o.value ? "border-accent text-ink" : "border-transparent text-ink-3 hover:text-ink-2"
+                  }`}
+                >
+                  {o.label}
+                </button>
+              ))}
+            </div>
+
+            {view === "open" && (
+            <>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
               {[
                 { label: "Order terbuka", value: String(orders.length), hint: `${orders.filter(({ o }) => o.filled_pct >= 99.9).length} terisi penuh` },
@@ -304,12 +335,14 @@ export default function OrdersPage() {
                 </div>
               )}
             </section>
+            </>
+            )}
 
-            <LimitRecs owner={connected.address} canSign={signer} />
+            {view === "recs" && <LimitRecs owner={connected.address} canSign={signer} />}
 
-            <ClosedOrders wallet={connected.address} />
+            {view === "history" && <ClosedOrders wallet={connected.address} />}
 
-            <PaperLimitOrders />
+            {view === "paper" && <PaperLimitOrders />}
           </>
         )}
 
