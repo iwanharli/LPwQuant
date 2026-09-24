@@ -108,6 +108,52 @@ def bollinger(closes: Sequence[float], n: int = 20, k: float = 2.0) -> dict[str,
     }
 
 
+def supertrend(candles: Sequence[Candle], n: int = 10, mult: float = 3.0) -> dict[str, Any] | None:
+    """Supertrend, the Panda entry trigger: the ATR band the price rides. `up` is True while the close is above the
+    line, and `flipped_up` marks the candle where that just became true -- the "break" the strategy waits for."""
+    atr = _rma(true_ranges(candles), n)  # atr[j] belongs to candles[n - 1 + j]
+    if len(atr) < 3:
+        return None
+    up, line, flipped_up = True, 0.0, False
+    for j, a in enumerate(atr):
+        c = candles[n - 1 + j]
+        mid = (c.high + c.low) / 2
+        upper, lower = mid + mult * a, mid - mult * a
+        if j == 0:
+            up, line = c.close >= mid, (lower if c.close >= mid else upper)
+            continue
+        was_up = up
+        if up:
+            line = max(lower, line)  # the band only tightens while the trend holds
+            if c.close < line:
+                up, line = False, upper
+        else:
+            line = min(upper, line)
+            if c.close > line:
+                up, line = True, lower
+        flipped_up = up and not was_up
+    return {"line": line, "up": up, "flipped_up": flipped_up}
+
+
+def macd_histogram(closes: Sequence[float], fast: int = 12, slow: int = 26, signal: int = 9) -> list[float] | None:
+    """MACD histogram series; the Panda exit looks for its first green (positive) bar after red ones."""
+    if len(closes) < slow + signal:
+        return None
+    fast_ema, slow_ema = ema(closes, fast), ema(closes, slow)
+    macd = [f - s for f, s in zip(fast_ema, slow_ema)]
+    sig = ema(macd, signal)
+    return [m - s for m, s in zip(macd, sig)]
+
+
+def bollinger_bands(closes: Sequence[float], n: int = 20, k: float = 2.0) -> dict[str, float] | None:
+    """Absolute band prices, for rules that compare the close with the upper band."""
+    if len(closes) < n:
+        return None
+    window = closes[-n:]
+    mid, sd = fmean(window), pstdev(window)
+    return {"mid": mid, "upper": mid + k * sd, "lower": mid - k * sd}
+
+
 def bollinger_squeeze(closes: Sequence[float], n: int = 20, lookback: int = 60, quantile: float = 0.2) -> bool | None:
     """Current band width in the lowest `quantile` of widths over the lookback (and below their median,
     so a steady width never counts as a squeeze)."""

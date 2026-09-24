@@ -457,3 +457,36 @@ create table if not exists auth_sessions (
   user_agent text
 );
 create index if not exists auth_sessions_expires on auth_sessions (expires_at);
+
+-- Paper test of the Panda Strat (see engine/app/panda.py): one-sided quote liquidity spread very wide below the
+-- price, entered on a Supertrend break and exited on the strategy's own indicator confluence.
+create table if not exists paper_panda_runs (
+  id              bigserial primary key,
+  pool            text not null,
+  name            text not null,
+  mint            text not null,
+  quote           text not null,
+  opened_at       timestamptz not null,
+  status          text not null,               -- open | closed
+  size_usd        double precision not null,
+  sol_usd         double precision not null,
+  entry_price     double precision not null,
+  range_low_pct   double precision not null,
+  bins            integer not null,
+  last_cum_fees   double precision not null,
+  fees_usd        double precision not null default 0,
+  ticks           integer not null default 0,
+  last_price      double precision,
+  last_tvl        double precision,
+  last_volume_24h double precision,
+  min_ratio       double precision not null default 1,  -- deepest the price went, as a fraction of entry
+  checked_at      timestamptz,
+  closed_at       timestamptz,
+  exit_reason     text,                        -- rsi2_bb | rsi2_macd | flatline | time | vanished
+  lp_value_usd    double precision,
+  token_value_usd double precision,
+  costs_usd       double precision,
+  rent_usd        double precision,
+  pnl_usd         double precision
+);
+create index if not exists paper_panda_runs_status on paper_panda_runs (status);

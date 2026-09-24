@@ -12,7 +12,7 @@ from . import config
 from .backtest import default_params, run_backtest
 from .charts import MAX_HOURS, load_candles, pool_paper_positions, profile_decision
 from .freshness import check_freshness
-from . import busy_hours, ledger, limit_recs, netpnl, paper_lo, paper_pool, portfolio
+from . import busy_hours, ledger, limit_recs, netpnl, panda, paper_lo, paper_pool, portfolio
 
 log = logging.getLogger("api")
 from .service import Engine
@@ -276,6 +276,12 @@ async def limit_order_paper() -> dict:
     if engine.db is None:
         raise HTTPException(status_code=503, detail="engine not ready")
     return await paper_lo.report(engine.db)
+
+
+@app.get("/api/panda/paper")
+async def get_panda_paper() -> dict:
+    """Paper test of the Panda Strat: screening funnel, open and closed positions, and what each one cost."""
+    return await panda.report(engine.db, engine.rows)
 
 
 @app.get("/api/pool-lab/paper")

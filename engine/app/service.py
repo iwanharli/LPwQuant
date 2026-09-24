@@ -14,6 +14,7 @@ import redis.asyncio as aioredis
 from . import config
 from .alerts import Alerter, serve_commands
 from .paper_lo import PaperLimitOrders
+from .panda import PandaPaper
 from .paper_pool import PaperPoolCreator
 from .portfolio import snapshot_loop as portfolio_snapshot_loop
 from .indicators import Candle, compute_indicators, flow_features, merge_market
@@ -131,6 +132,8 @@ class Engine:
         if config.PAPER_ENABLED:
             creator = PaperPoolCreator(self.db, lambda: self.sol_usd or config.SOL_USD_FALLBACK)
             self._tasks.append(asyncio.create_task(creator.run(), name="paper_pool_creator"))
+            panda = PandaPaper(self.db, lambda: self.rows, lambda: self.sol_usd or config.SOL_USD_FALLBACK)
+            self._tasks.append(asyncio.create_task(panda.run(), name="panda_paper"))
         if self.alerter.enabled:
             self._tasks.append(
                 asyncio.create_task(

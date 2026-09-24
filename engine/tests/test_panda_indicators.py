@@ -1,0 +1,55 @@
+from app.indicators import Candle, bollinger_bands, macd_histogram, rsi, supertrend
+
+
+def candles(closes: list[float]) -> list[Candle]:
+    return [Candle(ts=i * 900_000, open=c, high=c * 1.01, low=c * 0.99, close=c, volume=1.0) for i, c in enumerate(closes)]
+
+
+def test_supertrend_follows_a_rising_market():
+    st = supertrend(candles([100 + i for i in range(40)]))
+    assert st is not None and st["up"] is True and st["line"] < 139
+
+
+def test_supertrend_turns_down_after_a_crash():
+    st = supertrend(candles([100 + i for i in range(30)] + [130 - 6 * i for i in range(12)]))
+    assert st is not None and st["up"] is False
+
+
+def test_macd_histogram_turns_positive_when_price_turns_up():
+    hist = macd_histogram([100 - i for i in range(60)] + [40 + 3 * i for i in range(20)])
+    assert hist is not None and hist[-1] > 0
+
+
+def test_rsi_period_two_is_extreme_after_two_up_closes():
+    assert (rsi([10, 9, 8, 7, 6, 5, 9, 12], 2) or 0) > 90
+
+
+def test_bollinger_bands_bracket_the_mean():
+    b = bollinger_bands([10 + (i % 3) for i in range(30)])
+    assert b is not None and b["lower"] < b["mid"] < b["upper"]
+
+
+def test_one_sided_position_starts_as_quote_and_ends_as_token():
+    from app.panda import position_value
+
+    quote, token = position_value(1000.0, 1.0)  # price unchanged: nothing bought yet
+    assert abs(quote - 1000.0) < 1.0 and token < 1.0
+    quote, token = position_value(1000.0, 0.05)  # price fell through the whole range
+    assert quote < 1.0 and 0 < token < 1000.0
+
+
+def test_position_loses_less_than_the_token_itself():
+    """The point of buying down a wide range: at -50% the position is worth more than a token bought at the top."""
+    from app.panda import position_value
+
+    quote, token = position_value(1000.0, 0.5)
+    assert 500.0 < quote + token < 1000.0
+
+
+def test_screen_rejects_a_thin_pool():
+    from app.panda import screen
+
+    ok, why = screen({"name": "X-SOL", "security": {"score": 1}, "flags": [], "market_cap": 100.0})
+    assert not ok and "market cap" in why
+    ok, why = screen({"name": "X-USDT", "security": {"score": 1}, "flags": []})
+    assert not ok and "SOL/USDC" in why
