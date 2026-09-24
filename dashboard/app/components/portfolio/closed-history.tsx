@@ -164,7 +164,7 @@ function PositionCard({ p, pool, cost }: { p: ClosedPosition; pool?: string; cos
           {pool && <div className="truncate text-[15px] font-semibold text-ink">{pool.replace("-", "/")}</div>}
           <div className="mt-1 text-[10px] font-medium uppercase tracking-[0.12em] text-ink-3">Hasil bersih</div>
           <div className="mt-1 flex flex-wrap items-baseline gap-2.5">
-            <span className={`text-[34px] font-semibold leading-none tracking-tight tabular-nums ${net == null ? "text-ink-3" : tone(net)}`}>
+            <span className={`text-[28px] font-semibold leading-none tracking-tight tabular-nums ${net == null ? "text-ink-3" : tone(net)}`}>
               {net == null ? "…" : signed(net)}
             </span>
             {pct != null && (
@@ -188,7 +188,7 @@ function PositionCard({ p, pool, cost }: { p: ClosedPosition; pool?: string; cos
 
       <RangeBar min={p.min_price} max={p.max_price} last={p.last_price} positive={positive} />
 
-      <div className="mt-4 grid grid-cols-2 gap-2.5 lg:grid-cols-4">
+      <div className="mt-4 grid grid-cols-2 gap-2.5">
         <Tile label="Modal masuk" value={usd.format(basis)} hint={p.tx_count ? `${p.tx_count} transaksi` : undefined} />
         <Tile
           label="Ditarik keluar"
@@ -204,7 +204,7 @@ function PositionCard({ p, pool, cost }: { p: ClosedPosition; pool?: string; cos
         />
       </div>
 
-      <div className="mt-2.5 grid grid-cols-2 gap-2.5 lg:grid-cols-3">
+      <div className="mt-2.5 grid grid-cols-2 gap-2.5 sm:grid-cols-3">
         <Tile
           label="Waktu di dalam range"
           value={p.in_range_pct == null ? "–" : `${fmtNum(p.in_range_pct, 0)}%`}
@@ -230,6 +230,26 @@ function PositionCard({ p, pool, cost }: { p: ClosedPosition; pool?: string; cos
   );
 }
 
+function Chips<T extends string>({ value, onChange, options }: { value: T; onChange: (v: T) => void; options: { value: T; label: string }[] }) {
+  return (
+    <div className="flex gap-1 rounded-full border border-line bg-bg/50 p-0.5">
+      {options.map((o) => (
+        <button
+          key={o.value}
+          type="button"
+          aria-pressed={value === o.value}
+          onClick={() => onChange(o.value)}
+          className={`rounded-full px-2.5 py-1 text-xs font-medium transition-colors ${
+            value === o.value ? "bg-accent/15 text-accent" : "text-ink-3 hover:text-ink-2"
+          }`}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 type RecentPosition = ClosedPosition & { pool: string; name: string };
 
 /** Closed positions as one stream, newest first. Grouping by pool hid the thing that matters most -- what you did
@@ -237,6 +257,9 @@ type RecentPosition = ClosedPosition & { pool: string; name: string };
 export function ClosedPositions({ wallet }: { wallet: string }) {
   const [limit, setLimit] = useState(PAGE);
   const [query, setQuery] = useState("");
+  const [result, setResult] = useState<"all" | "win" | "loss">("all");
+  const [exit, setExit] = useState<"all" | "below" | "above" | "inside">("all");
+  const [sort, setSort] = useState<"recent" | "best" | "worst" | "size">("recent");
   const { data, error } = useJson<{ positions: RecentPosition[] }>(
     `${ENGINE_URL}/api/portfolio/positions/recent?wallet=${wallet}&limit=200`,
   );
@@ -245,8 +268,20 @@ export function ClosedPositions({ wallet }: { wallet: string }) {
   if (!data) return <p className="rounded-2xl border border-line bg-[#0e1217]/[0.97] px-4 py-8 text-sm text-ink-3">Memuat riwayat posisi…</p>;
 
   const all = data.positions;
-  const shown = query.trim() ? all.filter((p) => p.name.toLowerCase().includes(query.trim().toLowerCase())) : all;
   const net = (p: RecentPosition) => costs?.positions[p.address]?.net ?? null;
+  const shown = all
+    .filter((p) => (query.trim() ? p.name.toLowerCase().includes(query.trim().toLowerCase()) : true))
+    .filter((p) => (result === "all" ? true : result === "win" ? (net(p) ?? 0) > 0 : (net(p) ?? 0) < 0))
+    .filter((p) => (exit === "all" ? true : p.exit_side === exit))
+    .sort((a, b) =>
+      sort === "best"
+        ? (net(b) ?? 0) - (net(a) ?? 0)
+        : sort === "worst"
+          ? (net(a) ?? 0) - (net(b) ?? 0)
+          : sort === "size"
+            ? (b.deposited_usd ?? b.deposit_usd) - (a.deposited_usd ?? a.deposit_usd)
+            : (b.closed_at ?? 0) - (a.closed_at ?? 0),
+    );
   const nets = costs ? all.map(net).filter((n): n is number => n != null) : [];
   const netAll = nets.length ? nets.reduce((a, b) => a + b, 0) : null;
   const wins = nets.filter((n) => n > 0).length;
@@ -271,26 +306,67 @@ export function ClosedPositions({ wallet }: { wallet: string }) {
         />
       </div>
 
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-line bg-[#0e1217]/[0.97] px-3 py-2.5">
         <h2 className="text-sm font-semibold text-ink">
           Posisi terakhir ditutup{shown.length !== all.length ? ` · ${shown.length} dari ${all.length}` : ""}
         </h2>
-        <input
-          value={query}
-          onChange={(e) => {
-            setQuery(e.target.value);
-            setLimit(PAGE);
-          }}
-          placeholder="Cari token"
-          aria-label="Cari posisi"
-          className="h-8 w-44 rounded-full border border-line bg-bg/50 px-3 text-xs text-ink placeholder:text-ink-3 focus:border-accent/70 focus:outline-none"
-        />
+        <div className="flex flex-wrap items-center gap-2">
+          <Chips
+            value={result}
+            onChange={(v) => {
+              setResult(v);
+              setLimit(PAGE);
+            }}
+            options={[
+              { value: "all", label: "Semua" },
+              { value: "win", label: "Untung" },
+              { value: "loss", label: "Rugi" },
+            ]}
+          />
+          <select
+            value={exit}
+            onChange={(e) => {
+              setExit(e.target.value as typeof exit);
+              setLimit(PAGE);
+            }}
+            aria-label="Akhir posisi"
+            className="h-8 rounded-full border border-line bg-bg/50 px-3 text-xs text-ink-2 focus:outline-none"
+          >
+            <option value="all">Akhir: semua</option>
+            <option value="below">Jatuh keluar range</option>
+            <option value="above">Naik keluar range</option>
+            <option value="inside">Masih di dalam range</option>
+          </select>
+          <select
+            value={sort}
+            onChange={(e) => setSort(e.target.value as typeof sort)}
+            aria-label="Urutkan"
+            className="h-8 rounded-full border border-line bg-bg/50 px-3 text-xs text-ink-2 focus:outline-none"
+          >
+            <option value="recent">Terbaru ditutup</option>
+            <option value="best">Hasil terbaik</option>
+            <option value="worst">Hasil terburuk</option>
+            <option value="size">Modal terbesar</option>
+          </select>
+          <input
+            value={query}
+            onChange={(e) => {
+              setQuery(e.target.value);
+              setLimit(PAGE);
+            }}
+            placeholder="Cari token"
+            aria-label="Cari posisi"
+            className="h-8 w-36 rounded-full border border-line bg-bg/50 px-3 text-xs text-ink placeholder:text-ink-3 focus:border-accent/70 focus:outline-none"
+          />
+        </div>
       </div>
 
-      <div className="space-y-3">
+      <div className="grid gap-3 lg:grid-cols-2 2xl:grid-cols-3">
         {shown.slice(0, limit).map((p) => (
           <PositionCard key={p.address} p={p} pool={p.name} cost={costs?.positions[p.address]} />
         ))}
+      </div>
+      <div className="space-y-3">
         {shown.length === 0 && (
           <p className="rounded-2xl border border-line bg-[#0e1217]/[0.97] px-4 py-8 text-center text-sm text-ink-3">Tidak ada posisi yang cocok.</p>
         )}
