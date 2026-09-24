@@ -42,7 +42,8 @@ module.exports = {
       name: "quant-dashboard",
       cwd: path.join(root, "dashboard"),
       script: "npm",
-      args: "start -- --port 3000",
+      // DASHBOARD_PORT lets a server that already uses 3000 put the dashboard elsewhere.
+      args: `start -- --port ${process.env.DASHBOARD_PORT || 3000}`,
       out_file: path.join(root, "logs/dashboard.log"),
       error_file: path.join(root, "logs/dashboard.log"),
     },
