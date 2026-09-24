@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import PageHeader from "../components/page-header";
 import TopBar from "../components/top-bar";
 import UsagePanel from "../components/usage-panel";
 
@@ -12,10 +13,7 @@ export default function Page() {
     <div className="flex min-h-screen min-w-0 flex-col overflow-x-hidden">
       <TopBar />
       <main className="mx-auto w-full min-w-0 max-w-full flex-1 space-y-5 overflow-x-hidden px-4 py-6 sm:px-6 lg:py-7 2xl:px-8">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight text-ink sm:text-4xl">Pemakaian API</h1>
-          <p className="mt-1 truncate text-sm text-ink-3">Panggilan RPC dan API data per sumber, untuk memantau kuota.</p>
-        </div>
+        <PageHeader title="Pemakaian API" subtitle="Panggilan RPC dan API data per sumber, untuk memantau kuota." />
         <UsagePanel />
       </main>
     </div>

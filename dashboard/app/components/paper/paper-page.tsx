@@ -22,6 +22,7 @@ import {
   type TradeStats,
 } from "../../lib/paper-types";
 import type { Tier } from "../../lib/types";
+import PageHeader from "../page-header";
 import TopBar from "../top-bar";
 import { ChevronIcon } from "../icons";
 import { Delta, StatusDot } from "../ui";
@@ -734,20 +735,16 @@ export default function PaperPage() {
     <div className="flex min-h-screen min-w-0 flex-col overflow-x-hidden">
       <TopBar />
       <main className="mx-auto w-full min-w-0 max-w-full flex-1 space-y-5 overflow-x-hidden px-4 py-6 sm:px-6 lg:py-7 2xl:px-8">
-        <div className="flex flex-wrap items-end justify-between gap-4">
-          <div>
-          <h1 className="text-3xl font-bold tracking-tight text-ink sm:text-4xl">
-            Paper trading{s?.profile ? <span className="text-ink-3"> · {s.profile.label}</span> : null}
-          </h1>
-          <p className="mt-1 truncate text-sm text-ink-3">
-            LP virtual otomatis dari rencana live, tanpa transaksi on-chain.
-          </p>
-          </div>
-          <div className="hidden rounded-lg border border-line bg-panel/70 px-3 py-2 text-right shadow-sm shadow-black/20 lg:block">
-            <div className="text-[11px] uppercase tracking-wider text-ink-3">Portfolio</div>
-            <div className="text-sm font-semibold text-ink">{s ? usd.format(s.equity_usd) : "Menunggu data"}</div>
-          </div>
-        </div>
+        <PageHeader
+          title={<>Paper trading{s?.profile ? <span className="text-ink-3"> · {s.profile.label}</span> : null}</>}
+          subtitle="LP virtual otomatis dari rencana live, tanpa transaksi on-chain."
+          right={
+            <div className="hidden rounded-lg border border-line bg-panel/70 px-3 py-2 text-right shadow-sm shadow-black/20 lg:block">
+              <div className="text-[11px] uppercase tracking-wider text-ink-3">Portfolio</div>
+              <div className="text-sm font-semibold text-ink">{s ? usd.format(s.equity_usd) : "Menunggu data"}</div>
+            </div>
+          }
+        />
 
         {error && (
           <p className="flex items-center gap-2 rounded-2xl border border-critical/30 bg-critical/10 px-4 py-3 text-sm text-ink-2 shadow-sm shadow-black/20">

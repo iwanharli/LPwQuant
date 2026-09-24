@@ -6,6 +6,7 @@ import { ENGINE_URL, fmtNum, fmtSignedPct, usdCompact } from "../lib/format";
 import { flagMeta } from "../lib/flags";
 import PumpWarning from "./pump-warning";
 import TopBar from "./top-bar";
+import PageHeader from "./page-header";
 import { StatusDot } from "./ui";
 
 const REFRESH_MS = 10_000;
@@ -96,18 +97,16 @@ export default function NewPoolsPage() {
     <div className="flex min-h-screen min-w-0 flex-col overflow-x-hidden">
       <TopBar />
       <main className="mx-auto w-full min-w-0 max-w-full flex-1 space-y-5 overflow-x-hidden px-4 py-6 sm:px-6 lg:py-7 2xl:px-8">
-        <div className="flex h-20 items-end justify-between gap-4">
-          <div className="min-w-0">
-            <h1 className="text-3xl font-bold tracking-tight text-ink sm:text-4xl">Pool baru</h1>
-            <p className="mt-1 truncate text-sm text-ink-3">
-              Pool DLMM di bawah {MAX_AGE_HOURS} jam dengan TVL ≥ ${MIN_TVL}, dicek keamanannya otomatis.
-            </p>
-          </div>
-          <span className="flex shrink-0 items-center gap-2 text-xs text-ink-3">
-            <StatusDot severity={error ? "critical" : "good"} pulse={!error} />
-            {error ? "Engine tidak bisa dihubungi" : `Diperbarui tiap ${REFRESH_MS / 1000} dtk`}
-          </span>
-        </div>
+        <PageHeader
+          title="Pool baru"
+          subtitle={`Pool DLMM di bawah ${MAX_AGE_HOURS} jam dengan TVL ≥ $${MIN_TVL}, dicek keamanannya otomatis.`}
+          right={
+            <span className="flex items-center gap-2 text-xs text-ink-3">
+              <StatusDot severity={error ? "critical" : "good"} pulse={!error} />
+              {error ? "Engine tidak bisa dihubungi" : `Diperbarui tiap ${REFRESH_MS / 1000} dtk`}
+            </span>
+          }
+        />
 
         <div className="flex flex-wrap items-center gap-2">
           {(["all", "ok", "pending", "blocked"] as Filter[]).map((f) => (

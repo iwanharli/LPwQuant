@@ -11,6 +11,7 @@ import PoolDrawer from "./pool-drawer";
 import PoolTable from "./pool-table";
 import Toolbar, { type TierFilter } from "./toolbar";
 import TopBar from "./top-bar";
+import PageHeader from "./page-header";
 
 export default function Dashboard() {
   const { pools, status, lastMessageAt } = useLivePools();
@@ -75,10 +76,7 @@ export default function Dashboard() {
       <TopBar status={status} lastMessageAt={lastMessageAt} />
 
       <main className="mx-auto w-full min-w-0 max-w-full flex-1 space-y-5 overflow-x-hidden px-4 py-6 sm:px-6 lg:py-7 2xl:px-8">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight text-ink sm:text-4xl">Pool DLMM</h1>
-          <p className="mt-1 truncate text-sm text-ink-3">Pool diurutkan per tingkat risiko dan skor peluang fee.</p>
-        </div>
+        <PageHeader title="Pool DLMM" subtitle="Pool diurutkan per tingkat risiko dan skor peluang fee." />
 
         <KpiStrip rows={all} />
 

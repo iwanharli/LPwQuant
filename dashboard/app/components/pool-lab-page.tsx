@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { ENGINE_URL, fmtDateTime, fmtNum, usd } from "../lib/format";
 import TopBar from "./top-bar";
+import PageHeader from "./page-header";
 
 type Run = {
   id: number;
@@ -107,12 +108,7 @@ export default function PoolLabPage() {
     <div className="flex min-h-screen min-w-0 flex-col overflow-x-hidden">
       <TopBar />
       <main className="mx-auto w-full min-w-0 max-w-full flex-1 space-y-5 overflow-x-hidden px-4 py-6 sm:px-6 lg:py-7 2xl:px-8">
-        <div className="flex h-20 items-end justify-between gap-4">
-          <div className="min-w-0">
-            <h1 className="text-3xl font-bold tracking-tight text-ink sm:text-4xl">Uji pembuat pool</h1>
-            <p className="mt-1 truncate text-sm text-ink-3">Paper, tanpa transaksi: jadi LP pertama di pool baru ber-fee tinggi.</p>
-          </div>
-        </div>
+        <PageHeader title="Uji pembuat pool" subtitle="Paper, tanpa transaksi: jadi LP pertama di pool baru ber-fee tinggi." />
 
         {error && !r && (
           <p className="rounded-2xl border border-line bg-[#0e1217]/[0.97] px-4 py-8 text-sm text-ink-3">Engine tidak bisa dihubungi.</p>

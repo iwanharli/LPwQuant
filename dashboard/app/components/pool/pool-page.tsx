@@ -256,7 +256,7 @@ export default function PoolPage({ address }: { address: string }) {
     <div className="flex min-h-screen min-w-0 flex-col overflow-x-hidden">
       <TopBar />
       <main className="mx-auto w-full min-w-0 max-w-full flex-1 space-y-5 overflow-x-hidden px-4 py-6 sm:px-6 lg:py-7 2xl:px-8">
-        <div className="flex flex-wrap items-center justify-between gap-4">
+        <div className="flex min-h-20 flex-wrap items-center justify-between gap-4">
           <div className="flex min-w-0 items-center gap-3">
             <Link href="/" className="rounded-md px-2 py-1 text-sm text-ink-3 transition-colors hover:bg-raised hover:text-ink">
               ← Screener
