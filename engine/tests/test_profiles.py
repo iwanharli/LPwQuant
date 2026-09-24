@@ -24,7 +24,8 @@ def row(tier="medium", cost=0.5, fee_day=12.0, size=40.0, tvl=100_000.0, address
 
 
 def test_profiles_have_distinct_rules():
-    assert [p.key for p in PROFILES] == ["konservatif", "moderat", "tenang", "satu_sisi", "bolak_balik", "tinggi_tenang", "agresif"]
+    assert [p.key for p in PROFILES] == ["konservatif", "moderat", "tenang", "satu_sisi", "satu_sisi_volatil",
+                                         "satu_sisi_sering", "bolak_balik", "tinggi_tenang", "agresif"]
     cons, agg = PROFILE_BY_KEY["konservatif"], PROFILE_BY_KEY["agresif"]
     assert cons.min_fee_cost_ratio > agg.min_fee_cost_ratio and cons.stop_loss_mult < agg.stop_loss_mult
     assert "high" not in cons.tiers and "low" not in agg.tiers
@@ -138,3 +139,12 @@ def test_bolak_balik_only_enters_pools_that_keep_turning_back():
     assert profile_plan({**base, "market": {"reversal_rate": 0.62}}, cfg, equity_usd=500.0) is not None
     assert profile_plan({**base, "market": {"reversal_rate": 0.38}}, cfg, equity_usd=500.0) is None  # trending
     assert profile_plan({**base, "market": {}}, cfg, equity_usd=500.0) is None  # unknown is not a pass
+
+
+def test_one_sided_variants_each_change_one_rule():
+    """The two variants exist to split "Satu Sisi" into its two rules, so each must differ in exactly one."""
+    base = PROFILE_BY_KEY["satu_sisi"]
+    volatile, often = PROFILE_BY_KEY["satu_sisi_volatil"], PROFILE_BY_KEY["satu_sisi_sering"]
+    assert all(p.plan_variant == "single" for p in (base, volatile, often))
+    assert volatile.max_atr_pct is None and volatile.min_fee_cost_ratio == base.min_fee_cost_ratio
+    assert often.max_atr_pct == base.max_atr_pct and often.min_fee_cost_ratio < base.min_fee_cost_ratio

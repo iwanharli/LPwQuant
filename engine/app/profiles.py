@@ -101,6 +101,39 @@ PROFILES: tuple[RiskProfile, ...] = (
         plan_variant="single",
     ),
     RiskProfile(
+        key="satu_sisi_volatil",
+        label="Satu Sisi Volatil",
+        description="Seperti Satu Sisi tapi tanpa batas ATR: menguji apakah saringan volatilitas itu yang bekerja",
+        tiers=("low", "medium", "high"),
+        max_open_per_tier=5,
+        size_mult=1.0,
+        min_fee_cost_ratio=config.MIN_FEE_COST_RATIO,
+        fee_gate_hours=config.FEE_GATE_HOURS,
+        min_hold_hours=config.MIN_HOLD_HOURS,
+        stop_loss_mult=1.0,
+        max_drawdown_pct=10.0,
+        # "Satu Sisi" is the only profile in profit on paper (+$33.94 over 25 positions, +6.8%), but it combines
+        # two rules: quote-only entry and ATR <= 2%. This one drops the ATR cap, so paper says which half works.
+        plan_variant="single",
+    ),
+    RiskProfile(
+        key="satu_sisi_sering",
+        label="Satu Sisi Sering",
+        description="Seperti Satu Sisi tapi fee cukup 1x biaya: lebih sering masuk, untuk melihat apakah gerbang fee terlalu ketat",
+        tiers=("low", "medium", "high"),
+        max_open_per_tier=5,
+        size_mult=1.0,
+        min_fee_cost_ratio=1.0,
+        fee_gate_hours=config.FEE_GATE_HOURS,
+        min_hold_hours=config.MIN_HOLD_HOURS,
+        stop_loss_mult=1.0,
+        max_drawdown_pct=10.0,
+        # The other half of the same question: "Satu Sisi" only took 25 positions in nine days, too few to judge
+        # quickly. Halving the fee gate should roughly double the entries at the same entry shape.
+        max_atr_pct=2.0,
+        plan_variant="single",
+    ),
+    RiskProfile(
         key="bolak_balik",
         label="Bolak-balik",
         description="Aturan Moderat plus hanya pool yang harganya sering berbalik arah (>= 0.5 dalam 24 jam): menghindari pool yang sedang tren",

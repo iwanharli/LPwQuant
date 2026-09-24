@@ -65,7 +65,7 @@ PAPER_NEW_BIN_ARRAY_SHARE = _num("PAPER_NEW_BIN_ARRAY_SHARE", 0.0)
 # Share of the base tokens held at close that we sell back to the quote token right away (see costs.exit_cost).
 PAPER_EXIT_SWAP_SHARE = _num("PAPER_EXIT_SWAP_SHARE", 1.0)
 PAPER_PROFILES = tuple(
-    p.strip() for p in (os.getenv("PAPER_PROFILES") or "moderat,tenang,satu_sisi,bolak_balik").split(",") if p.strip()
+    p.strip() for p in (os.getenv("PAPER_PROFILES") or "moderat,satu_sisi,satu_sisi_volatil,satu_sisi_sering").split(",") if p.strip()
 )
 
 # Telegram alerts (engine/app/alerts.py). Without a token and chat id nothing is ever sent, so leaving these
