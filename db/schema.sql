@@ -492,3 +492,7 @@ create table if not exists paper_panda_runs (
 );
 create index if not exists paper_panda_runs_status on paper_panda_runs (status);
 alter table paper_panda_runs add column if not exists new_arrays integer not null default 0;
+-- The price range each position served, so a flat "latest closed positions" list does not need one Meteora call
+-- per pool to draw its range bar.
+alter table portfolio_positions_index add column if not exists min_price double precision;
+alter table portfolio_positions_index add column if not exists max_price double precision;

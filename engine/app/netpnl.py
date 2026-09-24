@@ -66,22 +66,26 @@ async def sync_positions(db, wallet: str) -> None:
             continue
         for q in await portfolio.closed_positions(db, wallet, p["address"]):
             positions.append((q["address"], p["address"], p.get("mint_x"), p.get("mint_y"), p.get("token_x"), p.get("token_y"),
-                              q["opened_at"], q["closed_at"], "closed", q["pnl_usd"], q["fees_usd"], q["deposit_usd"]))
+                              q["opened_at"], q["closed_at"], "closed", q["pnl_usd"], q["fees_usd"], q["deposit_usd"],
+                              q.get("min_price"), q.get("max_price")))
     for p in open_pf["pools"]:
         for q in p["positions"]:
             positions.append((q["address"], p["address"], p.get("mint_x"), p.get("mint_y"), p.get("token_x"), p.get("token_y"),
-                              q["created_at"], None, "open", q["pnl_usd"], q.get("fees_usd"), q.get("deposit_usd")))
+                              q["created_at"], None, "open", q["pnl_usd"], q.get("fees_usd"), q.get("deposit_usd"),
+                              q.get("min_price"), q.get("max_price")))
     to_dt = lambda ms: datetime.fromtimestamp(ms / 1000, timezone.utc) if ms else None  # noqa: E731
-    for (pos, pool, mx, my, sx, sy, opened, closed, status, pnl, fees, dep) in positions:
+    for (pos, pool, mx, my, sx, sy, opened, closed, status, pnl, fees, dep, lo, hi) in positions:
         await db.execute(
             """insert into portfolio_positions_index (position, wallet, pool, mint_x, mint_y, symbol_x, symbol_y, opened_at,
-                 closed_at, status, meteora_pnl_usd, fees_usd, deposit_usd)
-               values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+                 closed_at, status, meteora_pnl_usd, fees_usd, deposit_usd, min_price, max_price)
+               values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
                on conflict (position) do update set status = excluded.status, closed_at = excluded.closed_at,
                  meteora_pnl_usd = excluded.meteora_pnl_usd, fees_usd = excluded.fees_usd, deposit_usd = excluded.deposit_usd,
                  mint_x = coalesce(excluded.mint_x, portfolio_positions_index.mint_x),
-                 mint_y = coalesce(excluded.mint_y, portfolio_positions_index.mint_y)""",
-            pos, wallet, pool, mx, my, sx, sy, to_dt(opened), to_dt(closed), status, pnl, fees, dep,
+                 mint_y = coalesce(excluded.mint_y, portfolio_positions_index.mint_y),
+                 min_price = coalesce(excluded.min_price, portfolio_positions_index.min_price),
+                 max_price = coalesce(excluded.max_price, portfolio_positions_index.max_price)""",
+            pos, wallet, pool, mx, my, sx, sy, to_dt(opened), to_dt(closed), status, pnl, fees, dep, lo, hi,
         )
     stale = await db.fetch(
         """select position from portfolio_positions_index where wallet = $1 and

@@ -18,7 +18,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -638,6 +638,36 @@ async def closed_pools(db, wallet: str, fresh: bool = False) -> list[dict[str, A
         return await asyncio.to_thread(_cached, f"cp:{wallet}", fresh, lambda: _closed_pools(wallet))
     finally:
         await _record_usage(db, 1, 0)
+
+
+async def recent_closed_positions(db, wallet: str, limit: int = 20, before: int | None = None) -> list[dict[str, Any]]:
+    """The wallet's closed positions, newest first, straight from the index this app keeps -- no per-pool Meteora
+    call, so the list can be read as one stream instead of pool by pool. `before` continues after the last item's
+    closing time."""
+    rows = await db.fetch(
+        """select position, pool, symbol_x, symbol_y, opened_at, closed_at, meteora_pnl_usd, fees_usd, deposit_usd,
+                  min_price, max_price
+           from portfolio_positions_index
+           where wallet = $1 and status = 'closed' and closed_at is not null
+             and ($3::timestamptz is null or closed_at < $3)
+           order by closed_at desc limit $2""",
+        wallet, limit, datetime.fromtimestamp(before / 1000, timezone.utc) if before else None,
+    )
+    ms = lambda t: int(t.timestamp() * 1000) if t else None  # noqa: E731
+    return [
+        {
+            "address": r["position"],
+            "pool": r["pool"],
+            "name": f"{r['symbol_x'] or '?'}-{r['symbol_y'] or '?'}",
+            "opened_at": ms(r["opened_at"]),
+            "closed_at": ms(r["closed_at"]),
+            "deposit_usd": float(r["deposit_usd"] or 0),
+            "fees_usd": float(r["fees_usd"] or 0),
+            "min_price": float(r["min_price"] or 0),
+            "max_price": float(r["max_price"] or 0),
+        }
+        for r in rows
+    ]
 
 
 async def position_flows(db, positions: list[dict[str, Any]]) -> None:
