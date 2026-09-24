@@ -10,7 +10,7 @@ import { StatusDot } from "../ui";
 import WalletButton from "../wallet-button";
 import DailyPnlChart, { type DailyPnl } from "./daily-pnl-chart";
 import PoolCard, { type Pool } from "./pool-card";
-import { ClosedOrders, ClosedPositions } from "./closed-history";
+import { ClosedPositions } from "./closed-history";
 import AutoCloseToggle from "./auto-close";
 import CloseSellButton from "./close-sell";
 import NetPnl from "./net-pnl";
@@ -506,8 +506,8 @@ function RangeNotice({
   );
 }
 
-type View = "open" | "history" | "orders";
-const VIEWS = ["open", "history", "orders"] as const;
+type View = "open" | "history";
+const VIEWS = ["open", "history"] as const;
 const GROUPINGS = ["coin", "pool"] as const;
 
 /** Open positions, or the history of closed positions and finished limit orders, on the same tab. */
@@ -555,7 +555,6 @@ function ViewSwitch({ view, onChange, openCount }: { view: View; onChange: (v: V
   const options: { value: View; label: string }[] = [
     { value: "open", label: openCount != null ? `Posisi terbuka (${openCount})` : "Posisi terbuka" },
     { value: "history", label: "Riwayat & hasil" },
-    { value: "orders", label: "Riwayat limit order" },
   ];
   return (
     <div className="flex flex-wrap gap-1 border-b border-line" role="tablist" aria-label="Tampilan posisi">
@@ -647,7 +646,6 @@ export default function PortfolioPage() {
           <>
             <ViewSwitch view={view} onChange={setView} openCount={data?.summary.positions ?? null} />
             {view === "history" && <HistoryAndNet wallet={connected.address} />}
-            {view === "orders" && <ClosedOrders wallet={connected.address} />}
             {view === "open" && (
           <>
             {error && (

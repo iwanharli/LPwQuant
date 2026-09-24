@@ -7,6 +7,7 @@ import { canSign, signAndSendAll, useConnectedWallet, useWalletOptions, useWalle
 import TopBar from "../top-bar";
 import { StatusDot } from "../ui";
 import WalletButton from "../wallet-button";
+import { ClosedOrders } from "./closed-history";
 import PortfolioHeader from "./portfolio-header";
 import LimitRecs from "./limit-recs";
 import PaperLimitOrders from "./paper-lo";
@@ -305,6 +306,8 @@ export default function OrdersPage() {
             </section>
 
             <LimitRecs owner={connected.address} canSign={signer} />
+
+            <ClosedOrders wallet={connected.address} />
 
             <PaperLimitOrders />
           </>
