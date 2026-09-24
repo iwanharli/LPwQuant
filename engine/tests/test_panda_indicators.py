@@ -62,13 +62,29 @@ def test_supertrend_counts_candles_since_the_break():
     assert st["bars_since_flip"] is not None and st["bars_since_flip"] > 0
 
 
-def test_entry_allows_a_break_within_the_last_hour_only():
+def test_entry_takes_a_fresh_break_even_below_the_high():
+    """The other trigger: the break itself, while the price is still within NEAR_HIGH_PCT of the high."""
     from app.panda import MAX_BARS_SINCE_BREAK, entry_signal
 
     fresh = candles([100 - i for i in range(25)] + [75 + 4 * i for i in range(5)])
     ok, why = entry_signal(fresh)
-    stale = candles([100 - i for i in range(25)] + [75 + 4 * i for i in range(40)])
-    ok_stale, why_stale = entry_signal(stale)
     assert MAX_BARS_SINCE_BREAK == 4
-    assert ok or "puncak" in why  # a fresh break passes unless it is already far below the high
-    assert not ok_stale and ("lewat" in why_stale or "puncak" in why_stale)
+    assert ok, why
+
+
+def test_entry_takes_a_price_at_its_high_even_when_the_break_is_old():
+    """The corpus' own fullest write-up says "Entry: ATH. Bullish supertrend." -- a long-standing uptrend sitting at
+    its high is the setup, not a disqualification."""
+    from app.panda import entry_signal
+
+    long_uptrend = candles([100 - i for i in range(25)] + [75 + 2 * i for i in range(40)])
+    ok, why = entry_signal(long_uptrend)
+    assert ok, why
+
+
+def test_entry_refuses_an_old_break_that_has_fallen_from_the_high():
+    from app.panda import entry_signal
+
+    faded = candles([100 - i for i in range(25)] + [75 + 2 * i for i in range(40)] + [154 - 1.5 * i for i in range(6)])
+    ok, why = entry_signal(faded)
+    assert not ok and ("puncak" in why or "candle lalu" in why)

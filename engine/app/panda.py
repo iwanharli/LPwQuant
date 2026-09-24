@@ -45,10 +45,13 @@ EXIT_SWAP_COST_PCT = 1.0  # selling the token left at exit
 TX_FEE_SOL = 0.0005
 MAX_HOLD_H = 72
 DEAD_VOLUME_USD = 10_000.0  # 24h volume under this = the flatline the corpus says not to wait out
-# The break is checked every 5 minutes but the candles are 15: requiring the very latest candle to be the flip
-# would only catch it by luck. Four candles is one hour -- still "entry on the break", not a late chase.
-MAX_BARS_SINCE_BREAK = 4
-NEAR_HIGH_PCT = 15.0  # "idealnya dekat ATH": within this much of the highest close on the 15m candles
+# The corpus gives the entry twice: "harga menembus ke atas Supertrend 15m" and, in the fullest write-up,
+# "Entry: ATH. Bullish supertrend." So either qualifies: a break inside the last hour, or a price sitting at its
+# high while the trend is already up. Demanding both would reject exactly the setup the strategy describes -- a
+# pool riding its high hours after the break.
+MAX_BARS_SINCE_BREAK = 4  # four 15m candles
+AT_HIGH_PCT = 3.0  # "at ATH": this close to the highest close counts as an entry on its own
+NEAR_HIGH_PCT = 15.0  # never enter further below the high than this, whichever trigger fired
 CANDLE_HOURS = 24
 
 # Gates from the corpus, section "Screening Token".
@@ -139,13 +142,15 @@ def entry_signal(c15: list[Candle]) -> tuple[bool, str]:
     st = indicators.supertrend(c15)
     if not st or not st["up"]:
         return False, "harga di bawah Supertrend 15m"
-    bars = st.get("bars_since_flip")
-    if bars is None or bars > MAX_BARS_SINCE_BREAK:
-        return False, f"break Supertrend sudah lewat ({bars} candle lalu)" if bars is not None else "tren naik tanpa break tercatat"
     high = max(c.close for c in c15)
     close = c15[-1].close
-    if high > 0 and (high - close) / high * 100 > NEAR_HIGH_PCT:
-        return False, f"jauh di bawah puncak ({(high - close) / high * 100:.0f}%)"
+    gap = (high - close) / high * 100 if high > 0 else 100.0
+    if gap > NEAR_HIGH_PCT:
+        return False, f"jauh di bawah puncak ({gap:.0f}%)"
+    bars = st.get("bars_since_flip")
+    fresh_break = bars is not None and bars <= MAX_BARS_SINCE_BREAK
+    if not fresh_break and gap > AT_HIGH_PCT:
+        return False, f"break {bars} candle lalu dan {gap:.0f}% di bawah puncak"
     return True, ""
 
 
