@@ -480,6 +480,7 @@ create table if not exists paper_panda_runs (
   last_tvl        double precision,
   last_volume_24h double precision,
   min_ratio       double precision not null default 1,  -- deepest the price went, as a fraction of entry
+  new_arrays      integer not null default 0,           -- bin arrays the range had to create (rent that never returns)
   checked_at      timestamptz,
   closed_at       timestamptz,
   exit_reason     text,                        -- rsi2_bb | rsi2_macd | flatline | time | vanished
@@ -490,3 +491,4 @@ create table if not exists paper_panda_runs (
   pnl_usd         double precision
 );
 create index if not exists paper_panda_runs_status on paper_panda_runs (status);
+alter table paper_panda_runs add column if not exists new_arrays integer not null default 0;

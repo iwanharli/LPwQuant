@@ -32,7 +32,8 @@ type Report = {
     max_open: number;
     range_low_pct: number;
     bins: number;
-    open_bin_cost_sol: number;
+    position_rent_sol: number;
+    new_bin_array_sol: number;
     max_hold_h: number;
     min_market_cap: number;
     min_volume_24h: number;
@@ -48,6 +49,7 @@ type Report = {
   fees_usd: number;
   capital_usd: number;
   win_rate: number | null;
+  rent_locked_usd: number;
   screening_funnel: Record<string, number>;
   runs: Run[];
 };
@@ -117,10 +119,9 @@ export default function PandaPage() {
                   cls={closed ? tone(r.pnl_usd) : undefined}
                 />
                 <Kpi
-                  label="Tanpa sewa open bin"
-                  value={closed ? money(r.pnl_without_rent_usd) : "–"}
-                  hint={`sewa ${p.open_bin_cost_sol} SOL per ${p.bins} bin, tidak kembali`}
-                  cls={closed ? tone(r.pnl_without_rent_usd) : undefined}
+                  label="Sewa posisi (dikembalikan)"
+                  value={`${p.position_rent_sol} SOL`}
+                  hint={`terkunci selama posisi terbuka, kembali saat ditutup`}
                 />
                 <Kpi label="Win rate" value={r.win_rate == null ? "–" : `${fmtNum(r.win_rate * 100, 0)}%`} hint={`${r.counts.open ?? 0} posisi berjalan`} />
                 <Kpi label="Fee terkumpul" value={closed ? usd.format(r.fees_usd) : "–"} hint="bagian kita dari fee pool, saat harga di dalam range" />
@@ -171,7 +172,8 @@ export default function PandaPage() {
                     hijau pertama MACD. Ditutup juga bila volume mati atau lewat {p.max_hold_h} jam.
                   </li>
                   <li>
-                    <span className="text-ink-3">Biaya:</span> sewa open bin {p.open_bin_cost_sol} SOL, swap keluar 1% dari token tersisa, biaya jaringan.
+                    <span className="text-ink-3">Biaya:</span> swap keluar 1% dari token tersisa dan biaya jaringan. Sewa posisi {p.position_rent_sol} SOL
+                    dikembalikan saat tutup; sewa bin array {p.new_bin_array_sol} SOL hanya kalau range membuat bin baru.
                   </li>
                 </ul>
                 <h3 className="mt-3 text-[11px] uppercase tracking-wider text-ink-3">Yang tidak bisa ditiru persis</h3>
@@ -194,7 +196,7 @@ export default function PandaPage() {
                       <th className="px-3 py-2.5 text-right font-medium">Turun terdalam</th>
                       <th className="px-3 py-2.5 text-right font-medium">Fee</th>
                       <th className="px-3 py-2.5 text-right font-medium">Nilai posisi</th>
-                      <th className="px-3 py-2.5 text-right font-medium">Sewa + biaya</th>
+                      <th className="px-3 py-2.5 text-right font-medium">Biaya</th>
                       <th className="px-3 py-2.5 text-right font-medium">Hasil</th>
                       <th className="px-4 py-2.5 text-right font-medium">Waktu</th>
                     </tr>

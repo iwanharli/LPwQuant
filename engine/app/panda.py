@@ -34,7 +34,13 @@ SIZE_SOL = 10.0  # the corpus' own minimum position size; smaller ones lose to t
 MAX_OPEN = 6  # "diversifikasi ke >= 6 posisi"
 RANGE_LOW_PCT = -90.0  # the -86%..-94% band, at its middle
 BINS = 100
-OPEN_BIN_COST_SOL = 0.45  # per 100 bins, non-refundable, from the corpus
+# What a position really costs on Meteora, checked against the app's own cost dialog for a 100-bin position:
+# 0.06 SOL position rent + 0.02 SOL extension, both REFUNDED on close, plus the transaction fees. The 0.45-0.5 SOL
+# in the corpus is bin-array rent, which is charged only for bins nobody has opened before -- it does not apply to
+# the busy pools this strategy screens for. It is charged here only when the engine's depth data says the range
+# would create new arrays.
+POSITION_RENT_SOL = 0.08  # locked while the position is open, returned on close
+NEW_BIN_ARRAY_SOL = 0.0714  # per bin array actually created, not refunded
 EXIT_SWAP_COST_PCT = 1.0  # selling the token left at exit
 TX_FEE_SOL = 0.0005
 MAX_HOLD_H = 72
@@ -55,7 +61,8 @@ APPROXIMATIONS = [
     "Candle 15 menit disusun dari candle 5 menit Meteora, karena Meteora tidak menyediakan 15 menit.",
     "Filter 'total fees > 30 SOL' dan 'volume 5 menit' tidak ada di data kita; diganti fee/TVL 24 jam > 20%.",
     "Phishing % (GMGN) tidak selalu tersedia; yang dipakai flag keamanan engine dan RugCheck.",
-    "Biaya open bin dihitung penuh 0,45 SOL per 100 bin, seolah semua bin belum pernah dibuka orang lain.",
+    "Sewa posisi 0,08 SOL dikunci saat posisi terbuka lalu dikembalikan, jadi tidak dihitung sebagai kerugian.",
+    "Sewa bin array (0,0714 SOL per array) hanya berlaku untuk bin yang belum pernah dibuka; pool seramai syarat Panda hampir selalu sudah punya bin-nya, jadi di uji ini dihitung nol.",
     "Pantau tiap 5 menit, lebih sering daripada ~30 menit di korpus; exit jadi lebih cepat tertangkap.",
 ]
 
@@ -238,7 +245,7 @@ class PandaPaper:
         quote_usd, token_usd = position_value(r["size_usd"], ratio)
         sol_usd = r["sol_usd"]
         costs = token_usd * EXIT_SWAP_COST_PCT / 100 + TX_FEE_SOL * sol_usd
-        rent = OPEN_BIN_COST_SOL * (BINS / 100) * sol_usd
+        rent = (r["new_arrays"] or 0) * NEW_BIN_ARRAY_SOL * sol_usd  # 0 when the bins were already open
         pnl = quote_usd + token_usd + r["fees_usd"] - r["size_usd"] - costs - rent
         await self.db.execute(
             """update paper_panda_runs set status = 'closed', closed_at = $2, exit_reason = $3, lp_value_usd = $4,
@@ -329,7 +336,8 @@ async def report(db, rows: dict[str, dict[str, Any]] | None = None) -> dict[str,
     return {
         "params": {
             "size_sol": SIZE_SOL, "max_open": MAX_OPEN, "range_low_pct": RANGE_LOW_PCT, "bins": BINS,
-            "open_bin_cost_sol": OPEN_BIN_COST_SOL, "max_hold_h": MAX_HOLD_H, "min_market_cap": MIN_MARKET_CAP,
+            "position_rent_sol": POSITION_RENT_SOL, "new_bin_array_sol": NEW_BIN_ARRAY_SOL,
+            "max_hold_h": MAX_HOLD_H, "min_market_cap": MIN_MARKET_CAP,
             "min_volume_24h": MIN_VOLUME_24H, "min_fee_tvl_24h": MIN_FEE_TVL_24H, "min_holders": MIN_HOLDERS,
             "max_top10_pct": MAX_TOP10_PCT, "near_high_pct": NEAR_HIGH_PCT,
         },
@@ -337,6 +345,7 @@ async def report(db, rows: dict[str, dict[str, Any]] | None = None) -> dict[str,
         "counts": {"open": len(runs) - len(closed), "closed": len(closed), **reasons},
         "pnl_usd": pnl,
         "pnl_without_rent_usd": pnl + rent,
+        "rent_locked_usd": POSITION_RENT_SOL * (runs[0]["sol_usd"] if runs else 0),
         "fees_usd": sum(r["fees_usd"] for r in closed),
         "capital_usd": sum(r["size_usd"] for r in closed),
         "win_rate": (sum((r["pnl_usd"] or 0) > 0 for r in closed) / len(closed)) if closed else None,
