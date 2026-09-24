@@ -17,5 +17,7 @@ export function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!login|api/auth|_next|favicon.ico).*)"],
+  // API routes are left out on purpose: they check the session against the database and answer 401, which a fetch
+  // can handle. A redirect there would turn a refused call into a login page in the response body.
+  matcher: ["/((?!login|api|_next|favicon.ico).*)"],
 };
