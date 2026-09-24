@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { CLAIM_URL, ENGINE_URL, fmtDateTime, fmtTime, fmtNum, shortAddress, usd } from "../../lib/format";
 import { logActivity } from "../../lib/tx";
+import { useUrlState } from "../../lib/url-state";
 import { canSign, signAndSendAll, useConnectedWallet, useWalletOptions, useWalletParam } from "../../lib/wallet";
 import TopBar from "../top-bar";
 import { StatusDot } from "../ui";
@@ -506,6 +507,8 @@ function RangeNotice({
 }
 
 type View = "open" | "history" | "orders";
+const VIEWS = ["open", "history", "orders"] as const;
+const GROUPINGS = ["coin", "pool"] as const;
 
 /** Open positions, or the history of closed positions and finished limit orders, on the same tab. */
 /**
@@ -514,7 +517,7 @@ type View = "open" | "history" | "orders";
  * behind one switch instead of two tabs that sound alike.
  */
 function HistoryAndNet({ wallet }: { wallet: string }) {
-  const [by, setBy] = useState<"coin" | "pool">("coin");
+  const [by, setBy] = useUrlState<"coin" | "pool">("by", "coin", GROUPINGS);
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-3">
@@ -597,7 +600,7 @@ export default function PortfolioPage() {
   const { data, error, reload, reloadKey } = usePortfolio(connected?.address);
   const walletOptions = useWalletOptions();
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
-  const [view, setView] = useState<View>("open");
+  const [view, setView] = useUrlState<View>("view", "open", VIEWS);
   const visiblePools = applyFilters(data?.pools ?? [], filters);
   const visibleCount = visiblePools.reduce((n, pool) => n + pool.positions.length, 0);
   const signer = canSign(connected, walletOptions);
