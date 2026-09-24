@@ -6,6 +6,7 @@ import { BinDepthFetcher } from "./bins";
 import { JupiterFetcher } from "./jupiter";
 import { PumpFetcher } from "./pump";
 import { usage } from "./rpc";
+import { startAutoClose } from "./auto-close";
 import { startClaimServer } from "./claim-server";
 import { WalletHistory } from "./wallet-history";
 import { NewPoolFeed } from "./new-pools";
@@ -48,6 +49,7 @@ async function onTicks(ticks: PriceTick[]): Promise<void> {
 async function main(): Promise<void> {
   await applySchema();
   const claimServer = config.rpcProviders.length > 0 ? startClaimServer() : null;
+  const autoClose = claimServer ? startAutoClose() : null;
   const history = config.rpcProviders.length > 0 ? new WalletHistory() : null;
   history?.start();
   const security = new SecurityFetcher();
@@ -148,6 +150,7 @@ async function main(): Promise<void> {
     gmgn?.stop();
     await watcher?.close();
     claimServer?.close();
+    if (autoClose) clearInterval(autoClose);
     history?.stop();
     newPools.stop();
     await flushUsage().catch((err) => console.error("[usage] final flush failed", err));

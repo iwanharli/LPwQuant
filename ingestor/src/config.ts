@@ -65,6 +65,7 @@ export const config = {
   newPoolMinTvl: num("NEW_POOL_MIN_TVL", 500),
   // Builds unsigned claim-fee transactions for the dashboard (claim-server.ts); bound to 127.0.0.1.
   claimPort: num("CLAIM_PORT", 8010),
+  engineUrl: process.env.ENGINE_URL || "http://127.0.0.1:8000",
   dashboardOrigins: (process.env.DASHBOARD_ORIGIN || "http://localhost:3000,http://127.0.0.1:3000").split(","),
   wsUrl: process.env.WS_URL || (heliusKey ? `wss://mainnet.helius-rpc.com/?api-key=${heliusKey}` : ""),
   wsProviderName: process.env.WS_URL ? "custom" : "helius",

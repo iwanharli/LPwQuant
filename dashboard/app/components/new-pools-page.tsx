@@ -194,7 +194,7 @@ export default function NewPoolsPage() {
 
         <p className="text-xs leading-5 text-ink-3">
           &quot;Lolos cek&quot; memakai syarat yang sama dengan alert Telegram: data RugCheck sudah ada, tanpa flag bahaya, bukan dev
-          serial atau bundler berat, 10 holder teratas ≤ 50%, TVL ≥ {usdCompact.format(5000)}. Pool berumur menit tetap berisiko tinggi:
+          serial atau bundler berat, 10 holder teratas ≤ 50%, TVL ≥ $5,000. Pool berumur menit tetap berisiko tinggi:
           belum ada data harga untuk menilai volatilitas.
         </p>
       </main>

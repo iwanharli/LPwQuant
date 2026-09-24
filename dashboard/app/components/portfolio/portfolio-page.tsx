@@ -10,6 +10,7 @@ import WalletButton from "../wallet-button";
 import DailyPnlChart, { type DailyPnl } from "./daily-pnl-chart";
 import PoolCard, { type Pool } from "./pool-card";
 import { ClosedOrders, ClosedPositions } from "./closed-history";
+import AutoCloseToggle from "./auto-close";
 import CloseSellButton from "./close-sell";
 import NetPnl from "./net-pnl";
 import PortfolioHeader from "./portfolio-header";
@@ -747,6 +748,7 @@ export default function PortfolioPage() {
                       disabled={!signer}
                       onDone={reload}
                     />
+                    <AutoCloseToggle owner={connected?.address} pool={pool.address} position={p.address} />
                   </span>
                 )}
               />

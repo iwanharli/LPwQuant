@@ -246,6 +246,10 @@ export default function PoolPage({ address }: { address: string }) {
   }, [paper.data, showProfiles]);
 
   const profileKeys = (detail.data?.profiles ?? []).map((p) => p.key);
+  // How many paper positions each profile has here: a profile with none has nothing to show or hide.
+  const profileCounts = new Map<string, number>();
+  for (const p of paper.data?.positions ?? []) profileCounts.set(p.profile, (profileCounts.get(p.profile) ?? 0) + 1);
+  const anyPaper = (paper.data?.positions ?? []).length > 0;
 
   return (
     <div className="flex min-h-screen min-w-0 flex-col overflow-x-hidden">
@@ -319,20 +323,34 @@ export default function PoolPage({ address }: { address: string }) {
               <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-ink-3">
                 {profileKeys.map((k) => {
                   const on = showProfiles[k] !== false;
+                  const count = profileCounts.get(k) ?? 0;
                   const label = detail.data?.profiles.find((p) => p.key === k)?.label ?? k;
                   return (
-                    <label key={k} className="inline-flex cursor-pointer items-center gap-1.5">
+                    <label
+                      key={k}
+                      title={
+                        count
+                          ? `Tampilkan ${count} posisi paper profil ${label} di grafik`
+                          : `Profil ${label} belum pernah masuk di pool ini, jadi tidak ada penanda untuk disembunyikan`
+                      }
+                      className={`inline-flex items-center gap-1.5 ${count ? "cursor-pointer" : "cursor-not-allowed opacity-45"}`}
+                    >
                       <input
                         type="checkbox"
                         checked={on}
+                        disabled={!count}
                         onChange={() => setShowProfiles((s) => ({ ...s, [k]: !on }))}
                         className="accent-[var(--color-accent)]"
                       />
                       <span className="h-0.5 w-3 rounded-full" style={{ background: PROFILE_COLORS[k] }} aria-hidden />
                       {label}
+                      <span className="tabular-nums text-ink-3">{count}</span>
                     </label>
                   );
                 })}
+                {!anyPaper && paper.data && (
+                  <span className="text-ink-3">Belum ada posisi paper di pool ini, jadi centang profil belum mengubah apa pun.</span>
+                )}
                 <span className="inline-flex items-center gap-1.5">
                   <span className="h-0 w-4 border-t border-dashed border-accent" aria-hidden /> Range
                 </span>

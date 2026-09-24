@@ -411,3 +411,23 @@ create table if not exists paper_pool_runs (
   pnl_usd       double precision              -- lp value + fees - size - costs (incl. pool creation)
 );
 create index if not exists paper_pool_runs_status on paper_pool_runs (status);
+
+-- Auto close + sell per position, for the bot wallet only (BOT_WALLET_SECRET in .env). The ingestor watches armed
+-- positions and, once the net result after the exit swap reaches target_pct, closes and sells without a prompt.
+create table if not exists auto_close (
+  position     text primary key,
+  pool         text not null,
+  owner        text not null,
+  enabled      boolean not null default true,
+  target_pct   double precision not null,
+  status       text not null default 'armed',   -- armed | closing | done | failed
+  basis_usd    double precision,                 -- deposits minus fees/withdrawals already taken out (Meteora)
+  last_net_pct double precision,                 -- latest check, before the exit swap for the quick estimate
+  last_checked_at timestamptz,
+  close_sigs   text[],
+  sell_sig     text,
+  result_usd   double precision,                 -- net at the moment of closing, from the Jupiter quote
+  error        text,
+  created_at   timestamptz not null default now(),
+  updated_at   timestamptz not null default now()
+);

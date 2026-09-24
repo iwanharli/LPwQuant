@@ -16,6 +16,8 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { config } from "./config";
 import { apiFetch, createFailoverFetch } from "./rpc";
 import { WalletHistory } from "./wallet-history";
+import { botWallet } from "./auto-close";
+import { pg } from "./db";
 
 const MAX_POSITIONS = 20;
 let history: WalletHistory | null = null;
@@ -34,7 +36,7 @@ type BuiltClaim = {
 };
 
 let connection: Connection | null = null;
-function rpc(): Connection {
+export function rpc(): Connection {
   connection ??= new Connection(config.rpcProviders[0].httpUrl, {
     commitment: "confirmed",
     fetch: createFailoverFetch(config.rpcProviders),
@@ -48,7 +50,7 @@ function rpc(): Connection {
  * in parallel they burst past the RPC's per-second limit (HTTP 429) and the claim fails.
  */
 let queue: Promise<unknown> = Promise.resolve();
-function serial<T>(job: () => Promise<T>): Promise<T> {
+export function serial<T>(job: () => Promise<T>): Promise<T> {
   const run = queue.then(() => withRetry(job));
   queue = run.catch(() => undefined);
   return run;
@@ -71,7 +73,7 @@ async function withRetry<T>(job: () => Promise<T>, tries = 4): Promise<T> {
 // only its state, which is one call.
 const DLMM_TTL_MS = 10 * 60_000;
 const pools = new Map<string, { at: number; dlmm: DLMM }>();
-async function poolFor(address: string): Promise<DLMM> {
+export async function poolFor(address: string): Promise<DLMM> {
   const hit = pools.get(address);
   if (hit && Date.now() - hit.at < DLMM_TTL_MS) {
     await hit.dlmm.refetchStates();
@@ -862,6 +864,41 @@ export function startClaimServer(port = config.claimPort, allowed = config.dashb
         const message = err instanceof Error ? err.message : "gagal menyusun transaksi";
         console.warn(`[limit-order] ${message}`);
         return send(res, 400, { detail: message }, origin);
+      }
+    }
+    if (url.pathname === "/auto-close" && req.method === "GET") {
+      // Which wallet the bot signs for, and the armed/finished positions: the dashboard's toggles read this.
+      const kp = botWallet();
+      const { rows } = await pg.query(
+        `select position, pool, owner, enabled, target_pct, status, basis_usd, last_net_pct, last_checked_at, close_sigs,
+                sell_sig, result_usd, error from auto_close order by updated_at desc limit 200`,
+      );
+      return send(res, 200, { bot_wallet: kp?.publicKey.toBase58() ?? null, positions: rows }, origin);
+    }
+    if (url.pathname === "/auto-close" && req.method === "POST") {
+      try {
+        const b = (await readJson(req)) as { position: string; pool: string; enabled: boolean; target_pct?: number };
+        const kp = botWallet();
+        if (!kp) throw new Error("wallet bot belum diatur (BOT_WALLET_SECRET di .env)");
+        if (!BASE58.test(b?.position ?? "") || !BASE58.test(b?.pool ?? "")) throw new Error("alamat tidak valid");
+        const target = Math.min(20, Math.max(1, Number(b.target_pct ?? 4)));
+        if (b.enabled) {
+          // Refuse positions the bot cannot close: it must own them.
+          const dlmm = await serial(() => poolFor(b.pool));
+          const pos = await serial(() => dlmm.getPosition(new PublicKey(b.position)));
+          if (!pos.positionData.owner.equals(kp.publicKey)) throw new Error("posisi ini bukan milik wallet bot");
+        }
+        await pg.query(
+          `insert into auto_close (position, pool, owner, enabled, target_pct, status)
+           values ($1, $2, $3, $4, $5, 'armed')
+           on conflict (position) do update set enabled = excluded.enabled, target_pct = excluded.target_pct,
+             status = case when auto_close.status in ('done', 'closing') then auto_close.status else 'armed' end,
+             error = null, updated_at = now()`,
+          [b.position, b.pool, kp.publicKey.toBase58(), !!b.enabled, target],
+        );
+        return send(res, 200, { ok: true }, origin);
+      } catch (err) {
+        return send(res, 400, { detail: err instanceof Error ? err.message : "gagal" }, origin);
       }
     }
     if (req.method === "POST" && (url.pathname === "/close" || url.pathname === "/close/sell")) {
