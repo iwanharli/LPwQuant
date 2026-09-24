@@ -640,6 +640,33 @@ async def closed_pools(db, wallet: str, fresh: bool = False) -> list[dict[str, A
         await _record_usage(db, 1, 0)
 
 
+async def position_flows(db, positions: list[dict[str, Any]]) -> None:
+    """Attach what actually moved in and out of each position, from the cached Meteora events: dollars deposited,
+    dollars withdrawn, fees claimed separately, and how many transactions it took."""
+    if db is None or not positions:
+        return
+    rows = await db.fetch(
+        """select position, event_type, sum(usd) as usd, count(*) as n,
+                  sum(amount_x) as amount_x, sum(amount_y) as amount_y
+           from portfolio_position_events where position = any($1::text[]) group by position, event_type""",
+        [p["address"] for p in positions],
+    )
+    by_position: dict[str, dict[str, Any]] = {}
+    for r in rows:
+        by_position.setdefault(r["position"], {})[r["event_type"]] = r
+    for p in positions:
+        events = by_position.get(p["address"], {})
+        add_row, remove_row, claim_row = events.get("add"), events.get("remove"), events.get("claim_fee")
+        p["deposited_usd"] = float(add_row["usd"]) if add_row else None
+        p["withdrawn_usd"] = float(remove_row["usd"]) if remove_row else None
+        p["claimed_usd"] = float(claim_row["usd"]) if claim_row else 0.0
+        p["tx_count"] = sum(int(r["n"]) for r in events.values())
+        p["amount_x_in"] = float(add_row["amount_x"]) if add_row else None
+        p["amount_y_in"] = float(add_row["amount_y"]) if add_row else None
+        p["amount_x_out"] = float(remove_row["amount_x"]) if remove_row else None
+        p["amount_y_out"] = float(remove_row["amount_y"]) if remove_row else None
+
+
 async def range_behaviour(db, pool: str, positions: list[dict[str, Any]]) -> None:
     """Fill in how each position actually behaved inside its range, from the 30m candles this app stores.
 
