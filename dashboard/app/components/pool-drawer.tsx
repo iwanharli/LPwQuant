@@ -30,8 +30,8 @@ import { Delta, Meter, PlanBadge, RegimeBadge, StatusDot, TokenAvatar } from "./
 
 function Section({ title, icon, children }: { title: string; icon?: ReactNode; children: ReactNode }) {
   return (
-    <section className="border-t border-line/85 px-5 py-4">
-      <h3 className="mb-3 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-ink-3">
+    <section className="border-t border-white/[0.06] px-5 py-4">
+      <h3 className="mb-3 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-3">
         {icon}
         {title}
       </h3>

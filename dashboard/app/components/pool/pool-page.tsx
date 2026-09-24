@@ -27,6 +27,7 @@ import TopBar from "../top-bar";
 import PumpWarning from "../pump-warning";
 import { Delta, PlanBadge, RegimeBadge, StatusDot, TokenAvatar } from "../ui";
 import CandleChart, { type ChartLevel, type ChartMarker } from "./candle-chart";
+import { SkeletonBox } from "../skeleton";
 
 const TIMEFRAMES: { key: Timeframe; label: string; seconds: number; hint: string }[] = [
   { key: "5m", label: "5m", seconds: 300, hint: "24 jam" },
@@ -262,29 +263,43 @@ export default function PoolPage({ address }: { address: string }) {
     <div className="flex min-h-screen min-w-0 flex-col overflow-x-hidden">
       <TopBar />
       <main className="mx-auto w-full min-w-0 max-w-full flex-1 space-y-5 overflow-x-hidden px-4 py-6 sm:px-6 lg:py-7 2xl:px-8">
-        <div className="flex min-h-20 flex-wrap items-center justify-between gap-4">
-          <div className="flex min-w-0 items-center gap-3">
-            <Link href="/" className="rounded-md px-2 py-1 text-sm text-ink-3 transition-colors hover:bg-raised hover:text-ink">
-              ← Screener
-            </Link>
-            {pool && <TokenAvatar symbol={pool.base_symbol} />}
-            <div className="min-w-0">
-              <h1 className="truncate text-2xl font-semibold tracking-tight text-ink">{pool?.name ?? "Memuat pool…"}</h1>
-              <div className="font-mono text-xs text-ink-3">{address}</div>
+        <div className="space-y-4">
+          <div className="flex min-h-20 flex-wrap items-end justify-between gap-4">
+            <div className="flex min-w-0 items-center gap-3">
+              {pool && <TokenAvatar symbol={pool.base_symbol} />}
+              <div className="min-w-0">
+                <Link href="/" className="text-xs text-ink-3 transition-colors hover:text-ink">
+                  ← Screener
+                </Link>
+                <h1 className="truncate text-3xl font-extrabold tracking-tight text-ink sm:text-4xl">
+                  {pool ? (
+                    <>
+                      {pool.name.split("-")[0]}
+                      <span className="text-accent-gradient">/{pool.name.split("-").slice(1).join("-")}</span>
+                    </>
+                  ) : (
+                    "Memuat pool…"
+                  )}
+                </h1>
+                <div className="mt-1 truncate font-mono text-[11px] text-ink-3">{address}</div>
+              </div>
             </div>
             {plan && <PlanBadge plan={plan} size="md" />}
           </div>
           {pool && (
-            <div className="grid grid-cols-2 gap-x-6 gap-y-2 sm:grid-cols-5">
-              <Stat label="Harga">{fmtPriceExact(pool.price)}</Stat>
-              <Stat label="1 jam">
-                <Delta value={pool.change_pct_1h} />
-              </Stat>
-              <Stat label="TVL">{usdCompact.format(pool.tvl)}</Stat>
-              <Stat label="Volume 24j">{usdCompact.format(pool.volume_24h)}</Stat>
-              <Stat label="Bin step">
-                {pool.bin_step} · fee {pool.base_fee_pct}%
-              </Stat>
+            <div className="grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-white/[0.06] bg-line/40 sm:grid-cols-5">
+              {[
+                { label: "Harga", value: fmtPriceExact(pool.price) },
+                { label: "1 jam", value: <Delta value={pool.change_pct_1h} /> },
+                { label: "TVL", value: usdCompact.format(pool.tvl) },
+                { label: "Volume 24j", value: usdCompact.format(pool.volume_24h) },
+                { label: "Bin step", value: `${pool.bin_step} · fee ${pool.base_fee_pct}%` },
+              ].map((t) => (
+                <div key={t.label} className="bg-panel px-4 py-3.5">
+                  <div className="text-[10px] font-medium uppercase tracking-[0.08em] text-ink-3">{t.label}</div>
+                  <div className="mt-1.5 truncate text-lg font-semibold leading-none tabular-nums text-ink">{t.value}</div>
+                </div>
+              ))}
             </div>
           )}
         </div>
@@ -378,7 +393,7 @@ export default function PoolPage({ address }: { address: string }) {
                 logScale={logScale}
               />
               {!candles.data && !candles.error && (
-                <div className="absolute inset-0 grid place-items-center text-sm text-ink-3">Memuat candle…</div>
+                <div className="absolute inset-0 p-2"><SkeletonBox className="h-full w-full rounded-xl" /></div>
               )}
               {candles.error && (
                 <div className="absolute inset-0 grid place-items-center text-sm text-ink-3">
@@ -402,7 +417,11 @@ export default function PoolPage({ address }: { address: string }) {
                 {pool?.regime && <RegimeBadge regime={pool.regime} />}
               </div>
               {!pool ? (
-                <p className="mt-3 text-sm text-ink-3">Memuat…</p>
+                <div className="mt-3 space-y-2">
+                  <SkeletonBox className="h-3.5 w-full" />
+                  <SkeletonBox className="h-3.5 w-4/5" />
+                  <SkeletonBox className="h-3.5 w-3/5" />
+                </div>
               ) : base ? (
                 <div className="mt-3">
                   {!active && plan && (
