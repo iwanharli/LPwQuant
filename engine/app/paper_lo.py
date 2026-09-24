@@ -110,9 +110,8 @@ class PaperLimitOrders:
                 break
             if rec["address"] in open_pools or rec["address"] in recent or not rec.get("price"):
                 continue
-            # Only pools whose replay completed a profitable cycle: the page's own top picks.
-            if not (rec["replay"]["cycles"] > 0 and rec["replay"]["return_pct"] > 0):
-                continue
+            # The replay no longer gates the picks: across the first 22 paper orders its 48-hour return correlated
+            # -0.27 with the result, so pools are taken in the page's own order (reversal rate, then busyness).
             size = SIZE_SOL if rec["quote"] == "SOL" else SIZE_SOL * sol_usd
             await self.db.execute(
                 """insert into paper_lo_orders (pool, name, quote, opened_at, status, step_pct, buy_price, sell_price,

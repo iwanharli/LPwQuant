@@ -6,9 +6,13 @@ reversal rate, no strong trend), and the order spacing comes from each pool's ow
 actually covers in half an hour, not a guess.
 
 Every pick is replayed on its last 48 hours of 30-minute candles with the exact rule the page suggests: buy one
-step below, sell two steps above the buy, cut at three steps below the buy. Candle order inside a bar is unknown,
-so a bar that touches both the stop and the target counts as the stop. Past fills do not promise future ones; the
-replay only shows whether the rule would have worked here recently.
+step below, sell two steps above the buy, cut at one and a half steps below the buy. Candle order inside a bar is
+unknown, so a bar that touches both the stop and the target counts as the stop.
+
+The replay is shown, but it does not choose: over the engine's own 22 paper orders its 48-hour return correlated
+-0.27 with what actually happened, so picking by it was worse than ignoring it. Pools are ranked by how often the
+price turns around (reversal rate) and how busy they are relative to their size, which is what a resting order
+needs to be filled twice.
 """
 
 import statistics
@@ -26,7 +30,8 @@ MIN_REVERSAL = 0.4
 ATR_RANGE = (0.5, 6.0)
 STEP_RANGE = (1.0, 4.0)  # % between the buy and the current price; below 1% fills are noise, above 4% rare
 SELL_STEPS = 2.0
-STOP_STEPS = 3.0
+STOP_STEPS = 1.5  # the loss must stay smaller than the win: paper orders won 50% but lost 2.4% per trade
+                  # because a stop three steps away gave back more than two steps of target
 REPLAY_HOURS = 48
 LIMIT = 12
 
@@ -130,8 +135,9 @@ async def recommendations(db, rows: list[dict[str, Any]]) -> list[dict[str, Any]
             "stop_price": buy * (1 - STOP_STEPS * step / 100),
             "replay": {**sim, "hours": REPLAY_HOURS, "candles": len(by_pool.get(r["address"], []))},
         })
-    # Pools whose replay made money and completed at least one cycle first; then by that return.
-    out.sort(key=lambda x: (x["replay"]["cycles"] > 0 and x["replay"]["return_pct"] > 0, x["replay"]["return_pct"]), reverse=True)
+    # Ranked by what a resting order needs -- a price that keeps turning around, in a pool busy for its size -- not
+    # by the replay, which predicted the paper run's outcomes slightly backwards.
+    out.sort(key=lambda x: ((x.get("reversal_rate") or 0), (x.get("volume_24h") or 0) / max(x.get("tvl") or 1, 1)), reverse=True)
     return out[:LIMIT]
 
 

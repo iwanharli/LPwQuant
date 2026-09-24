@@ -231,7 +231,6 @@ function Line({ label, value }: { label: string; value: string }) {
 
 function RecCard({ rec, onPlace, canSign }: { rec: Rec; onPlace: (side: "buy" | "sell") => void; canSign: boolean }) {
   const r = rec.replay;
-  const good = r.cycles > 0 && r.return_pct > 0;
   return (
     <div className="flex flex-col rounded-2xl border border-line bg-black/20 p-4 transition-colors hover:border-line-strong">
       <div className="flex items-start justify-between gap-3">
@@ -252,10 +251,13 @@ function RecCard({ rec, onPlace, canSign }: { rec: Rec; onPlace: (side: "buy" | 
         <Param label="Cut loss" pct={`${fmtNum(rec.stop_pct, 1)}%`} price={px(rec.stop_price)} cls="text-rose-300" hint="dari harga beli" />
       </div>
 
-      <div className={`mt-3 rounded-xl px-3 py-2 text-xs ${good ? "bg-emerald-500/[0.07] text-emerald-200" : "bg-white/[0.03] text-ink-3"}`}>
+      <div
+        className="mt-3 rounded-xl bg-white/[0.03] px-3 py-2 text-xs text-ink-3"
+        title="Hanya sebagai gambaran. Di 22 order paper engine, hasil uji 48 jam justru berkorelasi −0,27 dengan hasil nyata, jadi urutan rekomendasi tidak lagi memakainya."
+      >
         {r.candles < 10
           ? "Data harga 48 jam belum cukup untuk diuji."
-          : `48 jam terakhir dengan aturan ini: ${r.cycles} siklus untung, ${r.stops} cut loss → ${fmtSignedPct(r.return_pct, 1)}${r.holding ? " (masih memegang)" : ""}`}
+          : `Uji 48 jam (bukan dasar pemilihan): ${r.cycles} siklus untung, ${r.stops} cut loss → ${fmtSignedPct(r.return_pct, 1)}${r.holding ? " (masih memegang)" : ""}`}
       </div>
 
       <div className="mt-3 flex gap-2">
@@ -297,8 +299,8 @@ export default function LimitRecs({ owner, canSign }: { owner: string | null; ca
       <div className="border-b border-line bg-raised/20 px-4 py-3">
         <h2 className="text-sm font-semibold text-ink">Rekomendasi: beli rendah, jual tinggi</h2>
         <p className="mt-0.5 text-xs leading-5 text-ink-3">
-          Pool aman, ramai, dan harganya bolak-balik. Jarak order = pergerakan rata-rata 30 menit pool itu (ATR). Hasil 48 jam hanya menunjukkan aturan ini
-          cocok belakangan ini, bukan jaminan.
+          Pool aman, ramai, dan harganya bolak-balik. Jarak order = pergerakan rata-rata 30 menit pool itu (ATR). Diurutkan dari yang harganya paling sering
+          berbalik, bukan dari hasil uji 48 jam yang ternyata tidak meramalkan apa pun.
         </p>
       </div>
       {!recs ? (
