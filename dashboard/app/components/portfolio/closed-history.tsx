@@ -33,6 +33,11 @@ type ClosedPosition = {
   in_range_pct: number | null;
   exit_side: "below" | "above" | "inside" | null;
   last_price: number | null;
+  /** From the position's own Meteora events. */
+  deposited_usd: number | null;
+  withdrawn_usd: number | null;
+  claimed_usd: number;
+  tx_count: number;
 };
 type ClosedOrder = {
   address: string;
@@ -112,87 +117,108 @@ const PAGE = 25;
 type PositionCost = { pool: string; cost_lp: number; cost_swaps: number; net: number; swaps: number };
 type Costs = { positions: Record<string, PositionCost>; costs_known_txs: number; transactions: number };
 
+function Tile({ label, value, hint, cls }: { label: string; value: string; hint?: string; cls?: string }) {
+  return (
+    <div className="rounded-xl border border-white/[0.05] bg-white/[0.02] px-3 py-2.5">
+      <div className="text-[10px] uppercase tracking-wider text-ink-3">{label}</div>
+      <div className={`mt-1 text-lg font-semibold tabular-nums ${cls ?? "text-ink"}`}>{value}</div>
+      {hint && <div className="mt-0.5 text-[11px] text-ink-3">{hint}</div>}
+    </div>
+  );
+}
+
+/** Where the price ended inside (or outside) the range the position served. */
+function RangeBar({ min, max, last }: { min: number; max: number; last: number | null }) {
+  const span = max - min;
+  const at = last != null && span > 0 ? Math.min(1, Math.max(0, (last - min) / span)) : null;
+  return (
+    <div className="mt-3">
+      <div className="flex items-baseline justify-between gap-3 text-[11px] text-ink-3">
+        <span className="tabular-nums">
+          Range {fmtNum(min, min < 1 ? 8 : 4)} – {fmtNum(max, max < 1 ? 8 : 4)}
+        </span>
+        {last != null && <span className="tabular-nums text-ink-2">Harga akhir {fmtNum(last, last < 1 ? 8 : 4)}</span>}
+      </div>
+      <div className="relative mt-1.5 h-2 rounded-full bg-white/[0.06]">
+        {at != null ? (
+          <span className="absolute top-1/2 h-3.5 w-1 -translate-y-1/2 rounded-full bg-ink" style={{ left: `calc(${at * 100}% - 2px)` }} />
+        ) : (
+          <span className="absolute inset-y-0 left-0 grid place-items-center pl-2 text-[10px] text-ink-3">harga akhir tidak tersimpan</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+const EXIT = {
+  below: { label: "Jatuh keluar range", cls: "text-rose-300", hint: "berakhir memegang token" },
+  above: { label: "Naik keluar range", cls: "text-emerald-300", hint: "berakhir memegang SOL/USDC" },
+  inside: { label: "Masih di dalam range", cls: "text-ink-2", hint: "ditutup sebelum harga keluar" },
+};
+
+/** One closed position as a card: only what actually moved, and the net that came back. Meteora's own PnL is left
+ * out on purpose -- it ignores the swaps in and out, which is where this wallet's money really went. */
+function PositionCard({ p, cost }: { p: ClosedPosition; cost: PositionCost | undefined }) {
+  const net = cost?.net ?? null;
+  const basis = p.deposited_usd ?? p.deposit_usd;
+  const pct = net != null && basis > 0 ? (net / basis) * 100 : null;
+  const exit = p.exit_side ? EXIT[p.exit_side] : null;
+  return (
+    <div className="rounded-2xl border border-white/[0.06] bg-black/25 p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="text-[10px] uppercase tracking-wider text-ink-3">Hasil bersih</div>
+          <div className={`text-3xl font-semibold tabular-nums ${net == null ? "text-ink-3" : tone(net)}`}>
+            {net == null ? "…" : signed(net)}
+            {pct != null && <span className="ml-2 text-xl">{fmtSignedPct(pct, 1)}</span>}
+          </div>
+        </div>
+        <span className="rounded-full border border-line px-2.5 py-1 text-[11px] text-ink-3">
+          {p.opened_at ? fmtDateTime(p.opened_at) : "–"} → {p.closed_at ? fmtDateTime(p.closed_at) : "–"}
+        </span>
+      </div>
+
+      <RangeBar min={p.min_price} max={p.max_price} last={p.last_price} />
+
+      <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+        <Tile label="Modal masuk" value={usd.format(basis)} hint={p.tx_count ? `${p.tx_count} transaksi` : undefined} />
+        <Tile
+          label="Ditarik keluar"
+          value={p.withdrawn_usd == null ? "–" : usd.format(p.withdrawn_usd)}
+          hint={p.claimed_usd > 0 ? `+ ${usd.format(p.claimed_usd)} fee diklaim` : "saat posisi ditutup"}
+        />
+        <Tile label="Fee terkumpul" value={usd.format(p.fees_usd)} cls="text-emerald-300" hint="menurut Meteora" />
+        <Tile
+          label="Biaya"
+          value={cost ? usd.format(cost.cost_lp + cost.cost_swaps) : "…"}
+          cls="text-amber-300/90"
+          hint={cost ? `${cost.swaps} swap di sekitarnya` : undefined}
+        />
+      </div>
+
+      <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3">
+        <Tile
+          label="Waktu di dalam range"
+          value={p.in_range_pct == null ? "–" : `${fmtNum(p.in_range_pct, 0)}%`}
+          cls={p.in_range_pct == null ? "text-ink-3" : p.in_range_pct >= 70 ? "text-emerald-300" : p.in_range_pct >= 30 ? "text-amber-300" : "text-rose-300"}
+          hint="fee hanya mengalir saat di dalam"
+        />
+        <Tile label="Lama dipegang" value={duration(p.opened_at, p.closed_at)} hint={`lebar range ±${fmtNum(p.min_price > 0 ? ((p.max_price / p.min_price - 1) * 100) / 2 : 0, 0)}%`} />
+        <Tile label="Akhir posisi" value={exit ? exit.label : "–"} cls={exit ? exit.cls : "text-ink-3"} hint={exit?.hint} />
+      </div>
+    </div>
+  );
+}
+
 function PoolPositions({ wallet, pool, costs }: { wallet: string; pool: string; costs: Costs | null }) {
   const { data, error } = useJson<{ positions: ClosedPosition[] }>(`${ENGINE_URL}/api/portfolio/closed?wallet=${wallet}&pool=${pool}`);
   if (error) return <p className="px-4 py-3 text-xs text-ink-3">Gagal memuat posisi.</p>;
   if (!data) return <p className="px-4 py-3 text-xs text-ink-3">Memuat posisi…</p>;
   return (
-    <div className="border-t border-white/[0.05] bg-black/20 px-4 py-2">
-      <table className="w-full text-xs tabular-nums">
-        <thead className="text-[10px] uppercase tracking-wider text-ink-3">
-          <tr>
-            <th className="py-1.5 text-left font-medium">Dibuka → ditutup</th>
-            <th className="py-1.5 text-left font-medium">Lama</th>
-            <th className="py-1.5 text-left font-medium" title="Bagian dari umur posisi saat harga ada di dalam range; hanya saat itu fee mengalir">Di range</th>
-            <th className="py-1.5 text-left font-medium" title="Di mana harga berada saat posisi ditutup, dibanding range-nya">Akhir</th>
-            <th className="py-1.5 text-left font-medium">Range harga</th>
-            <th className="py-1.5 text-right font-medium">Modal</th>
-            <th className="py-1.5 text-right font-medium">Fee</th>
-            <th className="py-1.5 text-right font-medium" title="PnL di dalam posisi menurut Meteora: fee dikurangi IL">PnL LP</th>
-            <th className="py-1.5 text-right font-medium" title="Biaya jaringan + fee swap Meteora dari transaksi posisi ini dan swap di sekitarnya">Biaya</th>
-            <th className="py-1.5 text-right font-medium" title="PnL Meteora ditambah hasil swap masuk dan keluar untuk koin ini, dikurangi biaya: yang benar-benar kembali ke wallet">Bersih</th>
-          </tr>
-        </thead>
-        <tbody>
-          {data.positions.map((p) => (
-            <tr key={p.address} className="border-t border-white/[0.04]">
-              <td className="py-1.5 text-ink-2">
-                {p.opened_at ? fmtDateTime(p.opened_at) : "–"} → {p.closed_at ? fmtDateTime(p.closed_at) : "–"}
-              </td>
-              <td className="py-1.5 text-ink-3">{duration(p.opened_at, p.closed_at)}</td>
-              <td className="py-1.5">
-                {p.in_range_pct == null ? (
-                  <span className="text-ink-3/60" title="Candle untuk periode ini sudah tidak disimpan">–</span>
-                ) : (
-                  <span className={p.in_range_pct >= 70 ? "text-emerald-300/90" : p.in_range_pct >= 30 ? "text-amber-300/90" : "text-rose-300/90"}>
-                    {fmtNum(p.in_range_pct, 0)}%
-                  </span>
-                )}
-              </td>
-              <td className="py-1.5 text-[11px]">
-                {p.exit_side == null ? (
-                  <span className="text-ink-3/60">–</span>
-                ) : p.exit_side === "below" ? (
-                  <span className="text-rose-300/90" title="Harga jatuh keluar range: posisi berakhir memegang token">jatuh keluar</span>
-                ) : p.exit_side === "above" ? (
-                  <span className="text-emerald-300/90" title="Harga naik keluar range: posisi berakhir memegang SOL/USDC">naik keluar</span>
-                ) : (
-                  <span className="text-ink-2" title="Harga masih di dalam range saat ditutup">masih di range</span>
-                )}
-              </td>
-              <td className="py-1.5 text-ink-3">
-                {fmtNum(p.min_price, p.min_price < 1 ? 8 : 4)} – {fmtNum(p.max_price, p.max_price < 1 ? 8 : 4)}
-                <span className="ml-1.5 text-ink-3/70">±{fmtNum(p.min_price > 0 ? ((p.max_price / p.min_price - 1) * 100) / 2 : 0, 0)}%</span>
-              </td>
-              <td className="py-1.5 text-right text-ink-2">{usd.format(p.deposit_usd)}</td>
-              <td className="py-1.5 text-right text-emerald-300/90">{usd.format(p.fees_usd)}</td>
-              <td className={`py-1.5 text-right font-medium ${tone(p.pnl_usd)}`}>
-                {signed(p.pnl_usd)} <span className="font-normal opacity-80">({fmtSignedPct(p.pnl_pct, 1)})</span>
-              </td>
-              {(() => {
-                const c = costs?.positions[p.address];
-                if (!c) return (
-                  <>
-                    <td className="py-1.5 text-right text-ink-3">{costs ? "–" : "…"}</td>
-                    <td className="py-1.5 text-right text-ink-3">{costs ? "–" : "…"}</td>
-                  </>
-                );
-                return (
-                  <>
-                    <td
-                      className="py-1.5 text-right text-amber-300/90"
-                      title={`Transaksi posisi ${usd.format(c.cost_lp)} · swap di sekitarnya (${c.swaps}) ${usd.format(c.cost_swaps)}`}
-                    >
-                      {usd.format(c.cost_lp + c.cost_swaps)}
-                    </td>
-                    <td className={`py-1.5 text-right font-semibold ${tone(c.net)}`}>{signed(c.net)}</td>
-                  </>
-                );
-              })()}
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <div className="space-y-3 border-t border-white/[0.05] bg-black/20 px-4 py-3">
+      {data.positions.map((p) => (
+        <PositionCard key={p.address} p={p} cost={costs?.positions[p.address]} />
+      ))}
     </div>
   );
 }
@@ -211,27 +237,33 @@ export function ClosedPositions({ wallet }: { wallet: string }) {
   const pools = [...data.pools].sort((a, b) =>
     sort === "pnl" ? b.pnl_usd - a.pnl_usd : sort === "worst" ? a.pnl_usd - b.pnl_usd : sort === "fees" ? b.fees_usd - a.fees_usd : (b.closed_at ?? 0) - (a.closed_at ?? 0),
   );
-  const pnl = pools.reduce((n, p) => n + p.pnl_usd, 0);
   const fees = pools.reduce((n, p) => n + p.fees_usd, 0);
-  const wins = pools.filter((p) => p.pnl_usd > 0).length;
+  const deposits = pools.reduce((n, p) => n + p.deposit_usd, 0);
   const shown = query.trim()
     ? pools.filter((p) => p.name.toLowerCase().includes(query.trim().toLowerCase()) || p.address.toLowerCase().includes(query.trim().toLowerCase()))
     : pools;
   const byPool = (address: string) => Object.values(costs?.positions ?? {}).filter((c) => c.pool === address);
   const netAll = costs ? Object.values(costs.positions).reduce((n, c) => n + c.net, 0) : null;
+  const poolNets = costs ? pools.map((p) => byPool(p.address)).filter((rows) => rows.length > 0).map((rows) => rows.reduce((n, c) => n + c.net, 0)) : null;
+  const netWins = poolNets ? poolNets.filter((n) => n > 0).length : null;
+  const withNet = poolNets ? poolNets.length : 0;
 
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <Stat label="PnL menurut Meteora" value={signed(pnl)} cls={tone(pnl)} hint="Fee dikurangi IL, belum termasuk biaya swap" />
-        <Stat label="Fee dikumpulkan" value={usd.format(fees)} cls="text-emerald-300" hint="Semua posisi yang sudah ditutup" />
         <Stat
           label="Hasil bersih"
           value={netAll == null ? "…" : signed(netAll)}
           cls={netAll == null ? "text-ink-3" : tone(netAll)}
-          hint="Setelah swap masuk-keluar dan biaya jaringan"
+          hint="Semua posisi ditutup, setelah swap masuk-keluar dan biaya"
         />
-        <Stat label="Pool untung" value={`${wins} / ${pools.length}`} hint={`${fmtNum((wins / Math.max(1, pools.length)) * 100, 0)}% pool berakhir untung menurut Meteora`} />
+        <Stat label="Modal masuk" value={usd.format(deposits)} hint={`${pools.length} pool`} />
+        <Stat label="Fee terkumpul" value={usd.format(fees)} cls="text-emerald-300" hint="Fee yang dipungut posisi-posisi itu" />
+        <Stat
+          label="Pool untung"
+          value={netWins == null ? "…" : `${netWins} / ${withNet}`}
+          hint={netWins == null ? "menghitung…" : `${fmtNum((netWins / Math.max(1, withNet)) * 100, 0)}% pool pulang membawa untung`}
+        />
       </div>
 
       <section className="overflow-hidden rounded-2xl border border-line bg-[#0e1217]/[0.97] backdrop-blur-sm">
@@ -270,7 +302,7 @@ export function ClosedPositions({ wallet }: { wallet: string }) {
                 type="button"
                 onClick={() => setOpen(open === p.address ? null : p.address)}
                 aria-expanded={open === p.address}
-                className="grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-4 px-4 py-3 text-left transition-colors hover:bg-white/[0.025] sm:grid-cols-[auto_minmax(0,1.4fr)_6rem_6rem_5.5rem_6.5rem_6.5rem_14px]"
+                className="grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-4 px-4 py-3 text-left transition-colors hover:bg-white/[0.025] sm:grid-cols-[auto_minmax(0,1.4fr)_6.5rem_6.5rem_6rem_7rem_14px]"
               >
                 <Pair x={p.token_x_icon} y={p.token_y_icon} />
                 <span className="min-w-0">
@@ -292,10 +324,6 @@ export function ClosedPositions({ wallet }: { wallet: string }) {
                     {costs ? usd.format(byPool(p.address).reduce((n, c) => n + c.cost_lp + c.cost_swaps, 0)) : "…"}
                   </span>
                   <span className="text-[10px] uppercase tracking-wider text-ink-3">biaya</span>
-                </span>
-                <span className="hidden text-right text-xs tabular-nums sm:block" title="PnL menurut Meteora: fee dikurangi IL, tanpa biaya swap">
-                  <span className={`block ${tone(p.pnl_usd)}`}>{signed(p.pnl_usd)}</span>
-                  <span className="text-[10px] uppercase tracking-wider text-ink-3">kata Meteora</span>
                 </span>
                 <span className="text-right tabular-nums">
                   {(() => {
