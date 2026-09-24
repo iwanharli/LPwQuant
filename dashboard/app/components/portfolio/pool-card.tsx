@@ -424,8 +424,8 @@ export default function PoolCard({
         safe
           ? "border-emerald-400/45 bg-[#0c1512]/[0.97] shadow-[0_14px_42px_rgba(0,0,0,0.20),0_0_0_1px_rgba(52,211,153,0.08),inset_0_1px_0_rgba(110,231,183,0.10)]"
           : near
-            ? "border-emerald-400/25 bg-[#0e1217]/[0.97] shadow-[0_14px_42px_rgba(0,0,0,0.20),inset_0_1px_0_rgba(255,255,255,0.04)]"
-            : "border-line bg-[#0e1217]/[0.97] shadow-[0_14px_42px_rgba(0,0,0,0.20),inset_0_1px_0_rgba(255,255,255,0.04)]"
+            ? "border-emerald-400/25 bg-panel shadow-[0_14px_42px_rgba(0,0,0,0.20),inset_0_1px_0_rgba(255,255,255,0.04)]"
+            : "border-line bg-panel shadow-[0_14px_42px_rgba(0,0,0,0.20),inset_0_1px_0_rgba(255,255,255,0.04)]"
       }`}
     >
       <div

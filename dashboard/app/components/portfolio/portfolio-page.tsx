@@ -229,7 +229,7 @@ function ClaimReview({
         aria-modal="true"
         aria-labelledby="claim-review-title"
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-lg overflow-hidden rounded-2xl border border-line bg-[#0e1217] shadow-[0_24px_64px_rgba(0,0,0,0.6)]"
+        className="w-full max-w-lg overflow-hidden rounded-2xl border border-line bg-panel shadow-[0_24px_64px_rgba(0,0,0,0.6)]"
       >
         <div className="border-b border-line px-5 py-4">
           <h2 id="claim-review-title" className="text-base font-semibold text-ink">
@@ -321,7 +321,7 @@ function ClaimReview({
             onClick={onConfirm}
             disabled={!review}
             autoFocus
-            className="rounded-lg border border-accent/50 bg-accent/15 px-4 py-2 text-sm font-medium text-accent hover:bg-accent/25 disabled:cursor-wait disabled:opacity-50"
+            className="btn-accent rounded-lg px-4 py-2 text-sm font-semibold transition disabled:cursor-wait disabled:opacity-50"
           >
             Lanjut ke wallet
           </button>
@@ -352,7 +352,7 @@ function ClaimButton({
       type="button"
       disabled={disabled || busy}
       onClick={onClick}
-      className="rounded-lg border border-accent/40 bg-accent/10 px-3 py-1.5 text-xs font-medium text-accent transition-colors hover:bg-accent/20 disabled:cursor-not-allowed disabled:opacity-50"
+      className="btn-accent rounded-lg px-3 py-1.5 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-45"
     >
       {text}
     </button>
@@ -406,7 +406,7 @@ const tone = (v: number) => (v > 0 ? "text-up" : v < 0 ? "text-down" : "text-ink
 
 function Tile({ label, value, hint }: { label: ReactNode; value: ReactNode; hint: ReactNode }) {
   return (
-    <div className="relative min-w-0 overflow-hidden rounded-2xl border border-line bg-[#0e1217]/[0.97] backdrop-blur-sm px-4 py-3.5 shadow-[0_12px_32px_rgba(0,0,0,0.18),inset_0_1px_0_rgba(255,255,255,0.04)]">
+    <div className="relative min-w-0 overflow-hidden rounded-2xl border border-line bg-panel backdrop-blur-sm px-4 py-3.5 shadow-[0_12px_32px_rgba(0,0,0,0.18),inset_0_1px_0_rgba(255,255,255,0.04)]">
       <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/14 to-transparent" />
       <div className="flex min-w-0 items-center gap-2 truncate text-xs font-medium text-ink-3">{label}</div>
       <div className="mt-2 text-2xl font-semibold tracking-tight tabular-nums text-ink">{value}</div>
@@ -431,7 +431,7 @@ function Card({
 }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
-    <section className="overflow-hidden rounded-2xl border border-line bg-[#0e1217]/[0.97] backdrop-blur-sm shadow-[0_14px_42px_rgba(0,0,0,0.20),inset_0_1px_0_rgba(255,255,255,0.04)]">
+    <section className="overflow-hidden rounded-2xl border border-line bg-panel backdrop-blur-sm shadow-[0_14px_42px_rgba(0,0,0,0.20),inset_0_1px_0_rgba(255,255,255,0.04)]">
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
@@ -463,7 +463,7 @@ function RefreshButton({ onClick, fetchedAt }: { onClick: () => void; fetchedAt:
         onClick();
       }}
       disabled={busy}
-      className="inline-flex h-9 items-center gap-2 rounded-lg border border-line bg-[#0e1217]/[0.97] px-3 text-sm font-medium text-ink-2 shadow-sm shadow-black/20 transition-colors hover:border-line-strong hover:text-ink disabled:opacity-70"
+      className="inline-flex h-9 items-center gap-2 rounded-lg border border-line bg-panel px-3 text-sm font-medium text-ink-2 shadow-sm shadow-black/20 transition-colors hover:border-line-strong hover:text-ink disabled:opacity-70"
     >
       <svg viewBox="0 0 20 20" width={15} height={15} className={busy ? "animate-spin" : ""} aria-hidden>
         <path
@@ -521,7 +521,7 @@ function HistoryAndNet({ wallet }: { wallet: string }) {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-3">
-        <div className="flex gap-1 rounded-xl border border-line bg-[#0e1217]/[0.97] p-1" role="tablist" aria-label="Kelompokkan">
+        <div className="flex gap-1 rounded-xl border border-line bg-panel p-1" role="tablist" aria-label="Kelompokkan">
           {([
             { key: "coin", label: "Per koin" },
             { key: "pool", label: "Per pool LP" },
@@ -578,7 +578,7 @@ function ViewSwitch({ view, onChange, openCount }: { view: View; onChange: (v: V
 
 function EmptyState() {
   return (
-    <div className="grid place-items-center rounded-2xl border border-line bg-[#0e1217]/[0.97] backdrop-blur-sm px-6 py-16 text-center shadow-[0_14px_42px_rgba(0,0,0,0.20)]">
+    <div className="grid place-items-center rounded-2xl border border-line bg-panel backdrop-blur-sm px-6 py-16 text-center shadow-[0_14px_42px_rgba(0,0,0,0.20)]">
       <div className="max-w-md">
         <div className="text-lg font-semibold text-ink">Hubungkan wallet untuk melihat posisi LP</div>
         <p className="mt-2 text-sm leading-6 text-ink-3">
@@ -738,7 +738,7 @@ export default function PortfolioPage() {
             </Card>
 
             {data && data.pools.length === 0 && (
-              <p className="rounded-2xl border border-line bg-[#0e1217]/[0.97] backdrop-blur-sm px-4 py-8 text-center text-sm text-ink-3">
+              <p className="rounded-2xl border border-line bg-panel backdrop-blur-sm px-4 py-8 text-center text-sm text-ink-3">
                 Tidak ada posisi DLMM terbuka di wallet ini.
               </p>
             )}
@@ -754,7 +754,7 @@ export default function PortfolioPage() {
               <RangeNotice counts={statusCounts(data.pools)} onShow={(status) => setFilters({ ...filters, status })} />
             )}
             {data && data.pools.length > 0 && visiblePools.length === 0 && (
-              <p className="rounded-2xl border border-line bg-[#0e1217]/[0.97] px-4 py-8 text-center text-sm text-ink-3">
+              <p className="rounded-2xl border border-line bg-panel px-4 py-8 text-center text-sm text-ink-3">
                 Tidak ada posisi yang cocok dengan filter.{" "}
                 <button type="button" onClick={() => setFilters(DEFAULT_FILTERS)} className="text-accent hover:underline">
                   Reset filter

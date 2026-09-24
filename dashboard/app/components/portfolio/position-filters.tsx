@@ -102,7 +102,7 @@ export default function PositionFilters({
 }) {
   const changed = filters.status !== "all" || filters.query !== "" || filters.sort !== "value";
   return (
-    <div className="flex flex-wrap items-center gap-x-4 gap-y-3 rounded-2xl border border-line bg-[#0e1217]/[0.97] px-4 py-3 shadow-[0_14px_42px_rgba(0,0,0,0.20)] backdrop-blur-sm">
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-3 rounded-2xl border border-line bg-panel px-4 py-3 shadow-[0_14px_42px_rgba(0,0,0,0.20)] backdrop-blur-sm">
       <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Filter status posisi">
         {STATUS_OPTIONS.map((o) => (
           <button

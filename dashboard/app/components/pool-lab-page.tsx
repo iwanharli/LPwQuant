@@ -92,7 +92,7 @@ function useReport() {
 
 function Kpi({ label, value, hint, cls }: { label: string; value: string; hint?: string; cls?: string }) {
   return (
-    <div className="bg-[#0e1217] px-4 py-3.5">
+    <div className="bg-panel px-4 py-3.5">
       <div className="text-[11px] uppercase tracking-wider text-ink-3">{label}</div>
       <div className={`mt-1 text-xl font-semibold tabular-nums ${cls ?? "text-ink"}`}>{value}</div>
       {hint && <div className="mt-0.5 text-[11px] text-ink-3">{hint}</div>}
@@ -111,11 +111,11 @@ export default function PoolLabPage() {
         <PageHeader title="Uji" accent="pembuat pool" subtitle="Paper, tanpa transaksi: jadi LP pertama di pool baru ber-fee tinggi." />
 
         {error && !r && (
-          <p className="rounded-2xl border border-line bg-[#0e1217]/[0.97] px-4 py-8 text-sm text-ink-3">Engine tidak bisa dihubungi.</p>
+          <p className="rounded-2xl border border-line bg-panel px-4 py-8 text-sm text-ink-3">Engine tidak bisa dihubungi.</p>
         )}
         {r && p && (
           <>
-            <section className="overflow-hidden rounded-2xl border border-line bg-[#0e1217]/[0.97]">
+            <section className="overflow-hidden rounded-2xl border border-line bg-panel">
               <div className="grid grid-cols-2 gap-px bg-line/40 sm:grid-cols-4">
                 <Kpi
                   label="Hasil bersih sebagai pembuat"
@@ -144,7 +144,7 @@ export default function PoolLabPage() {
               </p>
             </section>
 
-            <section className="rounded-2xl border border-line bg-[#0e1217]/[0.97] px-4 py-3.5 text-xs leading-5 text-ink-2">
+            <section className="rounded-2xl border border-line bg-panel px-4 py-3.5 text-xs leading-5 text-ink-2">
               <h2 className="mb-1.5 text-sm font-semibold text-ink">Aturan uji</h2>
               <ul className="grid gap-x-6 gap-y-1 sm:grid-cols-2">
                 <li>
@@ -170,7 +170,7 @@ export default function PoolLabPage() {
               </ul>
             </section>
 
-            <section className="overflow-hidden rounded-2xl border border-line bg-[#0e1217]/[0.97]">
+            <section className="overflow-hidden rounded-2xl border border-line bg-panel">
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[880px] text-sm tabular-nums">
                   <thead className="text-[11px] uppercase tracking-wider text-ink-3">

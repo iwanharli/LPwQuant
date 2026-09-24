@@ -126,7 +126,7 @@ export default function NewPoolsPage() {
           ))}
         </div>
 
-        <section className="overflow-hidden rounded-2xl border border-line bg-[#0e1217]/[0.97] shadow-[0_14px_42px_rgba(0,0,0,0.20)] backdrop-blur-sm">
+        <section className="overflow-hidden rounded-2xl border border-line bg-panel shadow-[0_14px_42px_rgba(0,0,0,0.20)] backdrop-blur-sm">
           {!data ? (
             <p className="px-4 py-10 text-sm text-ink-3">{error ? "Gagal memuat." : "Memuat…"}</p>
           ) : shown.length === 0 ? (

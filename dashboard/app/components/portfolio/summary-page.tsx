@@ -57,7 +57,7 @@ function useLedger(wallet: string | undefined) {
 
 function Card({ title, right, children }: { title: string; right?: ReactNode; children: ReactNode }) {
   return (
-    <section className="overflow-hidden rounded-2xl border border-line bg-[#0e1217]/[0.97] backdrop-blur-sm">
+    <section className="overflow-hidden rounded-2xl border border-line bg-panel backdrop-blur-sm">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line bg-raised/20 px-4 py-3">
         <h2 className="text-sm font-semibold text-ink">{title}</h2>
         {right}
@@ -225,12 +225,12 @@ export default function SummaryPage() {
         <PortfolioTabs />
 
         {!connected ? (
-          <div className="grid place-items-center rounded-2xl border border-line bg-[#0e1217]/[0.97] px-6 py-16 text-center">
+          <div className="grid place-items-center rounded-2xl border border-line bg-panel px-6 py-16 text-center">
             <div className="text-lg font-semibold text-ink">Hubungkan wallet untuk melihat ringkasan</div>
             <div className="mt-5"><WalletButton /></div>
           </div>
         ) : !l ? (
-          <p className="rounded-2xl border border-line bg-[#0e1217]/[0.97] px-4 py-10 text-sm text-ink-3">{error ?? "Menghitung…"}</p>
+          <p className="rounded-2xl border border-line bg-panel px-4 py-10 text-sm text-ink-3">{error ?? "Menghitung…"}</p>
         ) : (
           <>
             {/* The one number that matters, in rupiah first: what went in, what is left. */}

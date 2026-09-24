@@ -144,7 +144,7 @@ function OrderReview({ state, onConfirm, onCancel }: { state: Extract<OrderState
         role="dialog"
         aria-modal="true"
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-md overflow-hidden rounded-2xl border border-line bg-[#0e1217] shadow-[0_24px_64px_rgba(0,0,0,0.6)]"
+        className="w-full max-w-md overflow-hidden rounded-2xl border border-line bg-panel shadow-[0_24px_64px_rgba(0,0,0,0.6)]"
       >
         <div className="border-b border-line px-5 py-4">
           <h2 className="text-base font-semibold text-ink">
@@ -285,7 +285,7 @@ export default function SwapSuggestions({ owner, dustCount, canSign }: { owner: 
   if (failed && !items) return null;
 
   return (
-    <section className="overflow-hidden rounded-2xl border border-line bg-[#0e1217]/[0.97] shadow-[0_14px_42px_rgba(0,0,0,0.20)] backdrop-blur-sm">
+    <section className="overflow-hidden rounded-2xl border border-line bg-panel shadow-[0_14px_42px_rgba(0,0,0,0.20)] backdrop-blur-sm">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line bg-raised/20 px-4 py-3">
         <h2 className="text-sm font-semibold text-ink">Saran ke aset utama</h2>
         <span className="text-xs text-ink-3">Bullish: limit order · Bearish: swap sekarang · aset utama SOL dan USDC</span>

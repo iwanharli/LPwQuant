@@ -92,7 +92,7 @@ function Tile({
   hint: ReactNode;
 }) {
   return (
-    <div className="relative min-w-0 overflow-hidden rounded-2xl border border-line bg-[#0e1217]/[0.97] px-4 py-3.5 shadow-[0_12px_32px_rgba(0,0,0,0.18),inset_0_1px_0_rgba(255,255,255,0.04)] backdrop-blur-sm">
+    <div className="relative min-w-0 overflow-hidden rounded-2xl border border-line bg-panel px-4 py-3.5 shadow-[0_12px_32px_rgba(0,0,0,0.18),inset_0_1px_0_rgba(255,255,255,0.04)] backdrop-blur-sm">
       <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/14 to-transparent" />
       <div className="flex min-w-0 items-center gap-2 truncate text-xs font-medium text-ink-3">
         {label}
@@ -271,7 +271,7 @@ export default function WalletPage() {
               <button
                 type="button"
                 onClick={reload}
-                className="inline-flex h-9 items-center gap-2 rounded-lg border border-line bg-[#0e1217]/[0.97] px-3 text-sm font-medium text-ink-2 hover:border-line-strong hover:text-ink"
+                className="inline-flex h-9 items-center gap-2 rounded-lg border border-line bg-panel px-3 text-sm font-medium text-ink-2 hover:border-line-strong hover:text-ink"
               >
                 Refresh
               </button>
@@ -281,7 +281,7 @@ export default function WalletPage() {
         />
 
         {!connected ? (
-          <div className="grid place-items-center rounded-2xl border border-line bg-[#0e1217]/[0.97] px-6 py-16 text-center">
+          <div className="grid place-items-center rounded-2xl border border-line bg-panel px-6 py-16 text-center">
             <div className="max-w-md">
               <div className="text-lg font-semibold text-ink">
                 Hubungkan wallet untuk melihat koinnya
@@ -339,7 +339,7 @@ export default function WalletPage() {
 
             {connected && data && <SwapSuggestions owner={connected.address} dustCount={dust.length} canSign={signer} />}
 
-            <section className="overflow-hidden rounded-2xl border border-line bg-[#0e1217]/[0.97] shadow-[0_14px_42px_rgba(0,0,0,0.20)] backdrop-blur-sm">
+            <section className="overflow-hidden rounded-2xl border border-line bg-panel shadow-[0_14px_42px_rgba(0,0,0,0.20)] backdrop-blur-sm">
               <div className="flex flex-wrap items-center gap-3 border-b border-line bg-raised/20 px-4 py-3">
                 <h2 className="text-sm font-semibold text-ink">
                   Koin di wallet

@@ -61,8 +61,10 @@ export default function LoginPage() {
   const first = status?.registered === 0;
   return (
     <main className="grid min-h-screen place-items-center px-4">
-      <div className="w-full max-w-sm rounded-2xl border border-line bg-[#0e1217]/[0.97] p-6 shadow-[0_24px_64px_rgba(0,0,0,0.5)]">
-        <h1 className="text-xl font-semibold text-ink">Quant</h1>
+      <div className="w-full max-w-sm rounded-2xl border border-line bg-panel p-6 shadow-[0_24px_64px_rgba(0,0,0,0.5)]">
+        <h1 className="text-2xl font-extrabold tracking-tight text-ink">
+          Quant<span className="text-accent-gradient"> DLMM</span>
+        </h1>
         <p className="mt-1 text-sm text-ink-3">
           {status === null
             ? "Memeriksa…"
@@ -75,7 +77,7 @@ export default function LoginPage() {
           type="button"
           disabled={busy || status === null}
           onClick={() => void run(first ? "register" : "login")}
-          className="mt-5 h-11 w-full rounded-xl border border-accent/50 bg-accent/15 text-sm font-medium text-accent transition-colors hover:bg-accent/25 disabled:opacity-50"
+          className="btn-accent mt-5 h-11 w-full rounded-xl text-sm font-semibold transition disabled:opacity-50"
         >
           {busy ? "Menunggu Touch ID…" : first ? "Daftarkan perangkat ini" : "Masuk dengan Touch ID"}
         </button>

@@ -66,7 +66,7 @@ export default function PaperLimitOrders() {
   const c = r.counts;
   const done = (c.closed ?? 0) + (c.expired ?? 0);
   return (
-    <section className="overflow-hidden rounded-2xl border border-line bg-[#0e1217]/[0.97] backdrop-blur-sm">
+    <section className="overflow-hidden rounded-2xl border border-line bg-panel backdrop-blur-sm">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line bg-raised/20 px-4 py-3">
         <div>
           <h2 className="text-sm font-semibold text-ink">Uji coba engine · paper, tanpa transaksi</h2>
@@ -89,7 +89,7 @@ export default function PaperLimitOrders() {
           { label: "Cut loss / 24 jam", v: (c.stop ?? 0) + (c.time ?? 0), cls: "text-rose-300" },
           { label: "Tidak terisi", v: c.expired ?? 0 },
         ].map((k) => (
-          <div key={k.label} className="bg-[#0e1217] px-3 py-3">
+          <div key={k.label} className="bg-panel px-3 py-3">
             <div className={`text-xl font-semibold tabular-nums ${k.cls ?? "text-ink"}`}>{k.v}</div>
             <div className="text-[11px] text-ink-3">{k.label}</div>
           </div>

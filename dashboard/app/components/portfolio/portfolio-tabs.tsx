@@ -14,7 +14,7 @@ const TABS = [
 export default function PortfolioTabs() {
   const pathname = usePathname();
   return (
-    <nav className="flex w-fit gap-1 rounded-xl border border-line bg-[#0e1217]/[0.97] p-1 backdrop-blur-sm" aria-label="Bagian portofolio">
+    <nav className="flex w-fit gap-1 rounded-xl border border-line bg-panel p-1 backdrop-blur-sm" aria-label="Bagian portofolio">
       {TABS.map((t) => {
         const active = pathname === t.href;
         return (

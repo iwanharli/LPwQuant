@@ -229,10 +229,10 @@ export default function NetPnl({ wallet }: { wallet: string }) {
     };
   }, [wallet, reloadKey]);
 
-  if (error) return <p className="rounded-2xl border border-line bg-[#0e1217]/[0.97] px-4 py-8 text-sm text-ink-3">{error}</p>;
+  if (error) return <p className="rounded-2xl border border-line bg-panel px-4 py-8 text-sm text-ink-3">{error}</p>;
   if (!data)
     return (
-      <p className="rounded-2xl border border-line bg-[#0e1217]/[0.97] px-4 py-8 text-sm text-ink-3">
+      <p className="rounded-2xl border border-line bg-panel px-4 py-8 text-sm text-ink-3">
         Menghitung ulang semua transaksi… (pertama kali bisa sampai 2 menit)
       </p>
     );
@@ -264,7 +264,7 @@ export default function NetPnl({ wallet }: { wallet: string }) {
   return (
     <div className="space-y-4">
       {/* The reconciliation first: the parts must add up to the total, or something is wrong and shows here. */}
-      <section className="overflow-hidden rounded-2xl border border-line bg-[#0e1217]/[0.97] backdrop-blur-sm">
+      <section className="overflow-hidden rounded-2xl border border-line bg-panel backdrop-blur-sm">
         <div className="flex flex-wrap items-end justify-between gap-3 border-b border-line bg-raised/20 px-4 py-3">
           <div>
             <h2 className="text-sm font-semibold text-ink">Hasil bersih: dari mana saja</h2>
@@ -321,7 +321,7 @@ export default function NetPnl({ wallet }: { wallet: string }) {
         </p>
       </section>
 
-      <section className="overflow-hidden rounded-2xl border border-line bg-[#0e1217]/[0.97] backdrop-blur-sm">
+      <section className="overflow-hidden rounded-2xl border border-line bg-panel backdrop-blur-sm">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line bg-raised/20 px-4 py-3">
           <h2 className="text-sm font-semibold text-ink">Per koin · {coins.length}</h2>
           <div className="flex flex-wrap gap-2">

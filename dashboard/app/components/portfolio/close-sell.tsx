@@ -158,7 +158,7 @@ export default function CloseSellButton({
             aria-modal="true"
             aria-labelledby="close-sell-title"
             onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-lg overflow-hidden rounded-2xl border border-line bg-[#0e1217] shadow-[0_24px_64px_rgba(0,0,0,0.6)]"
+            className="w-full max-w-lg overflow-hidden rounded-2xl border border-line bg-panel shadow-[0_24px_64px_rgba(0,0,0,0.6)]"
           >
             <div className="border-b border-line px-5 py-4">
               <h2 id="close-sell-title" className="text-base font-semibold text-ink">

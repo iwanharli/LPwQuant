@@ -137,7 +137,7 @@ function PlaceDialog({ rec, owner, side, onClose }: { rec: Rec; owner: string; s
   const built = state.phase === "review" ? state.built : null;
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/65 px-4 backdrop-blur-sm" onClick={onClose}>
-      <div role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()} className="w-full max-w-md overflow-hidden rounded-2xl border border-line bg-[#0e1217] shadow-[0_24px_64px_rgba(0,0,0,0.6)]">
+      <div role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()} className="w-full max-w-md overflow-hidden rounded-2xl border border-line bg-panel shadow-[0_24px_64px_rgba(0,0,0,0.6)]">
         <div className="border-b border-line px-5 py-4">
           <h2 className="text-base font-semibold text-ink">
             {side === "buy" ? `Order beli ${base}` : `Order jual ${base}`} · {rec.name.replace("-", "/")}
@@ -295,7 +295,7 @@ export default function LimitRecs({ owner, canSign }: { owner: string | null; ca
   const recs = useRecs();
   const [placing, setPlacing] = useState<{ rec: Rec; side: "buy" | "sell" } | null>(null);
   return (
-    <section className="overflow-hidden rounded-2xl border border-line bg-[#0e1217]/[0.97] backdrop-blur-sm">
+    <section className="overflow-hidden rounded-2xl border border-line bg-panel backdrop-blur-sm">
       <div className="border-b border-line bg-raised/20 px-4 py-3">
         <h2 className="text-sm font-semibold text-ink">Rekomendasi: beli rendah, jual tinggi</h2>
         <p className="mt-0.5 text-xs leading-5 text-ink-3">

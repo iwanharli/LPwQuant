@@ -6,11 +6,11 @@ import { StatusDot } from "./ui";
 
 function Tile({ label, value, hint }: { label: ReactNode; value: ReactNode; hint: ReactNode }) {
   return (
-    <div className="group relative min-w-0 overflow-hidden rounded-2xl border border-line bg-panel/90 px-4 py-3.5 shadow-[0_12px_32px_rgba(0,0,0,0.18),inset_0_1px_0_rgba(255,255,255,0.04)] transition-colors hover:border-line-strong">
-      <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/14 to-transparent" />
-      <div className="flex min-w-0 items-center gap-2 truncate text-xs font-medium text-ink-3">{label}</div>
-      <div className="mt-2 text-2xl font-semibold tracking-tight text-ink">{value}</div>
-      <div className="mt-1 truncate text-xs text-ink-3">{hint}</div>
+    <div className="group relative min-w-0 overflow-hidden rounded-2xl border border-white/[0.06] bg-panel px-4 py-4 shadow-[0_16px_40px_rgba(0,0,0,0.35)] transition-colors hover:border-white/[0.12]">
+      <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
+      <div className="flex min-w-0 items-center gap-2 truncate text-[11px] font-medium uppercase tracking-[0.08em] text-ink-3">{label}</div>
+      <div className="mt-2 text-[26px] font-bold leading-none tracking-tight text-ink">{value}</div>
+      <div className="mt-2 truncate text-xs text-ink-3">{hint}</div>
     </div>
   );
 }
