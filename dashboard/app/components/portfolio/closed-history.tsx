@@ -103,6 +103,8 @@ function Stat({ label, value, hint, cls = "text-ink" }: { label: string; value: 
   );
 }
 
+const PAGE = 25;
+
 type PositionCost = { pool: string; cost_lp: number; cost_swaps: number; net: number; swaps: number };
 type Costs = { positions: Record<string, PositionCost>; costs_known_txs: number; transactions: number };
 
@@ -175,6 +177,8 @@ export function ClosedPositions({ wallet }: { wallet: string }) {
   const { data: costs } = useJson<Costs>(`${ENGINE_URL}/api/portfolio/position-costs?wallet=${wallet}`);
   const [open, setOpen] = useState<string | null>(null);
   const [sort, setSort] = useState<"recent" | "pnl" | "worst" | "fees">("recent");
+  const [query, setQuery] = useState("");
+  const [limit, setLimit] = useState(PAGE);
   if (error) return <p className="rounded-2xl border border-line bg-[#0e1217]/[0.97] px-4 py-8 text-sm text-ink-3">Gagal memuat riwayat posisi dari Meteora.</p>;
   if (!data) return <p className="rounded-2xl border border-line bg-[#0e1217]/[0.97] px-4 py-8 text-sm text-ink-3">Memuat riwayat posisi…</p>;
   const pools = [...data.pools].sort((a, b) =>
@@ -183,19 +187,42 @@ export function ClosedPositions({ wallet }: { wallet: string }) {
   const pnl = pools.reduce((n, p) => n + p.pnl_usd, 0);
   const fees = pools.reduce((n, p) => n + p.fees_usd, 0);
   const wins = pools.filter((p) => p.pnl_usd > 0).length;
+  const shown = query.trim()
+    ? pools.filter((p) => p.name.toLowerCase().includes(query.trim().toLowerCase()) || p.address.toLowerCase().includes(query.trim().toLowerCase()))
+    : pools;
+  const byPool = (address: string) => Object.values(costs?.positions ?? {}).filter((c) => c.pool === address);
+  const netAll = costs ? Object.values(costs.positions).reduce((n, c) => n + c.net, 0) : null;
 
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <Stat label="PnL posisi ditutup" value={signed(pnl)} cls={tone(pnl)} hint="Termasuk fee, setelah IL" />
+        <Stat label="PnL menurut Meteora" value={signed(pnl)} cls={tone(pnl)} hint="Fee dikurangi IL, belum termasuk biaya swap" />
         <Stat label="Fee dikumpulkan" value={usd.format(fees)} cls="text-emerald-300" hint="Semua posisi yang sudah ditutup" />
-        <Stat label="Pool untung" value={`${wins} / ${pools.length}`} hint={`${fmtNum((wins / Math.max(1, pools.length)) * 100, 0)}% pool berakhir untung`} />
-        <Stat label="IL + biaya" value={signed(pnl - fees)} cls={tone(pnl - fees)} hint="PnL dikurangi fee: yang hilang karena harga" />
+        <Stat
+          label="Hasil bersih"
+          value={netAll == null ? "…" : signed(netAll)}
+          cls={netAll == null ? "text-ink-3" : tone(netAll)}
+          hint="Setelah swap masuk-keluar dan biaya jaringan"
+        />
+        <Stat label="Pool untung" value={`${wins} / ${pools.length}`} hint={`${fmtNum((wins / Math.max(1, pools.length)) * 100, 0)}% pool berakhir untung menurut Meteora`} />
       </div>
 
       <section className="overflow-hidden rounded-2xl border border-line bg-[#0e1217]/[0.97] backdrop-blur-sm">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line bg-raised/20 px-4 py-3">
-          <h2 className="text-sm font-semibold text-ink">Posisi yang sudah ditutup · {pools.length} pool</h2>
+          <h2 className="text-sm font-semibold text-ink">
+            Posisi yang sudah ditutup · {shown.length === pools.length ? `${pools.length} pool` : `${shown.length} dari ${pools.length} pool`}
+          </h2>
+          <div className="flex items-center gap-2">
+            <input
+              value={query}
+              onChange={(e) => {
+                setQuery(e.target.value);
+                setLimit(PAGE);
+              }}
+              placeholder="Cari token atau pool"
+              aria-label="Cari pool"
+              className="h-8 w-44 rounded-full border border-line bg-bg/50 px-3 text-xs text-ink placeholder:text-ink-3 focus:border-accent/70 focus:outline-none"
+            />
           <select
             value={sort}
             onChange={(e) => setSort(e.target.value as typeof sort)}
@@ -207,15 +234,16 @@ export function ClosedPositions({ wallet }: { wallet: string }) {
             <option value="worst">PnL terburuk</option>
             <option value="fees">Fee terbanyak</option>
           </select>
+          </div>
         </div>
         <ul className="divide-y divide-white/[0.04]">
-          {pools.map((p) => (
+          {shown.slice(0, limit).map((p) => (
             <li key={p.address}>
               <button
                 type="button"
                 onClick={() => setOpen(open === p.address ? null : p.address)}
                 aria-expanded={open === p.address}
-                className="grid w-full grid-cols-[auto_1fr_auto] items-center gap-4 px-4 py-3 text-left transition-colors hover:bg-white/[0.025] sm:grid-cols-[auto_1.4fr_1fr_1fr_1fr_1fr_auto]"
+                className="grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-4 px-4 py-3 text-left transition-colors hover:bg-white/[0.025] sm:grid-cols-[auto_minmax(0,1.4fr)_6rem_6rem_5.5rem_6.5rem_6.5rem_14px]"
               >
                 <Pair x={p.token_x_icon} y={p.token_y_icon} />
                 <span className="min-w-0">
@@ -234,19 +262,27 @@ export function ClosedPositions({ wallet }: { wallet: string }) {
                 </span>
                 <span className="hidden text-right text-xs tabular-nums sm:block" title="Biaya jaringan + fee swap Meteora untuk semua posisi di pool ini">
                   <span className="block text-amber-300/90">
-                    {costs
-                      ? usd.format(
-                          Object.values(costs.positions)
-                            .filter((c) => c.pool === p.address)
-                            .reduce((n, c) => n + c.cost_lp + c.cost_swaps, 0),
-                        )
-                      : "…"}
+                    {costs ? usd.format(byPool(p.address).reduce((n, c) => n + c.cost_lp + c.cost_swaps, 0)) : "…"}
                   </span>
                   <span className="text-[10px] uppercase tracking-wider text-ink-3">biaya</span>
                 </span>
+                <span className="hidden text-right text-xs tabular-nums sm:block" title="PnL menurut Meteora: fee dikurangi IL, tanpa biaya swap">
+                  <span className={`block ${tone(p.pnl_usd)}`}>{signed(p.pnl_usd)}</span>
+                  <span className="text-[10px] uppercase tracking-wider text-ink-3">kata Meteora</span>
+                </span>
                 <span className="text-right tabular-nums">
-                  <span className={`block text-sm font-semibold ${tone(p.pnl_usd)}`}>{signed(p.pnl_usd)}</span>
-                  <span className={`text-[11px] ${tone(p.pnl_usd)} opacity-80`}>{fmtSignedPct(p.pnl_pct, 1)}</span>
+                  {(() => {
+                    const rows = byPool(p.address);
+                    const net = rows.length ? rows.reduce((n, c) => n + c.net, 0) : null;
+                    return (
+                      <>
+                        <span className={`block text-sm font-semibold ${net == null ? "text-ink-3" : tone(net)}`}>
+                          {costs ? (net == null ? "–" : signed(net)) : "…"}
+                        </span>
+                        <span className="text-[10px] uppercase tracking-wider text-ink-3">bersih</span>
+                      </>
+                    );
+                  })()}
                 </span>
                 <svg viewBox="0 0 20 20" width={14} height={14} className={`text-ink-3 transition-transform ${open === p.address ? "rotate-90" : ""}`} aria-hidden>
                   <path d="m7.5 5 5 5-5 5" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
@@ -255,6 +291,18 @@ export function ClosedPositions({ wallet }: { wallet: string }) {
               {open === p.address && <PoolPositions wallet={wallet} pool={p.address} costs={costs} />}
             </li>
           ))}
+          {shown.length > limit && (
+            <li className="px-4 py-3 text-center">
+              <button
+                type="button"
+                onClick={() => setLimit((n) => n + PAGE)}
+                className="rounded-full border border-line px-4 py-1.5 text-xs text-ink-2 transition-colors hover:border-line-strong hover:text-ink"
+              >
+                Tampilkan {Math.min(PAGE, shown.length - limit)} pool lagi ({shown.length - limit} tersisa)
+              </button>
+            </li>
+          )}
+          {shown.length === 0 && <li className="px-4 py-8 text-center text-sm text-ink-3">Tidak ada pool yang cocok.</li>}
         </ul>
       </section>
     </div>
