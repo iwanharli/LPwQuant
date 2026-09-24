@@ -81,8 +81,11 @@ function useUsage() {
 const sum = (items: UsageItem[], kind: UsageItem["kind"], field: "last_24h" | "this_month" | "this_hour") =>
   items.filter((i) => i.kind === kind).reduce((n, i) => n + i[field], 0);
 
-export default function UsagePanel() {
+export default function UsagePanel({ onItems }: { onItems?: (items: UsageItem[]) => void } = {}) {
   const { items, failed, updatedAt } = useUsage();
+  useEffect(() => {
+    if (items && onItems) onItems(items);
+  }, [items, onItems]);
   const all = items ?? [];
   const calls24 = sum(all, "http", "last_24h");
   const errors24 = sum(all, "http_error", "last_24h");
@@ -141,7 +144,7 @@ export default function UsagePanel() {
 
       <section className="overflow-hidden rounded-2xl border border-line bg-panel/90 shadow-[0_14px_42px_rgba(0,0,0,0.20),inset_0_1px_0_rgba(255,255,255,0.04)]">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line bg-raised/20 px-4 py-3">
-          <h2 className="text-sm font-semibold text-ink">Rincian per provider</h2>
+          <h2 className="text-sm font-semibold text-ink">Hitungan panggilan per sumber</h2>
           <span className="text-xs text-ink-3">
             Jumlah panggilan dan pesan, bukan kredit
             {updatedAt &&
