@@ -44,6 +44,13 @@ NEW_BIN_ARRAY_SOL = 0.07143744  # SDK BIN_ARRAY_FEE: per bin array actually crea
 EXIT_SWAP_COST_PCT = 1.0  # selling the token left at exit
 TX_FEE_SOL = 0.0005
 MAX_HOLD_H = 72
+# The exit is "keluar di bounce pertama" -- after the dump the position was opened to harvest. Entry and exit
+# would otherwise fire together: the entry waits for a break above Supertrend near the high, which is exactly when
+# RSI(2) is over 90 and the price sits on the upper band. The first five paper positions all closed within five
+# minutes for that reason. So the confluence only counts once the price has actually fallen through part of the
+# range, or the position has been held long enough for the dump to have happened.
+MIN_DROP_BEFORE_EXIT_PCT = 3.0
+MIN_HOLD_MIN = 60
 DEAD_VOLUME_USD = 10_000.0  # 24h volume under this = the flatline the corpus says not to wait out
 # The corpus gives the entry twice: "harga menembus ke atas Supertrend 15m" and, in the fullest write-up,
 # "Entry: ATH. Bullish supertrend." So either qualifies: a break inside the last hour, or a price sitting at its
@@ -242,7 +249,9 @@ class PandaPaper:
 
         held_h = (now - r["opened_at"]).total_seconds() / 3600
         c15 = await self._candles_15m(r["pool"])
-        if c15 and (reason := exit_signal(c15)):
+        dropped = (1 - min(r["min_ratio"], ratio)) * 100 >= MIN_DROP_BEFORE_EXIT_PCT
+        ready = dropped or held_h * 60 >= MIN_HOLD_MIN
+        if ready and c15 and (reason := exit_signal(c15)):
             await self._close(r, now, price, reason)
         elif volume_24h < DEAD_VOLUME_USD:
             await self._close(r, now, price, "flatline")  # "if it flatlines, it means you're too late"
@@ -349,6 +358,7 @@ async def report(db, rows: dict[str, dict[str, Any]] | None = None) -> dict[str,
             "max_hold_h": MAX_HOLD_H, "min_market_cap": MIN_MARKET_CAP,
             "min_volume_24h": MIN_VOLUME_24H, "min_fee_tvl_24h": MIN_FEE_TVL_24H, "min_holders": MIN_HOLDERS,
             "max_top10_pct": MAX_TOP10_PCT, "near_high_pct": NEAR_HIGH_PCT,
+            "min_drop_before_exit_pct": MIN_DROP_BEFORE_EXIT_PCT, "min_hold_min": MIN_HOLD_MIN,
         },
         "approximations": APPROXIMATIONS,
         "counts": {"open": len(runs) - len(closed), "closed": len(closed), **reasons},

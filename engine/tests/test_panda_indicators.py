@@ -105,3 +105,17 @@ def test_range_behaviour_reads_time_in_range_and_where_it_ended():
     assert positions[0]["in_range_pct"] == 2 / 3 * 100
     assert positions[0]["exit_side"] == "below"
     assert positions[0]["last_price"] == 4.0
+
+
+def test_exit_needs_the_dump_to_have_happened_first():
+    """Entry and exit share their ingredients: a break near the high is also when RSI(2) is hot and the price sits
+    on the upper band. Without this gate the first five paper positions closed within five minutes."""
+    from app.panda import MIN_DROP_BEFORE_EXIT_PCT, MIN_HOLD_MIN
+
+    # A position still at its entry price, held for ten minutes, is not eligible.
+    min_ratio, ratio, held_h = 1.0, 1.0, 10 / 60
+    dropped = (1 - min(min_ratio, ratio)) * 100 >= MIN_DROP_BEFORE_EXIT_PCT
+    assert not (dropped or held_h * 60 >= MIN_HOLD_MIN)
+
+    # One that fell 5% below entry is, whatever the clock says.
+    assert (1 - min(0.95, 0.98)) * 100 >= MIN_DROP_BEFORE_EXIT_PCT
