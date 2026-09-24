@@ -68,10 +68,16 @@ function useWallet(owner: string | undefined) {
       }
     };
     void load();
-    const timer = setInterval(load, REFRESH_MS);
+    // Poll only while the tab is visible, and fetch straight away when it is opened again.
+    const timer = setInterval(() => document.visibilityState === "visible" && load(), REFRESH_MS);
+    const onVisible = () => document.visibilityState === "visible" && load();
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onVisible);
     return () => {
       cancelled = true;
       clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onVisible);
     };
   }, [owner, reloadKey]);
 
@@ -216,7 +222,7 @@ export default function WalletPage() {
   const connected = useConnectedWallet();
   useWalletParam(connected);
   const signer = canSign(connected, useWalletOptions());
-  const { data, error, reload } = useWallet(connected?.address);
+  const { data, error } = useWallet(connected?.address);
   const [showDust, setShowDust] = useState(false);
   const [query, setQuery] = useState("");
 
@@ -268,13 +274,6 @@ export default function WalletPage() {
                 </div>
                 diperbarui {fmtTime(data.fetched_at)}
               </div>
-              <button
-                type="button"
-                onClick={reload}
-                className="inline-flex h-9 items-center gap-2 rounded-lg border border-white/[0.06] bg-panel px-3 text-sm font-medium text-ink-2 hover:border-line-strong hover:text-ink"
-              >
-                Refresh
-              </button>
               </>
             )
           }

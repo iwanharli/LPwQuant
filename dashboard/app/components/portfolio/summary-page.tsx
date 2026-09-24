@@ -46,10 +46,16 @@ function useLedger(wallet: string | undefined) {
       }
     };
     void load();
-    const timer = setInterval(load, 60_000);
+    // Poll only while the tab is visible, and fetch straight away when it is opened again.
+    const timer = setInterval(() => document.visibilityState === "visible" && load(), 60_000);
+    const onVisible = () => document.visibilityState === "visible" && load();
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onVisible);
     return () => {
       cancelled = true;
       clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onVisible);
     };
   }, [wallet, key]);
   return { data, error, reload: () => setKey((k) => k + 1) };

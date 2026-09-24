@@ -99,10 +99,16 @@ export default function SourcesPanel({ items }: { items: UsageItem[] | null }) {
         .then((b: { items: FreshnessItem[] } | null) => !cancelled && b && setFresh(b.items))
         .catch(() => undefined);
     void load();
-    const t = setInterval(load, 30_000);
+    // Poll only while the tab is visible, and fetch straight away when it is opened again.
+    const t = setInterval(() => document.visibilityState === "visible" && load(), 30_000);
+    const onVisible = () => document.visibilityState === "visible" && load();
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onVisible);
     return () => {
       cancelled = true;
       clearInterval(t);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onVisible);
     };
   }, []);
 

@@ -77,10 +77,16 @@ function useOrders(wallet: string | undefined) {
       }
     };
     void load();
-    const timer = setInterval(load, REFRESH_MS);
+    // Poll only while the tab is visible, and fetch straight away when it is opened again.
+    const timer = setInterval(() => document.visibilityState === "visible" && load(), REFRESH_MS);
+    const onVisible = () => document.visibilityState === "visible" && load();
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onVisible);
     return () => {
       cancelled = true;
       clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onVisible);
     };
   }, [wallet, reloadKey]);
   return { data: data && data.wallet === wallet ? data : null, error, reload: () => setReloadKey((k) => k + 1) };
@@ -177,13 +183,6 @@ export default function OrdersPage() {
                 <div className="font-mono text-ink-2">{shortAddress(data.wallet)}</div>
                 diperbarui {fmtTime(data.fetched_at)}
               </div>
-              <button
-                type="button"
-                onClick={reload}
-                className="inline-flex h-9 items-center rounded-lg border border-white/[0.06] bg-panel px-3 text-sm font-medium text-ink-2 hover:border-line-strong hover:text-ink"
-              >
-                Refresh
-              </button>
               </>
             )
           }

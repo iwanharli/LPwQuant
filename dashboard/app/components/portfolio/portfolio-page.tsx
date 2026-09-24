@@ -71,10 +71,16 @@ function usePortfolio(wallet: string | undefined) {
       }
     };
     void load();
-    const timer = setInterval(load, REFRESH_MS);
+    // Poll only while the tab is visible, and fetch straight away when it is opened again.
+    const timer = setInterval(() => document.visibilityState === "visible" && load(), REFRESH_MS);
+    const onVisible = () => document.visibilityState === "visible" && load();
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onVisible);
     return () => {
       cancelled = true;
       clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onVisible);
     };
   }, [wallet, reloadKey]);
 
@@ -452,35 +458,6 @@ function Card({
   );
 }
 
-/** Manual refresh: skips the engine and ingestor caches once. Spins until data newer than the click arrives. */
-function RefreshButton({ onClick, fetchedAt }: { onClick: () => void; fetchedAt: number }) {
-  const [clickedAt, setClickedAt] = useState<number | null>(null);
-  const busy = clickedAt != null && fetchedAt < clickedAt;
-  return (
-    <button
-      type="button"
-      onClick={() => {
-        setClickedAt(Date.now());
-        onClick();
-      }}
-      disabled={busy}
-      className="inline-flex h-9 items-center gap-2 rounded-lg border border-white/[0.06] bg-panel px-3 text-sm font-medium text-ink-2 shadow-sm shadow-black/20 transition-colors hover:border-line-strong hover:text-ink disabled:opacity-70"
-    >
-      <svg viewBox="0 0 20 20" width={15} height={15} className={busy ? "animate-spin" : ""} aria-hidden>
-        <path
-          d="M16 10a6 6 0 1 1-1.8-4.3M16 3.5v3.2h-3.2"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth={1.8}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      </svg>
-      {busy ? "Memuat…" : "Refresh"}
-    </button>
-  );
-}
-
 /** One quiet line under the filters when a position needs a look; each part filters the list to those positions. */
 function RangeNotice({
   counts,
@@ -633,7 +610,6 @@ export default function PortfolioPage() {
                 <div className="font-mono text-ink-2">{shortAddress(data.wallet)}</div>
                 diperbarui {fmtTime(data.fetched_at)} · otomatis tiap {REFRESH_MS / 1000} dtk
               </div>
-              <RefreshButton onClick={reload} fetchedAt={data.fetched_at} />
               </>
             )
           }

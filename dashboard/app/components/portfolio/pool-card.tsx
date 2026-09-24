@@ -99,10 +99,16 @@ function useBins(pool: string, position: string, open: boolean, refreshKey: numb
       }
     };
     void load();
-    const timer = setInterval(load, 60_000);
+    // Poll only while the tab is visible, and fetch straight away when it is opened again.
+    const timer = setInterval(() => document.visibilityState === "visible" && load(), 60_000);
+    const onVisible = () => document.visibilityState === "visible" && load();
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onVisible);
     return () => {
       cancelled = true;
       clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onVisible);
     };
   }, [pool, position, open, refreshKey]);
   return { data, failed };

@@ -285,7 +285,7 @@ export default function NetPnl({ wallet }: { wallet: string }) {
               }}
               className="h-9 rounded-xl border border-white/[0.08] px-3 text-sm text-ink-2 hover:border-line-strong hover:text-ink"
             >
-              Refresh
+              Tarik transaksi terbaru
             </button>
           </div>
         </div>
