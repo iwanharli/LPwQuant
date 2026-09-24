@@ -3,20 +3,6 @@
 import { useEffect, useState } from "react";
 import { ENGINE_URL, fmtDateTime, fmtNum, fmtSignedPct, shortAddress, usd } from "../../lib/format";
 
-type ClosedPool = {
-  address: string;
-  name: string;
-  token_x_icon: string | null;
-  token_y_icon: string | null;
-  bin_step: number;
-  deposit_usd: number;
-  withdrawn_usd: number;
-  fees_usd: number;
-  pnl_usd: number;
-  pnl_pct: number;
-  pnl_sol: number;
-  closed_at: number | null;
-};
 type ClosedPosition = {
   address: string;
   opened_at: number | null;
@@ -87,21 +73,6 @@ function duration(from: number | null, to: number | null): string {
   return `${fmtNum(h / 24, 1)} hari`;
 }
 
-function Pair({ x, y }: { x: string | null; y: string | null }) {
-  return (
-    <span className="flex shrink-0 -space-x-2">
-      {[x, y].map((src, i) =>
-        src ? (
-          // eslint-disable-next-line @next/next/no-img-element -- token icons come from many hosts
-          <img key={i} src={src} alt="" width={24} height={24} className="h-6 w-6 rounded-full border-2 border-[#0e1217] bg-raised object-cover" />
-        ) : (
-          <span key={i} className="h-6 w-6 rounded-full border-2 border-[#0e1217] bg-raised" />
-        ),
-      )}
-    </span>
-  );
-}
-
 function Stat({ label, value, hint, cls = "text-ink" }: { label: string; value: string; hint?: string; cls?: string }) {
   return (
     <div className="rounded-2xl border border-line bg-[#0e1217]/[0.97] px-4 py-3.5 backdrop-blur-sm">
@@ -168,7 +139,7 @@ const EXIT = {
 
 /** One closed position as a card: only what actually moved, and the net that came back. Meteora's own PnL is left
  * out on purpose -- it ignores the swaps in and out, which is where this wallet's money really went. */
-function PositionCard({ p, cost }: { p: ClosedPosition; cost: PositionCost | undefined }) {
+function PositionCard({ p, pool, cost }: { p: ClosedPosition; pool?: string; cost: PositionCost | undefined }) {
   const net = cost?.net ?? null;
   const basis = p.deposited_usd ?? p.deposit_usd;
   const pct = net != null && basis > 0 ? (net / basis) * 100 : null;
@@ -190,7 +161,8 @@ function PositionCard({ p, cost }: { p: ClosedPosition; cost: PositionCost | und
       />
       <div className="flex flex-wrap items-start justify-between gap-3 pl-1">
         <div className="min-w-0">
-          <div className="text-[10px] font-medium uppercase tracking-[0.12em] text-ink-3">Hasil bersih</div>
+          {pool && <div className="truncate text-[15px] font-semibold text-ink">{pool.replace("-", "/")}</div>}
+          <div className="mt-1 text-[10px] font-medium uppercase tracking-[0.12em] text-ink-3">Hasil bersih</div>
           <div className="mt-1 flex flex-wrap items-baseline gap-2.5">
             <span className={`text-[34px] font-semibold leading-none tracking-tight tabular-nums ${net == null ? "text-ink-3" : tone(net)}`}>
               {net == null ? "…" : signed(net)}
@@ -258,43 +230,28 @@ function PositionCard({ p, cost }: { p: ClosedPosition; cost: PositionCost | und
   );
 }
 
-function PoolPositions({ wallet, pool, costs }: { wallet: string; pool: string; costs: Costs | null }) {
-  const { data, error } = useJson<{ positions: ClosedPosition[] }>(`${ENGINE_URL}/api/portfolio/closed?wallet=${wallet}&pool=${pool}`);
-  if (error) return <p className="px-4 py-3 text-xs text-ink-3">Gagal memuat posisi.</p>;
-  if (!data) return <p className="px-4 py-3 text-xs text-ink-3">Memuat posisi…</p>;
-  return (
-    <div className="space-y-3 border-t border-white/[0.05] bg-black/25 px-3 py-3 sm:px-4">
-      {data.positions.map((p) => (
-        <PositionCard key={p.address} p={p} cost={costs?.positions[p.address]} />
-      ))}
-    </div>
-  );
-}
+type RecentPosition = ClosedPosition & { pool: string; name: string };
 
-/** Every pool the wallet has closed positions in, newest first; a pool opens into its positions. */
+/** Closed positions as one stream, newest first. Grouping by pool hid the thing that matters most -- what you did
+ * last -- behind a click, and most pools here hold a single position anyway. */
 export function ClosedPositions({ wallet }: { wallet: string }) {
-  const { data, error } = useJson<{ pools: ClosedPool[] }>(`${ENGINE_URL}/api/portfolio/closed?wallet=${wallet}`);
-  // Costs and net per position come from the full accounting, which takes a moment the first time.
-  const { data: costs } = useJson<Costs>(`${ENGINE_URL}/api/portfolio/position-costs?wallet=${wallet}`);
-  const [open, setOpen] = useState<string | null>(null);
-  const [sort, setSort] = useState<"recent" | "pnl" | "worst" | "fees">("recent");
-  const [query, setQuery] = useState("");
   const [limit, setLimit] = useState(PAGE);
-  if (error) return <p className="rounded-2xl border border-line bg-[#0e1217]/[0.97] px-4 py-8 text-sm text-ink-3">Gagal memuat riwayat posisi dari Meteora.</p>;
-  if (!data) return <p className="rounded-2xl border border-line bg-[#0e1217]/[0.97] px-4 py-8 text-sm text-ink-3">Memuat riwayat posisi…</p>;
-  const pools = [...data.pools].sort((a, b) =>
-    sort === "pnl" ? b.pnl_usd - a.pnl_usd : sort === "worst" ? a.pnl_usd - b.pnl_usd : sort === "fees" ? b.fees_usd - a.fees_usd : (b.closed_at ?? 0) - (a.closed_at ?? 0),
+  const [query, setQuery] = useState("");
+  const { data, error } = useJson<{ positions: RecentPosition[] }>(
+    `${ENGINE_URL}/api/portfolio/positions/recent?wallet=${wallet}&limit=200`,
   );
-  const fees = pools.reduce((n, p) => n + p.fees_usd, 0);
-  const deposits = pools.reduce((n, p) => n + p.deposit_usd, 0);
-  const shown = query.trim()
-    ? pools.filter((p) => p.name.toLowerCase().includes(query.trim().toLowerCase()) || p.address.toLowerCase().includes(query.trim().toLowerCase()))
-    : pools;
-  const byPool = (address: string) => Object.values(costs?.positions ?? {}).filter((c) => c.pool === address);
-  const netAll = costs ? Object.values(costs.positions).reduce((n, c) => n + c.net, 0) : null;
-  const poolNets = costs ? pools.map((p) => byPool(p.address)).filter((rows) => rows.length > 0).map((rows) => rows.reduce((n, c) => n + c.net, 0)) : null;
-  const netWins = poolNets ? poolNets.filter((n) => n > 0).length : null;
-  const withNet = poolNets ? poolNets.length : 0;
+  const { data: costs } = useJson<Costs>(`${ENGINE_URL}/api/portfolio/position-costs?wallet=${wallet}`);
+  if (error) return <p className="rounded-2xl border border-line bg-[#0e1217]/[0.97] px-4 py-8 text-sm text-ink-3">Gagal memuat riwayat posisi.</p>;
+  if (!data) return <p className="rounded-2xl border border-line bg-[#0e1217]/[0.97] px-4 py-8 text-sm text-ink-3">Memuat riwayat posisi…</p>;
+
+  const all = data.positions;
+  const shown = query.trim() ? all.filter((p) => p.name.toLowerCase().includes(query.trim().toLowerCase())) : all;
+  const net = (p: RecentPosition) => costs?.positions[p.address]?.net ?? null;
+  const nets = costs ? all.map(net).filter((n): n is number => n != null) : [];
+  const netAll = nets.length ? nets.reduce((a, b) => a + b, 0) : null;
+  const wins = nets.filter((n) => n > 0).length;
+  const deposits = all.reduce((n, p) => n + (p.deposited_usd ?? p.deposit_usd), 0);
+  const fees = all.reduce((n, p) => n + p.fees_usd, 0);
 
   return (
     <div className="space-y-4">
@@ -305,109 +262,48 @@ export function ClosedPositions({ wallet }: { wallet: string }) {
           cls={netAll == null ? "text-ink-3" : tone(netAll)}
           hint="Semua posisi ditutup, setelah swap masuk-keluar dan biaya"
         />
-        <Stat label="Modal masuk" value={usd.format(deposits)} hint={`${pools.length} pool`} />
+        <Stat label="Modal masuk" value={usd.format(deposits)} hint={`${all.length} posisi`} />
         <Stat label="Fee terkumpul" value={usd.format(fees)} cls="text-emerald-300" hint="Fee yang dipungut posisi-posisi itu" />
         <Stat
-          label="Pool untung"
-          value={netWins == null ? "…" : `${netWins} / ${withNet}`}
-          hint={netWins == null ? "menghitung…" : `${fmtNum((netWins / Math.max(1, withNet)) * 100, 0)}% pool pulang membawa untung`}
+          label="Posisi untung"
+          value={nets.length ? `${wins} / ${nets.length}` : "…"}
+          hint={nets.length ? `${fmtNum((wins / nets.length) * 100, 0)}% posisi pulang membawa untung` : "menghitung…"}
         />
       </div>
 
-      <section className="overflow-hidden rounded-2xl border border-line bg-[#0e1217]/[0.97] backdrop-blur-sm">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line bg-raised/20 px-4 py-3">
-          <h2 className="text-sm font-semibold text-ink">
-            Posisi yang sudah ditutup · {shown.length === pools.length ? `${pools.length} pool` : `${shown.length} dari ${pools.length} pool`}
-          </h2>
-          <div className="flex items-center gap-2">
-            <input
-              value={query}
-              onChange={(e) => {
-                setQuery(e.target.value);
-                setLimit(PAGE);
-              }}
-              placeholder="Cari token atau pool"
-              aria-label="Cari pool"
-              className="h-8 w-44 rounded-full border border-line bg-bg/50 px-3 text-xs text-ink placeholder:text-ink-3 focus:border-accent/70 focus:outline-none"
-            />
-          <select
-            value={sort}
-            onChange={(e) => setSort(e.target.value as typeof sort)}
-            aria-label="Urutkan"
-            className="h-8 rounded-full border border-line bg-bg/50 px-3 text-xs text-ink-2 focus:outline-none"
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-sm font-semibold text-ink">
+          Posisi terakhir ditutup{shown.length !== all.length ? ` · ${shown.length} dari ${all.length}` : ""}
+        </h2>
+        <input
+          value={query}
+          onChange={(e) => {
+            setQuery(e.target.value);
+            setLimit(PAGE);
+          }}
+          placeholder="Cari token"
+          aria-label="Cari posisi"
+          className="h-8 w-44 rounded-full border border-line bg-bg/50 px-3 text-xs text-ink placeholder:text-ink-3 focus:border-accent/70 focus:outline-none"
+        />
+      </div>
+
+      <div className="space-y-3">
+        {shown.slice(0, limit).map((p) => (
+          <PositionCard key={p.address} p={p} pool={p.name} cost={costs?.positions[p.address]} />
+        ))}
+        {shown.length === 0 && (
+          <p className="rounded-2xl border border-line bg-[#0e1217]/[0.97] px-4 py-8 text-center text-sm text-ink-3">Tidak ada posisi yang cocok.</p>
+        )}
+        {shown.length > limit && (
+          <button
+            type="button"
+            onClick={() => setLimit((n) => n + PAGE)}
+            className="w-full rounded-2xl border border-line bg-[#0e1217]/[0.97] py-3 text-xs text-ink-2 transition-colors hover:border-line-strong hover:text-ink"
           >
-            <option value="recent">Terbaru ditutup</option>
-            <option value="pnl">PnL terbesar</option>
-            <option value="worst">PnL terburuk</option>
-            <option value="fees">Fee terbanyak</option>
-          </select>
-          </div>
-        </div>
-        <ul className="divide-y divide-white/[0.04]">
-          {shown.slice(0, limit).map((p) => (
-            <li key={p.address}>
-              <button
-                type="button"
-                onClick={() => setOpen(open === p.address ? null : p.address)}
-                aria-expanded={open === p.address}
-                className="grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-4 px-4 py-3 text-left transition-colors hover:bg-white/[0.025] sm:grid-cols-[auto_minmax(0,1.4fr)_6.5rem_6.5rem_6rem_7rem_14px]"
-              >
-                <Pair x={p.token_x_icon} y={p.token_y_icon} />
-                <span className="min-w-0">
-                  <span className="block truncate text-sm font-medium text-ink">{p.name}</span>
-                  <span className="text-[11px] text-ink-3">
-                    {p.bin_step}bps · ditutup {p.closed_at ? fmtDateTime(p.closed_at) : "–"}
-                  </span>
-                </span>
-                <span className="hidden text-right text-xs tabular-nums sm:block">
-                  <span className="block text-ink-2">{usd.format(p.deposit_usd)}</span>
-                  <span className="text-[10px] uppercase tracking-wider text-ink-3">modal</span>
-                </span>
-                <span className="hidden text-right text-xs tabular-nums sm:block">
-                  <span className="block text-emerald-300/90">{usd.format(p.fees_usd)}</span>
-                  <span className="text-[10px] uppercase tracking-wider text-ink-3">fee</span>
-                </span>
-                <span className="hidden text-right text-xs tabular-nums sm:block" title="Biaya jaringan + fee swap Meteora untuk semua posisi di pool ini">
-                  <span className="block text-amber-300/90">
-                    {costs ? usd.format(byPool(p.address).reduce((n, c) => n + c.cost_lp + c.cost_swaps, 0)) : "…"}
-                  </span>
-                  <span className="text-[10px] uppercase tracking-wider text-ink-3">biaya</span>
-                </span>
-                <span className="text-right tabular-nums">
-                  {(() => {
-                    const rows = byPool(p.address);
-                    const net = rows.length ? rows.reduce((n, c) => n + c.net, 0) : null;
-                    return (
-                      <>
-                        <span className={`block text-sm font-semibold ${net == null ? "text-ink-3" : tone(net)}`}>
-                          {costs ? (net == null ? "–" : signed(net)) : "…"}
-                        </span>
-                        <span className="text-[10px] uppercase tracking-wider text-ink-3">bersih</span>
-                      </>
-                    );
-                  })()}
-                </span>
-                <svg viewBox="0 0 20 20" width={14} height={14} className={`text-ink-3 transition-transform ${open === p.address ? "rotate-90" : ""}`} aria-hidden>
-                  <path d="m7.5 5 5 5-5 5" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-              </button>
-              {open === p.address && <PoolPositions wallet={wallet} pool={p.address} costs={costs} />}
-            </li>
-          ))}
-          {shown.length > limit && (
-            <li className="px-4 py-3 text-center">
-              <button
-                type="button"
-                onClick={() => setLimit((n) => n + PAGE)}
-                className="rounded-full border border-line px-4 py-1.5 text-xs text-ink-2 transition-colors hover:border-line-strong hover:text-ink"
-              >
-                Tampilkan {Math.min(PAGE, shown.length - limit)} pool lagi ({shown.length - limit} tersisa)
-              </button>
-            </li>
-          )}
-          {shown.length === 0 && <li className="px-4 py-8 text-center text-sm text-ink-3">Tidak ada pool yang cocok.</li>}
-        </ul>
-      </section>
+            Tampilkan {Math.min(PAGE, shown.length - limit)} posisi lagi ({shown.length - limit} tersisa)
+          </button>
+        )}
+      </div>
     </div>
   );
 }
