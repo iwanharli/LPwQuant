@@ -36,9 +36,16 @@ STOP_PCT = -20.0
 MAX_HOLD_H = 24
 FEES_DRIED_AFTER_H = 2  # from then on, close when the last hour paid under FEES_DRIED_PCT of the capital
 FEES_DRIED_PCT = 0.2
-# Rent a creator does not get back: the pool's accounts and ~1-2 bin arrays (0.0714 SOL each). The position's own
-# rent comes back on close, so it is not counted.
-CREATE_COST_SOL = 0.1
+# Rent a pool creator never gets back, from the SDK's own constants (POOL_FEE, BIN_ARRAY_BITMAP_FEE,
+# TOKEN_ACCOUNT_FEE, BIN_ARRAY_FEE): the pair account, its bitmap, the two reserve token accounts, and the bin
+# arrays the first range creates. The position's own rent (POSITION_FEE 0.0574) comes back on close, so it is left
+# out. A brand-new pool always pays the array rent -- nobody has opened those bins before.
+POOL_FEE_SOL = 0.00718272
+BIN_ARRAY_BITMAP_FEE_SOL = 0.01180416
+TOKEN_ACCOUNT_FEE_SOL = 0.00203928
+BIN_ARRAY_FEE_SOL = 0.07143744
+NEW_BIN_ARRAYS = 2  # a range this wide spans two 70-bin arrays
+CREATE_COST_SOL = POOL_FEE_SOL + BIN_ARRAY_BITMAP_FEE_SOL + 2 * TOKEN_ACCOUNT_FEE_SOL + NEW_BIN_ARRAYS * BIN_ARRAY_FEE_SOL
 SWAP_COST_PCT = 1.0  # buying the token half on the way in, and selling what is left on the way out
 TX_FEE_SOL = 0.0005  # create, add, remove, two swaps, priority fees included
 QUOTES = {"So11111111111111111111111111111111111111112": "SOL", "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v": "USDC"}

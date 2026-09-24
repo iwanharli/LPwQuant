@@ -39,8 +39,8 @@ BINS = 100
 # in the corpus is bin-array rent, which is charged only for bins nobody has opened before -- it does not apply to
 # the busy pools this strategy screens for. It is charged here only when the engine's depth data says the range
 # would create new arrays.
-POSITION_RENT_SOL = 0.08  # locked while the position is open, returned on close
-NEW_BIN_ARRAY_SOL = 0.0714  # per bin array actually created, not refunded
+POSITION_RENT_SOL = 0.05740608  # SDK POSITION_FEE: locked while the position is open, returned on close
+NEW_BIN_ARRAY_SOL = 0.07143744  # SDK BIN_ARRAY_FEE: per bin array actually created, not refunded
 EXIT_SWAP_COST_PCT = 1.0  # selling the token left at exit
 TX_FEE_SOL = 0.0005
 MAX_HOLD_H = 72
@@ -62,7 +62,7 @@ APPROXIMATIONS = [
     "Filter 'total fees > 30 SOL' dan 'volume 5 menit' tidak ada di data kita; diganti fee/TVL 24 jam > 20%.",
     "Phishing % (GMGN) tidak selalu tersedia; yang dipakai flag keamanan engine dan RugCheck.",
     "Sewa posisi 0,08 SOL dikunci saat posisi terbuka lalu dikembalikan, jadi tidak dihitung sebagai kerugian.",
-    "Sewa bin array (0,0714 SOL per array) hanya berlaku untuk bin yang belum pernah dibuka; pool seramai syarat Panda hampir selalu sudah punya bin-nya, jadi di uji ini dihitung nol.",
+    "Sewa bin array (0,0714 SOL per array, angka dari SDK Meteora) hanya berlaku untuk bin yang belum pernah dibuka; pool seramai syarat Panda hampir selalu sudah punya bin-nya, jadi di uji ini dihitung nol.",
     "Pantau tiap 5 menit, lebih sering daripada ~30 menit di korpus; exit jadi lebih cepat tertangkap.",
 ]
 

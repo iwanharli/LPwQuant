@@ -24,7 +24,9 @@ MAX_OPEN = 6
 BUY_EXPIRY_H = 12
 HOLD_MAX_H = 24
 COOLDOWN_H = 1
-TX_FEE_SOL = 0.00003  # place + fill/withdraw, priority fees included
+# Measured from this wallet's own LP transactions: 25,736 lamports on average, 67,051 at the 90th percentile.
+# The order's account rent comes back when it is cancelled or withdrawn, so it is not a cost.
+TX_FEE_SOL = 0.00006  # place + fill/withdraw
 RECS_EVERY_S = 600
 
 
