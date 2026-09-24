@@ -53,3 +53,22 @@ def test_screen_rejects_a_thin_pool():
     assert not ok and "market cap" in why
     ok, why = screen({"name": "X-USDT", "security": {"score": 1}, "flags": []})
     assert not ok and "SOL/USDC" in why
+
+
+def test_supertrend_counts_candles_since_the_break():
+    rising_after_crash = [100 - i for i in range(25)] + [75 + 4 * i for i in range(20)]
+    st = supertrend(candles(rising_after_crash))
+    assert st is not None and st["up"] is True
+    assert st["bars_since_flip"] is not None and st["bars_since_flip"] > 0
+
+
+def test_entry_allows_a_break_within_the_last_hour_only():
+    from app.panda import MAX_BARS_SINCE_BREAK, entry_signal
+
+    fresh = candles([100 - i for i in range(25)] + [75 + 4 * i for i in range(5)])
+    ok, why = entry_signal(fresh)
+    stale = candles([100 - i for i in range(25)] + [75 + 4 * i for i in range(40)])
+    ok_stale, why_stale = entry_signal(stale)
+    assert MAX_BARS_SINCE_BREAK == 4
+    assert ok or "puncak" in why  # a fresh break passes unless it is already far below the high
+    assert not ok_stale and ("lewat" in why_stale or "puncak" in why_stale)

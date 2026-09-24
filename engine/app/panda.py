@@ -45,6 +45,9 @@ EXIT_SWAP_COST_PCT = 1.0  # selling the token left at exit
 TX_FEE_SOL = 0.0005
 MAX_HOLD_H = 72
 DEAD_VOLUME_USD = 10_000.0  # 24h volume under this = the flatline the corpus says not to wait out
+# The break is checked every 5 minutes but the candles are 15: requiring the very latest candle to be the flip
+# would only catch it by luck. Four candles is one hour -- still "entry on the break", not a late chase.
+MAX_BARS_SINCE_BREAK = 4
 NEAR_HIGH_PCT = 15.0  # "idealnya dekat ATH": within this much of the highest close on the 15m candles
 CANDLE_HOURS = 24
 
@@ -136,8 +139,9 @@ def entry_signal(c15: list[Candle]) -> tuple[bool, str]:
     st = indicators.supertrend(c15)
     if not st or not st["up"]:
         return False, "harga di bawah Supertrend 15m"
-    if not st["flipped_up"]:
-        return False, "break Supertrend sudah lewat"
+    bars = st.get("bars_since_flip")
+    if bars is None or bars > MAX_BARS_SINCE_BREAK:
+        return False, f"break Supertrend sudah lewat ({bars} candle lalu)" if bars is not None else "tren naik tanpa break tercatat"
     high = max(c.close for c in c15)
     close = c15[-1].close
     if high > 0 and (high - close) / high * 100 > NEAR_HIGH_PCT:

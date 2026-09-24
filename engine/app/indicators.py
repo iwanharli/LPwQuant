@@ -110,11 +110,14 @@ def bollinger(closes: Sequence[float], n: int = 20, k: float = 2.0) -> dict[str,
 
 def supertrend(candles: Sequence[Candle], n: int = 10, mult: float = 3.0) -> dict[str, Any] | None:
     """Supertrend, the Panda entry trigger: the ATR band the price rides. `up` is True while the close is above the
-    line, and `flipped_up` marks the candle where that just became true -- the "break" the strategy waits for."""
+    line, `flipped_up` marks the candle where that just became true -- the "break" the strategy waits for -- and
+    `bars_since_flip` counts candles since that break (None while the trend is down), so a check that runs between
+    candles can still tell how fresh the break is."""
     atr = _rma(true_ranges(candles), n)  # atr[j] belongs to candles[n - 1 + j]
     if len(atr) < 3:
         return None
     up, line, flipped_up = True, 0.0, False
+    bars_since_flip: int | None = None
     for j, a in enumerate(atr):
         c = candles[n - 1 + j]
         mid = (c.high + c.low) / 2
@@ -132,7 +135,13 @@ def supertrend(candles: Sequence[Candle], n: int = 10, mult: float = 3.0) -> dic
             if c.close > line:
                 up, line = True, lower
         flipped_up = up and not was_up
-    return {"line": line, "up": up, "flipped_up": flipped_up}
+        if flipped_up:
+            bars_since_flip = 0
+        elif up and bars_since_flip is not None:
+            bars_since_flip += 1
+        elif not up:
+            bars_since_flip = None
+    return {"line": line, "up": up, "flipped_up": flipped_up, "bars_since_flip": bars_since_flip}
 
 
 def macd_histogram(closes: Sequence[float], fast: int = 12, slow: int = 26, signal: int = 9) -> list[float] | None:
