@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { ENGINE_URL, fmtDateTime, fmtNum, usd } from "../lib/format";
 import TopBar from "./top-bar";
 import PageHeader from "./page-header";
+import { SkeletonTable, SkeletonTiles } from "./skeleton";
 
 type Run = {
   id: number;
@@ -112,6 +113,13 @@ export default function PoolLabPage() {
 
         {error && !r && (
           <p className="rounded-2xl border border-white/[0.06] bg-panel px-4 py-8 text-sm text-ink-3">Engine tidak bisa dihubungi.</p>
+        )}
+
+        {!r && !error && (
+          <>
+            <SkeletonTiles count={4} />
+            <SkeletonTable rows={6} columns={6} title={false} />
+          </>
         )}
         {r && p && (
           <>

@@ -17,6 +17,7 @@ import NetPnl from "./net-pnl";
 import PortfolioHeader from "./portfolio-header";
 import PortfolioTabs from "./portfolio-tabs";
 import PositionFilters, { DEFAULT_FILTERS, applyFilters, statusCounts, type Filters } from "./position-filters";
+import { SkeletonCards, SkeletonChart } from "../skeleton";
 
 const REFRESH_MS = 20_000;
 
@@ -732,10 +733,12 @@ export default function PortfolioPage() {
                     )}
                   </>
                 ) : (
-                  <p className="px-2 py-8 text-sm text-ink-3">{data ? "Belum ada data." : "Memuat…"}</p>
+                  data ? <p className="px-2 py-8 text-sm text-ink-3">Belum ada data.</p> : <SkeletonChart height={220} />
                 )}
               </div>
             </Card>
+
+            {!data && !error && <SkeletonCards count={2} columns="xl:grid-cols-1" />}
 
             {data && data.pools.length === 0 && (
               <p className="rounded-2xl border border-white/[0.06] bg-panel backdrop-blur-sm px-4 py-8 text-center text-sm text-ink-3">

@@ -12,6 +12,7 @@ import PoolTable from "./pool-table";
 import Toolbar, { type TierFilter } from "./toolbar";
 import TopBar from "./top-bar";
 import PageHeader from "./page-header";
+import { SkeletonTable, SkeletonTiles } from "./skeleton";
 
 export default function Dashboard() {
   const { pools, status, lastMessageAt } = useLivePools();
@@ -78,7 +79,7 @@ export default function Dashboard() {
       <main className="mx-auto w-full min-w-0 max-w-full flex-1 space-y-5 overflow-x-hidden px-4 py-6 sm:px-6 lg:py-7 2xl:px-8">
         <PageHeader title="Pool" accent="DLMM" subtitle="Pool diurutkan per tingkat risiko dan skor peluang fee." />
 
-        <KpiStrip rows={all} />
+        {all.length === 0 ? <SkeletonTiles count={4} /> : <KpiStrip rows={all} />}
 
         {/* Collapsed by default: a reference for timing entries, not something to read on every visit. */}
         <details className="group rounded-2xl border border-white/[0.06] bg-panel shadow-[0_12px_32px_rgba(0,0,0,0.18)]">
@@ -113,6 +114,9 @@ export default function Dashboard() {
             onHideExcluded={setHideExcluded}
             shown={rows.length}
           />
+          {all.length === 0 ? (
+            <SkeletonTable rows={10} columns={7} title={false} />
+          ) : (
           <PoolTable
             rows={rows}
             status={status}
@@ -122,6 +126,7 @@ export default function Dashboard() {
             sortDesc={sortDesc}
             onSort={onSort}
           />
+          )}
         </section>
 
         <p className="pb-2 text-center text-xs text-ink-3">

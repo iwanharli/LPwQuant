@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { ENGINE_URL, TIMEZONE, fmtDateTime, fmtNum, fmtSignedPct, shortAddress, usd } from "../../lib/format";
 import { useUrlState } from "../../lib/url-state";
+import { SkeletonTable, SkeletonTiles } from "../skeleton";
 
 type ClosedPosition = {
   address: string;
@@ -530,7 +531,7 @@ export function ClosedPositions({ wallet }: { wallet: string }) {
 export function ClosedOrders({ wallet }: { wallet: string }) {
   const { data, error } = useJson<{ orders: ClosedOrder[] }>(`${ENGINE_URL}/api/portfolio/orders/closed?wallet=${wallet}`);
   if (error) return <p className="rounded-2xl border border-white/[0.06] bg-panel px-4 py-8 text-sm text-ink-3">Gagal memuat riwayat limit order.</p>;
-  if (!data) return <p className="rounded-2xl border border-white/[0.06] bg-panel px-4 py-8 text-sm text-ink-3">Memuat riwayat limit order…</p>;
+  if (!data) return <div className="space-y-4"><SkeletonTiles count={3} /><SkeletonTable rows={5} columns={5} /></div>;
   const orders = data.orders;
   const pnl = orders.reduce((n, o) => n + o.pnl_usd, 0);
   const bonus = orders.reduce((n, o) => n + o.bonus_usd, 0);

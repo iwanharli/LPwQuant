@@ -8,6 +8,7 @@ import PumpWarning from "./pump-warning";
 import TopBar from "./top-bar";
 import PageHeader from "./page-header";
 import { StatusDot } from "./ui";
+import { SkeletonTable } from "./skeleton";
 
 const REFRESH_MS = 10_000;
 const MAX_AGE_HOURS = 1;
@@ -128,7 +129,7 @@ export default function NewPoolsPage() {
 
         <section className="overflow-hidden rounded-2xl border border-white/[0.06] bg-panel shadow-[0_14px_42px_rgba(0,0,0,0.20)] backdrop-blur-sm">
           {!data ? (
-            <p className="px-4 py-10 text-sm text-ink-3">{error ? "Gagal memuat." : "Memuat…"}</p>
+            error ? <p className="px-4 py-10 text-sm text-ink-3">Gagal memuat.</p> : <SkeletonTable rows={6} columns={5} title={false} />
           ) : shown.length === 0 ? (
             <div className="px-4 py-12 text-center">
               <div className="text-sm font-medium text-ink">Belum ada pool baru yang cocok</div>

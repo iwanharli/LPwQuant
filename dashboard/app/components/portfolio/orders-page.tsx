@@ -13,6 +13,7 @@ import PortfolioHeader from "./portfolio-header";
 import LimitRecs from "./limit-recs";
 import PaperLimitOrders from "./paper-lo";
 import PortfolioTabs from "./portfolio-tabs";
+import { SkeletonTable } from "../skeleton";
 
 const REFRESH_MS = 20_000;
 // Outside the component: the purity lint cannot tell an event handler from render code.
@@ -267,7 +268,7 @@ export default function OrdersPage() {
                 <h2 className="text-sm font-semibold text-ink">Limit order terbuka</h2>
               </div>
               {!data ? (
-                <p className="px-4 py-8 text-sm text-ink-3">Memuat…</p>
+                <SkeletonTable rows={4} columns={5} title={false} />
               ) : orders.length === 0 ? (
                 <p className="px-4 py-8 text-center text-sm text-ink-3">
                   Tidak ada limit order terbuka. Buat dari kartu saran swap di tab Wallet.

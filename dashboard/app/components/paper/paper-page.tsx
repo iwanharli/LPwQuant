@@ -27,6 +27,7 @@ import TopBar from "../top-bar";
 import { ChevronIcon } from "../icons";
 import { Delta, StatusDot } from "../ui";
 import EquityChart from "./equity-chart";
+import { SkeletonTable } from "../skeleton";
 
 const REFRESH_MS = 30_000;
 const TIERS: Tier[] = ["low", "medium", "high"];
@@ -431,7 +432,7 @@ function ResultsCard({ summary: s, profileLabel }: { summary: PaperSummary | und
       </div>
 
       {!s ? (
-        <p className="px-4 py-8 text-sm text-ink-3">Memuat…</p>
+        <SkeletonTable rows={6} columns={6} title={false} />
       ) : tab === "tier" ? (
         <StatsTable
           rows={TIERS.filter((t) => !s.profile || s.profile.settings.tiers.includes(t)).map((t) => ({

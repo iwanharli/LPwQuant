@@ -4,6 +4,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { ENGINE_URL, integer } from "../lib/format";
 import type { UsageItem } from "../lib/types";
 import { StatusDot } from "./ui";
+import { SkeletonTable } from "./skeleton";
 
 const REFRESH_MS = 30_000;
 
@@ -152,7 +153,7 @@ export default function UsagePanel({ onItems }: { onItems?: (items: UsageItem[])
           </span>
         </div>
         {!items ? (
-          <p className="px-4 py-8 text-sm text-ink-3">{failed ? "Tidak ada data." : "Memuat…"}</p>
+          failed ? <p className="px-4 py-8 text-sm text-ink-3">Tidak ada data.</p> : <SkeletonTable rows={7} columns={5} title={false} />
         ) : items.length === 0 ? (
           <p className="px-4 py-8 text-sm text-ink-3">Belum ada pemakaian tercatat.</p>
         ) : (

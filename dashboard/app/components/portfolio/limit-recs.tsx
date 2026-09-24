@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { CLAIM_URL, ENGINE_URL, fmtNum, fmtSignedPct, shortAddress, usdCompact } from "../../lib/format";
 import { buildTx, decodeTx, friendlyTxError, logActivity } from "../../lib/tx";
 import { signAndSendAll } from "../../lib/wallet";
+import { SkeletonCards } from "../skeleton";
 
 type Rec = {
   address: string;
@@ -304,7 +305,7 @@ export default function LimitRecs({ owner, canSign }: { owner: string | null; ca
         </p>
       </div>
       {!recs ? (
-        <p className="px-4 py-8 text-sm text-ink-3">Memuat…</p>
+        <div className="p-4"><SkeletonCards count={3} columns="sm:grid-cols-2 xl:grid-cols-3" /></div>
       ) : recs.length === 0 ? (
         <p className="px-4 py-8 text-center text-sm text-ink-3">Tidak ada pool yang cocok saat ini: sebagian besar sedang tren atau terlalu sepi.</p>
       ) : (
