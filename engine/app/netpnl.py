@@ -171,6 +171,26 @@ async def _data_version(db, wallet: str) -> tuple:
     return (r["n"], r["last"], r["costed"], r["open"])
 
 
+NET_REFRESH_S = 600
+
+
+async def refresh_loop(db) -> None:
+    """Recompute every registered wallet's net result in the background, so the pages that read the stored numbers
+    find them fresh. Without this the first visitor after a restart pays the full ~45s accounting."""
+    while True:
+        try:
+            for r in await db.fetch("select address from portfolio_wallets"):
+                try:
+                    await compute(db, r["address"])
+                except Exception as err:
+                    log.warning("netpnl refresh failed for %s...: %s", r["address"][:4], err)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            log.exception("netpnl refresh round failed")
+        await asyncio.sleep(NET_REFRESH_S)
+
+
 async def compute(db, wallet: str, fresh: bool = False) -> dict[str, Any]:
     if fresh:
         # Pull the newest transactions first (the ingestor syncs every 5 minutes otherwise).
@@ -308,14 +328,27 @@ async def compute(db, wallet: str, fresh: bool = False) -> dict[str, Any]:
         pass
 
     out_coins = []
+    stored: list[tuple[str, float, float, float]] = []
     for c in coins.values():
         held = c.get("held_wallet", 0.0) + c.get("held_lp", 0.0) + c.get("held_orders", 0.0)
         c["held"] = held
         c["net"] = c["cash"] + held
         c["positions"] = _split_positions(c, [i for i in idx.values() if i["mint_x"] == c["mint"]])
+        stored.extend(
+            (p["position"], p["cost_lp"], p["cost_swaps"], p["net"]) for p in c["positions"]
+        )
         c.pop("txs")
         out_coins.append(c)
     out_coins.sort(key=lambda c: c["net"])
+
+    # Keep the per-position result in the index: the history page then reads it from the database in milliseconds
+    # instead of triggering this whole accounting.
+    if stored:
+        await db.executemany(
+            """update portfolio_positions_index set cost_lp = $2, cost_swaps = $3, net_usd = $4, net_at = now()
+               where position = $1""",
+            stored,
+        )
 
     ld = await ledger.summary(db, wallet)
     coins_total = sum(c["net"] for c in out_coins)

@@ -496,3 +496,9 @@ alter table paper_panda_runs add column if not exists new_arrays integer not nul
 -- per pool to draw its range bar.
 alter table portfolio_positions_index add column if not exists min_price double precision;
 alter table portfolio_positions_index add column if not exists max_price double precision;
+-- The cost accounting's result per position, stored so the history page reads it instead of waiting for a
+-- recompute of every transaction (which takes ~45s cold).
+alter table portfolio_positions_index add column if not exists cost_lp double precision;
+alter table portfolio_positions_index add column if not exists cost_swaps double precision;
+alter table portfolio_positions_index add column if not exists net_usd double precision;
+alter table portfolio_positions_index add column if not exists net_at timestamptz;

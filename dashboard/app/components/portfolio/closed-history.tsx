@@ -84,11 +84,6 @@ function Stat({ label, value, hint, cls = "text-ink" }: { label: string; value: 
   );
 }
 
-const PAGE = 25;
-
-type PositionCost = { pool: string; cost_lp: number; cost_swaps: number; net: number; swaps: number };
-type Costs = { positions: Record<string, PositionCost>; costs_known_txs: number; transactions: number };
-
 /** Every tile is the same height whatever it holds: one line of label, one of value, one of hint. Cards sit side
  * by side in a grid, so a tile that wraps would push its neighbours' rows out of line. */
 function Tile({ label, value, hint, cls }: { label: string; value: string; hint?: string; cls?: string }) {
@@ -145,8 +140,7 @@ const EXIT = {
  *
  * The rows are fixed: name and dates, then the result, then the range, then two tile rows. Cards in a grid only
  * read as one table when every card puts the same thing at the same height. */
-function PositionCard({ p, pool, cost }: { p: ClosedPosition; pool?: string; cost: PositionCost | undefined }) {
-  const net = cost?.net ?? null;
+function PositionCard({ p, pool, cost, net }: { p: ClosedPosition; pool?: string; cost: number | null; net: number | null }) {
   const basis = p.deposited_usd ?? p.deposit_usd;
   const pct = net != null && basis > 0 ? (net / basis) * 100 : null;
   const exit = p.exit_side ? EXIT[p.exit_side] : null;
@@ -205,9 +199,9 @@ function PositionCard({ p, pool, cost }: { p: ClosedPosition; pool?: string; cos
         <Tile label="Fee terkumpul" value={usd.format(p.fees_usd)} cls="text-emerald-300" hint="menurut Meteora" />
         <Tile
           label="Biaya"
-          value={cost ? usd.format(cost.cost_lp + cost.cost_swaps) : "…"}
+          value={cost == null ? "…" : usd.format(cost)}
           cls="text-amber-300"
-          hint={cost ? `${cost.swaps} swap di sekitarnya` : "–"}
+          hint="jaringan + fee swap Meteora"
         />
         <Tile
           label="Di dalam range"
@@ -260,46 +254,105 @@ const PERIODS = ["1d", "7d", "30d", "all"] as const;
 const PERIOD_DAYS: Record<Period, number | null> = { "1d": 1, "7d": 7, "30d": 30, all: null };
 const PERIOD_LABEL: Record<Period, string> = { "1d": "24 jam", "7d": "7 hari", "30d": "30 hari", all: "Semua" };
 
-type RecentPosition = ClosedPosition & { pool: string; name: string };
+type RecentPosition = ClosedPosition & {
+  pool: string;
+  name: string;
+  /** Written by the cost accounting when it last ran; null until a position has been through it. */
+  cost_usd: number | null;
+  net_usd: number | null;
+  net_at: number | null;
+};
 
 /** Closed positions as one stream, newest first. Grouping by pool hid the thing that matters most -- what you did
  * last -- behind a click, and most pools here hold a single position anyway. */
+const PAGE_SIZE = 60;
+
+type Page = { positions: RecentPosition[]; done: boolean };
+
+/** Closed positions, newest first, fetched a page at a time and kept in one list. Everything comes from this app's
+ * own database -- the index it keeps of every position, with the cost accounting's result stored alongside -- so a
+ * page is one query instead of one Meteora call per pool.
+ *
+ * `cursor` is the closing time to continue after; changing it fetches the next page and appends it. State is only
+ * ever set from a promise callback, never in the effect body. */
+function useClosedPositions(wallet: string) {
+  const [pages, setPages] = useState<Page[]>([]);
+  const [cursor, setCursor] = useState<number | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    const url = `${ENGINE_URL}/api/portfolio/positions/recent?wallet=${wallet}&limit=${PAGE_SIZE}${cursor ? `&before=${cursor}` : ""}`;
+    fetch(url)
+      .then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
+      .then((body: { positions: RecentPosition[] }) => {
+        if (cancelled) return;
+        const page: Page = { positions: body.positions, done: body.positions.length < PAGE_SIZE };
+        setPages((old) => (cursor ? [...old, page] : [page]));
+        setError(false);
+        setLoading(false);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setError(true);
+        setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [wallet, cursor]);
+
+  const positions = pages.flatMap((p) => p.positions);
+  return {
+    positions,
+    loading,
+    error,
+    done: pages.length > 0 && pages[pages.length - 1].done,
+    loadMore: () => {
+      setLoading(true);
+      setCursor(positions.at(-1)?.closed_at ?? null);
+    },
+  };
+}
+
 export function ClosedPositions({ wallet }: { wallet: string }) {
-  const [limit, setLimit] = useState(PAGE);
-  const [query, setQuery] = useState("");
   const [period, setPeriod] = useUrlState<Period>("periode", "7d", PERIODS);
   const [result, setResult] = useState<"all" | "win" | "loss">("all");
   const [exit, setExit] = useState<"all" | "below" | "above" | "inside">("all");
   const [sort, setSort] = useState<"recent" | "best" | "worst" | "size">("recent");
-  const { data, error } = useJson<{ positions: RecentPosition[] }>(
-    `${ENGINE_URL}/api/portfolio/positions/recent?wallet=${wallet}&limit=200`,
-  );
-  const { data: costs } = useJson<Costs>(`${ENGINE_URL}/api/portfolio/position-costs?wallet=${wallet}`);
-  if (error) return <p className="rounded-2xl border border-line bg-[#0e1217]/[0.97] px-4 py-8 text-sm text-ink-3">Gagal memuat riwayat posisi.</p>;
-  if (!data) return <p className="rounded-2xl border border-line bg-[#0e1217]/[0.97] px-4 py-8 text-sm text-ink-3">Memuat riwayat posisi…</p>;
+  const [query, setQuery] = useState("");
+  const { positions, error, loading, done, loadMore } = useClosedPositions(wallet);
+
+  if (error && positions.length === 0)
+    return <p className="rounded-2xl border border-line bg-[#0e1217]/[0.97] px-4 py-8 text-sm text-ink-3">Gagal memuat riwayat posisi.</p>;
+  if (positions.length === 0 && loading)
+    return <p className="rounded-2xl border border-line bg-[#0e1217]/[0.97] px-4 py-8 text-sm text-ink-3">Memuat riwayat posisi…</p>;
 
   const days = PERIOD_DAYS[period];
   const since = days == null ? 0 : now() - days * 86_400_000;
-  const all = data.positions.filter((p) => (p.closed_at ?? 0) >= since);
-  const net = (p: RecentPosition) => costs?.positions[p.address]?.net ?? null;
+  const all = positions.filter((p) => (p.closed_at ?? 0) >= since);
   const shown = all
     .filter((p) => (query.trim() ? p.name.toLowerCase().includes(query.trim().toLowerCase()) : true))
-    .filter((p) => (result === "all" ? true : result === "win" ? (net(p) ?? 0) > 0 : (net(p) ?? 0) < 0))
+    .filter((p) => (result === "all" ? true : result === "win" ? (p.net_usd ?? 0) > 0 : (p.net_usd ?? 0) < 0))
     .filter((p) => (exit === "all" ? true : p.exit_side === exit))
     .sort((a, b) =>
       sort === "best"
-        ? (net(b) ?? 0) - (net(a) ?? 0)
+        ? (b.net_usd ?? 0) - (a.net_usd ?? 0)
         : sort === "worst"
-          ? (net(a) ?? 0) - (net(b) ?? 0)
+          ? (a.net_usd ?? 0) - (b.net_usd ?? 0)
           : sort === "size"
             ? (b.deposited_usd ?? b.deposit_usd) - (a.deposited_usd ?? a.deposit_usd)
             : (b.closed_at ?? 0) - (a.closed_at ?? 0),
     );
-  const nets = costs ? all.map(net).filter((n): n is number => n != null) : [];
+
+  const nets = all.map((p) => p.net_usd).filter((n): n is number => n != null);
   const netAll = nets.length ? nets.reduce((a, b) => a + b, 0) : null;
   const wins = nets.filter((n) => n > 0).length;
   const deposits = all.reduce((n, p) => n + (p.deposited_usd ?? p.deposit_usd), 0);
   const fees = all.reduce((n, p) => n + p.fees_usd, 0);
+  // Older positions are only loaded on demand, so a long period may still be filling.
+  const partial = !done && days == null;
 
   return (
     <div className="space-y-4">
@@ -308,7 +361,7 @@ export function ClosedPositions({ wallet }: { wallet: string }) {
           label="Hasil bersih"
           value={netAll == null ? "…" : signed(netAll)}
           cls={netAll == null ? "text-ink-3" : tone(netAll)}
-          hint={days == null ? "Semua posisi ditutup, setelah swap dan biaya" : `Ditutup dalam ${PERIOD_LABEL[period].toLowerCase()} terakhir, setelah swap dan biaya`}
+          hint={days == null ? "Semua posisi yang sudah dimuat, setelah swap dan biaya" : `Ditutup dalam ${PERIOD_LABEL[period].toLowerCase()} terakhir, setelah swap dan biaya`}
         />
         <Stat label="Modal masuk" value={usd.format(deposits)} hint={`${all.length} posisi · ${PERIOD_LABEL[period].toLowerCase()}`} />
         <Stat label="Fee terkumpul" value={usd.format(fees)} cls="text-emerald-300" hint="Fee yang dipungut posisi-posisi itu" />
@@ -323,22 +376,17 @@ export function ClosedPositions({ wallet }: { wallet: string }) {
         <h2 className="text-sm font-semibold text-ink">
           Posisi ditutup · {days == null ? "sejak awal" : `${PERIOD_LABEL[period].toLowerCase()} terakhir`}
           {shown.length !== all.length ? ` · ${shown.length} dari ${all.length}` : ""}
+          {partial && <span className="ml-1 font-normal text-ink-3">(memuat bertahap)</span>}
         </h2>
         <div className="flex flex-wrap items-center gap-2">
           <Chips
             value={period}
-            onChange={(v) => {
-              setPeriod(v);
-              setLimit(PAGE);
-            }}
+            onChange={setPeriod}
             options={PERIODS.map((v) => ({ value: v as Period, label: PERIOD_LABEL[v] }))}
           />
           <Chips
             value={result}
-            onChange={(v) => {
-              setResult(v);
-              setLimit(PAGE);
-            }}
+            onChange={setResult}
             options={[
               { value: "all", label: "Semua" },
               { value: "win", label: "Untung" },
@@ -347,10 +395,7 @@ export function ClosedPositions({ wallet }: { wallet: string }) {
           />
           <select
             value={exit}
-            onChange={(e) => {
-              setExit(e.target.value as typeof exit);
-              setLimit(PAGE);
-            }}
+            onChange={(e) => setExit(e.target.value as typeof exit)}
             aria-label="Akhir posisi"
             className="h-8 rounded-full border border-line bg-bg/50 px-3 text-xs text-ink-2 focus:outline-none"
           >
@@ -372,10 +417,7 @@ export function ClosedPositions({ wallet }: { wallet: string }) {
           </select>
           <input
             value={query}
-            onChange={(e) => {
-              setQuery(e.target.value);
-              setLimit(PAGE);
-            }}
+            onChange={(e) => setQuery(e.target.value)}
             placeholder="Cari token"
             aria-label="Cari posisi"
             className="h-8 w-36 rounded-full border border-line bg-bg/50 px-3 text-xs text-ink placeholder:text-ink-3 focus:border-accent/70 focus:outline-none"
@@ -384,26 +426,27 @@ export function ClosedPositions({ wallet }: { wallet: string }) {
       </div>
 
       <div className="grid gap-3 lg:grid-cols-2 2xl:grid-cols-3">
-        {shown.slice(0, limit).map((p) => (
-          <PositionCard key={p.address} p={p} pool={p.name} cost={costs?.positions[p.address]} />
+        {shown.map((p) => (
+          <PositionCard key={p.address} p={p} pool={p.name} cost={p.cost_usd} net={p.net_usd} />
         ))}
-      </div>
-      <div className="space-y-3">
         {shown.length === 0 && (
           <p className="rounded-2xl border border-line bg-[#0e1217]/[0.97] px-4 py-8 text-center text-sm text-ink-3 lg:col-span-2 2xl:col-span-3">
             Tidak ada posisi yang ditutup pada rentang ini.
           </p>
         )}
-        {shown.length > limit && (
-          <button
-            type="button"
-            onClick={() => setLimit((n) => n + PAGE)}
-            className="w-full rounded-2xl border border-line bg-[#0e1217]/[0.97] py-3 text-xs text-ink-2 transition-colors hover:border-line-strong hover:text-ink"
-          >
-            Tampilkan {Math.min(PAGE, shown.length - limit)} posisi lagi ({shown.length - limit} tersisa)
-          </button>
-        )}
       </div>
+
+      {!done && (
+        <button
+          type="button"
+          onClick={loadMore}
+          disabled={loading}
+          className="w-full rounded-2xl border border-line bg-[#0e1217]/[0.97] py-3 text-xs text-ink-2 transition-colors hover:border-line-strong hover:text-ink disabled:opacity-50"
+        >
+          {loading ? "Memuat…" : "Muat posisi yang lebih lama"}
+        </button>
+      )}
+      {done && positions.length > 0 && <p className="text-center text-[11px] text-ink-3">Semua {positions.length} posisi sudah dimuat.</p>}
     </div>
   );
 }

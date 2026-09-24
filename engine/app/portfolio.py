@@ -646,7 +646,7 @@ async def recent_closed_positions(db, wallet: str, limit: int = 20, before: int 
     closing time."""
     rows = await db.fetch(
         """select position, pool, symbol_x, symbol_y, opened_at, closed_at, meteora_pnl_usd, fees_usd, deposit_usd,
-                  min_price, max_price
+                  min_price, max_price, cost_lp, cost_swaps, net_usd, net_at
            from portfolio_positions_index
            where wallet = $1 and status = 'closed' and closed_at is not null
              and ($3::timestamptz is null or closed_at < $3)
@@ -665,6 +665,10 @@ async def recent_closed_positions(db, wallet: str, limit: int = 20, before: int 
             "fees_usd": float(r["fees_usd"] or 0),
             "min_price": float(r["min_price"] or 0),
             "max_price": float(r["max_price"] or 0),
+            # From the cost accounting, stored when it last ran; null until then.
+            "cost_usd": (float(r["cost_lp"] or 0) + float(r["cost_swaps"] or 0)) if r["net_usd"] is not None else None,
+            "net_usd": float(r["net_usd"]) if r["net_usd"] is not None else None,
+            "net_at": ms(r["net_at"]),
         }
         for r in rows
     ]
