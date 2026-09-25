@@ -1,6 +1,6 @@
 "use client";
 
-import { forceCollide, forceLink, forceManyBody, forceSimulation, forceX, forceY, type SimulationNodeDatum } from "d3-force";
+import { forceCollide, forceLink, forceManyBody, forceSimulation, forceX, forceY, type Simulation, type SimulationNodeDatum } from "d3-force";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ENGINE_URL, fmtNum, shortAddress } from "../../lib/format";
 import { SkeletonBox } from "../skeleton";
@@ -43,7 +43,7 @@ const radius = (pct: number) => 3 + Math.sqrt(Math.max(0, pct)) * 11;
 function layout(data: HoldersData) {
   const nodes: SimNode[] = data.nodes.map((n) => ({ ...n, r: radius(n.pct) }));
   const links = data.links.map((l) => ({ ...l }));
-  forceSimulation(nodes)
+  const sim = forceSimulation(nodes)
     .force("link", forceLink<SimNode, { source: string; target: string }>(links).id((d) => d.id).distance((l) => 18 + (l.source as unknown as SimNode).r + (l.target as unknown as SimNode).r).strength(0.7))
     .force("charge", forceManyBody().strength(-28))
     .force("x", forceX(W / 2).strength(0.06))
@@ -55,7 +55,7 @@ function layout(data: HoldersData) {
   const lines = data.links
     .map((l) => [byId.get(l.source), byId.get(l.target)] as const)
     .filter((p): p is readonly [SimNode, SimNode] => !!p[0] && !!p[1]);
-  return { nodes, lines };
+  return { nodes, lines, sim };
 }
 
 function useHolders(mint: string | null) {
@@ -87,10 +87,27 @@ function Stat({ label, value, hint, cls }: { label: string; value: string; hint?
 export default function HoldersMap({ mint, symbol }: { mint: string | null; symbol: string }) {
   const { data, error } = useHolders(mint);
   const laid = useMemo(() => (data ? layout(data) : null), [data]);
+  // Dragging a bubble wakes the simulation so its linked wallets follow; each tick re-renders the positions.
+  const [, setTick] = useState(0);
+  const dragNode = useRef<SimNode | null>(null);
+  useEffect(() => {
+    const sim: Simulation<SimNode, undefined> | undefined = laid?.sim;
+    if (!sim) return;
+    sim.on("tick", () => setTick((t) => t + 1));
+    return () => {
+      sim.stop();
+      sim.on("tick", null);
+    };
+  }, [laid]);
+  const toGraph = (e: { clientX: number; clientY: number }) => {
+    const box = svgRef.current!.getBoundingClientRect();
+    return { x: (((e.clientX - box.left) / box.width) * W - view.x) / view.k, y: (((e.clientY - box.top) / box.height) * H - view.y) / view.k };
+  };
   const [hover, setHover] = useState<SimNode | null>(null);
   const [focus, setFocus] = useState<number | null>(null);
   const [view, setView] = useState({ x: 0, y: 0, k: 1 });
   const drag = useRef<{ x: number; y: number; vx: number; vy: number } | null>(null);
+  const moved = useRef<{ x: number; y: number } | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
 
   // Wheel zoom around the pointer; passive listeners cannot preventDefault, so it is attached by hand.
@@ -155,13 +172,29 @@ export default function HoldersMap({ mint, symbol }: { mint: string | null; symb
                 drag.current = { x: e.clientX, y: e.clientY, vx: view.x, vy: view.y };
               }}
               onPointerMove={(e) => {
+                const n = dragNode.current;
+                if (n) {
+                  const p = toGraph(e);
+                  n.fx = p.x;
+                  n.fy = p.y;
+                  return;
+                }
                 const d = drag.current;
                 const svg = svgRef.current;
                 if (!d || !svg) return;
                 const scale = W / svg.getBoundingClientRect().width;
                 setView((v) => ({ ...v, x: d.vx + (e.clientX - d.x) * scale, y: d.vy + (e.clientY - d.y) * scale }));
               }}
-              onPointerUp={() => (drag.current = null)}
+              onPointerUp={() => {
+                drag.current = null;
+                const n = dragNode.current;
+                if (n) {
+                  n.fx = null;
+                  n.fy = null;
+                  laid.sim.alphaTarget(0);
+                  dragNode.current = null;
+                }
+              }}
               onPointerLeave={() => (drag.current = null)}
             >
               <g transform={`translate(${view.x} ${view.y}) scale(${view.k})`}>
@@ -189,10 +222,25 @@ export default function HoldersMap({ mint, symbol }: { mint: string | null; symb
                       stroke={hover?.id === n.id ? "#ffffff" : c}
                       strokeOpacity={dim ? 0.1 : 1}
                       strokeWidth={(hover?.id === n.id ? 2 : 1) / view.k}
-                      className="cursor-pointer"
+                      className="cursor-grab active:cursor-grabbing"
                       onPointerEnter={() => setHover(n)}
                       onPointerLeave={() => setHover((h) => (h?.id === n.id ? null : h))}
-                      onClick={() => window.open(`https://solscan.io/account/${n.id}`, "_blank", "noopener")}
+                      onPointerDown={(e) => {
+                        e.stopPropagation();
+                        svgRef.current?.setPointerCapture(e.pointerId);
+                        dragNode.current = n;
+                        moved.current = { x: e.clientX, y: e.clientY };
+                        const p = toGraph(e);
+                        n.fx = p.x;
+                        n.fy = p.y;
+                        laid.sim.alphaTarget(0.3).restart();
+                      }}
+                      onClick={(e) => {
+                        // A drag ends in a click too; only a click that barely moved opens Solscan.
+                        const m = moved.current;
+                        if (m && Math.hypot(e.clientX - m.x, e.clientY - m.y) > 4) return;
+                        window.open(`https://solscan.io/account/${n.id}`, "_blank", "noopener");
+                      }}
                     />
                   );
                 })}
@@ -210,7 +258,7 @@ export default function HoldersMap({ mint, symbol }: { mint: string | null; symb
                       : "Wallet sendiri"}
                   {hover.insider && hover.kind === "wallet" ? " · insider" : ""}
                 </div>
-                <div className="mt-1 text-[11px] text-ink-3">Klik untuk buka di Solscan</div>
+                <div className="mt-1 text-[11px] text-ink-3">Seret untuk memindah · klik untuk buka di Solscan</div>
               </div>
             )}
             <div className="absolute bottom-2 right-2 flex gap-1">
