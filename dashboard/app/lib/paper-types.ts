@@ -135,12 +135,17 @@ export const EXIT_REASON_LABELS: Record<string, string> = {
 /** Line colour per risk profile, one fixed hue per profile so a profile keeps its colour as profiles come and
  * go (validated on the dark panel with scripts/validate_palette.js, and kept clear of the green/red used for
  * gains and losses). "agresif" no longer trades but keeps its violet, so its history never changes colour. */
+/** One clearly different hue per profile. The four that run now (Moderat, Satu Sisi and its two variants) get the
+ * most separated ones -- blue, yellow, magenta, cyan -- and none is green, red or the orange accent, which already
+ * mean profit, loss and "selected". */
 export const PROFILE_COLORS: Record<string, string> = {
-  konservatif: "#3987e5",
-  moderat: "#d95926",
-  tenang: "#199e70",
-  satu_sisi: "#c98500",
-  bolak_balik: "#1f9fb8",
-  tinggi_tenang: "#c0468f",
-  agresif: "#9085e9",
+  moderat: "#4a9eff",
+  satu_sisi: "#f2c744",
+  satu_sisi_volatil: "#e05ea8",
+  satu_sisi_sering: "#2ec4b6",
+  konservatif: "#9b8cff",
+  tenang: "#8fd16a",
+  bolak_balik: "#c9a27a",
+  tinggi_tenang: "#ff8fb1",
+  agresif: "#b0b8c4",
 };
