@@ -12,7 +12,7 @@ from . import config
 from .backtest import default_params, run_backtest
 from .charts import MAX_HOURS, load_candles, pool_paper_positions, profile_decision
 from .freshness import check_freshness
-from . import busy_hours, ledger, limit_recs, netpnl, panda, paper_lo, paper_pool, portfolio
+from . import busy_hours, ledger, limit_recs, netpnl, panda, paper_lo, paper_overview, paper_pool, portfolio
 
 log = logging.getLogger("api")
 from .service import Engine
@@ -312,6 +312,14 @@ async def limit_order_paper() -> dict:
     if engine.db is None:
         raise HTTPException(status_code=503, detail="engine not ready")
     return await paper_lo.report(engine.db)
+
+
+@app.get("/api/paper/overview")
+async def get_paper_overview() -> dict:
+    """Every paper test on one yardstick: total, median, without the best trades, verdict."""
+    if engine.db is None:
+        raise HTTPException(status_code=503, detail="engine not ready")
+    return await paper_overview.overview(engine.db, engine.papers, engine.sol_usd or config.SOL_USD_FALLBACK)
 
 
 @app.get("/api/panda/paper")
