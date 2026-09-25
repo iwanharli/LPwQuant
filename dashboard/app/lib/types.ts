@@ -203,6 +203,8 @@ export type PoolRow = {
   regime: Regime | null;
   plan: Plan;
   security: Security | null;
+  /** Hours since the token itself launched (pump.fun, Jupiter's first pool, or RugCheck's first sighting). */
+  token_age_hours?: number | null;
   market: Market | null;
   depth: BinDepth | null;
   /** Entry plan before the cost gate (each risk profile applies its own gate); null when there is none. */

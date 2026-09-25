@@ -74,7 +74,7 @@ ALERTS_ENABLED = (os.getenv("ALERTS_ENABLED") or "true").lower() != "false"
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN") or ""
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID") or ""
 ALERT_KINDS = tuple(
-    k.strip() for k in (os.getenv("ALERT_KINDS") or "new_pool,gate,new_lp,stale").split(",") if k.strip()
+    k.strip() for k in (os.getenv("ALERT_KINDS") or "new_pool,gate,new_lp,stale,position").split(",") if k.strip()
 )
 
 # The ingestor's local transaction/wallet server (ingestor/src/claim-server.ts), which holds the RPC key.

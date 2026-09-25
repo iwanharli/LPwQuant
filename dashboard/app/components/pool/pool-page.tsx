@@ -23,6 +23,7 @@ import type {
 } from "../../lib/pool-detail-types";
 import { isActivePlan, type ActivePlan } from "../../lib/types";
 import BusyHours from "../busy-hours";
+import EntryCheck from "./entry-check";
 import HoldersMap from "./holders-map";
 import TopBar from "../top-bar";
 import PumpWarning from "../pump-warning";
@@ -479,6 +480,7 @@ export default function PoolPage({ address }: { address: string }) {
           </section>
 
           <aside className="space-y-5">
+            {pool && <EntryCheck pool={pool} />}
             <section className="rounded-2xl border border-white/[0.06] bg-panel p-4 shadow-[0_14px_42px_rgba(0,0,0,0.20),inset_0_1px_0_rgba(255,255,255,0.04)]">
               <div className="flex items-center justify-between gap-2">
                 <h2 className="text-sm font-semibold text-ink">Rekomendasi range</h2>

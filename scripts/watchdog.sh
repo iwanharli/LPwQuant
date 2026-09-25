@@ -5,6 +5,8 @@
 #   1. the engine answers /api/health
 #   2. the dashboard answers
 #   3. the ingestor is still writing pool snapshots (data can go stale while the process looks alive)
+#   4. the wallet history keeps up with the chain (it once stopped for hours on a new transaction version)
+#   5. the on-chain new-pool subscription is still receiving DLMM logs
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -29,6 +31,25 @@ if [[ -z "$age" ]]; then
   problems+=("database tidak bisa dibaca")
 elif (( age > MAX_SNAPSHOT_AGE_S )); then
   problems+=("ingestor diam: snapshot pool terakhir $((age / 60)) menit lalu")
+fi
+
+# 4. Newest transaction on chain vs newest one stored: behind by more than 20 minutes means the sync is stuck.
+if [[ -n "${HELIUS_API_KEY:-}" ]]; then
+  while read -r wallet; do
+    [[ -z "$wallet" ]] && continue
+    chain_ts=$(curl -s --max-time 15 "https://mainnet.helius-rpc.com/?api-key=${HELIUS_API_KEY}" -H 'content-type: application/json' \
+      -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"getSignaturesForAddress\",\"params\":[\"$wallet\",{\"limit\":1}]}" \
+      | grep -o '"blockTime":[0-9]*' | head -1 | cut -d: -f2)
+    db_ts=$(psql "$DATABASE_URL" -Atc "select coalesce(extract(epoch from max(ts))::bigint, 0) from portfolio_activity where wallet = '$wallet' and sol_delta is not null" 2>/dev/null)
+    if [[ -n "$chain_ts" && -n "$db_ts" ]] && (( chain_ts - db_ts > 1200 )); then
+      problems+=("riwayat wallet ${wallet:0:4}… tertinggal $(( (chain_ts - db_ts) / 60 )) menit dari chain")
+    fi
+  done < <(psql "$DATABASE_URL" -Atc "select address from portfolio_wallets" 2>/dev/null)
+fi
+
+# 5. The ingestor refreshes this key every cycle while DLMM logs keep arriving.
+if [[ "${ONCHAIN_NEW_POOLS:-true}" != "false" ]] && [[ -z "$(redis-cli --raw get onchain:alive 2>/dev/null)" ]]; then
+  problems+=("deteksi pool on-chain berhenti (WebSocket DLMM tidak menerima log)")
 fi
 
 now_state="ok"

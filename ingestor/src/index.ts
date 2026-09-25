@@ -121,6 +121,7 @@ async function main(): Promise<void> {
   security.onPriorityDone = pollNow;
 
   let solUsd = 0;
+  let lastOnchainMessages = 0;
   const onchain = config.onchainNewPools ? new OnchainPoolFeed((p) => newPools.addOnchain(p), () => solUsd || 150) : null;
 
   const poll = async () => {
@@ -144,6 +145,11 @@ async function main(): Promise<void> {
       const viewed = await redis.zrangebyscore(VIEWED_POOLS_KEY, Date.now(), "+inf");
       const pinned = [...new Set([...(await redis.smembers(PAPER_OPEN_POOLS_KEY)), ...viewed])];
       const listed = await fetchPools();
+      // Heartbeat for the watchdog: the DLMM log subscription is alive only while its message count keeps rising.
+      if (onchain && onchain.messages > lastOnchainMessages) {
+        lastOnchainMessages = onchain.messages;
+        await redis.set("onchain:alive", String(onchain.messages), "EX", 600);
+      }
       solUsd = listed.find((p) => p.token_y.symbol === "SOL" && p.token_y.price_usd)?.token_y.price_usd ?? solUsd;
       const known = new Set(listed.map((p) => p.address));
       const fresh = newPools.current().filter((p) => !known.has(p.address));

@@ -19,6 +19,7 @@ from .charts import profile_decision
 from .panda import PandaPaper
 from .paper_pool import PaperPoolCreator
 from .portfolio import snapshot_loop as portfolio_snapshot_loop
+from .position_alerts import PositionAlerts
 from .indicators import Candle, compute_indicators, flow_features, merge_market
 from .metrics import PriceHistory
 from .paper import PaperTrader, sol_usd_from_pools, close_retired_positions
@@ -151,6 +152,7 @@ class Engine:
             asyncio.create_task(self._consume_prices(), name="consume_prices"),
         ]
         self._tasks.append(asyncio.create_task(portfolio_snapshot_loop(self.db), name="portfolio_snapshots"))
+        self._tasks.append(asyncio.create_task(PositionAlerts(self.db, lambda: self.rows).run(), name="position_alerts"))
         self._tasks.append(asyncio.create_task(netpnl.refresh_loop(self.db), name="netpnl_refresh"))
         self._tasks.append(asyncio.create_task(netpnl.watch_new_transactions(self.db), name="netpnl_watch"))
         if config.PAPER_ENABLED:
