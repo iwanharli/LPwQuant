@@ -23,6 +23,7 @@ from datetime import datetime, timezone
 from typing import Any, Callable
 
 from . import charts, config, indicators, portfolio
+from .netpnl import _get_json
 from .alerts import top10_pct
 from .indicators import Candle
 from .scoring import RISKY_FLAGS
@@ -75,7 +76,8 @@ APPROXIMATIONS = [
     "Filter 'total fees > 30 SOL' dan 'volume 5 menit' tidak ada di data kita; diganti fee/TVL 24 jam > 20%.",
     "Phishing % (GMGN) tidak selalu tersedia; yang dipakai flag keamanan engine dan RugCheck.",
     "Sewa posisi 0,08 SOL dikunci saat posisi terbuka lalu dikembalikan, jadi tidak dihitung sebagai kerugian.",
-    "Sewa bin array (0,0714 SOL per array, angka dari SDK Meteora) hanya berlaku untuk bin yang belum pernah dibuka; pool seramai syarat Panda hampir selalu sudah punya bin-nya, jadi di uji ini dihitung nol.",
+    "Sewa bin array: 0,0714 SOL per array (SDK Meteora) yang belum ada di range posisi, dicek on-chain saat posisi dibuka. Range sampai -90% hampir selalu butuh array baru, karena jarang ada yang memasang likuiditas sejauh itu.",
+    "Jumlah bin mengikuti bin step pool: sebanyak yang dibutuhkan untuk menjangkau -90% dari harga masuk.",
     "Pantau tiap 5 menit, lebih sering daripada ~30 menit di korpus; exit jadi lebih cepat tertangkap.",
 ]
 
@@ -210,8 +212,40 @@ class PandaPaper:
                 log.exception("panda tick failed")
             await asyncio.sleep(TICK_S)
 
+    async def _arrays(self, pool: str) -> dict[str, Any] | None:
+        """Bins and bin arrays the range needs, and how many arrays do not exist yet (ingestor, on chain)."""
+        url = f"{config.CLAIM_SERVER_URL}/bin-arrays?pool={pool}&low_pct={RANGE_LOW_PCT}"
+        try:
+            return await asyncio.to_thread(_get_json, url)
+        except Exception as err:
+            log.warning("panda bin arrays for %s: %s", pool[:6], err)
+            return None
+
+    async def _fix_rent(self) -> None:
+        """Runs from before the on-chain check had no rent: check their pools now and charge it (for closed runs,
+        taken off the stored result). Arrays created since entry would make this an undercount, not an overcount."""
+        for r in await self.db.fetch("select * from paper_panda_runs where not rent_checked"):
+            info = await self._arrays(r["pool"])
+            if info is None:
+                continue
+            new = int(info.get("new_arrays") or 0)
+            rent = new * NEW_BIN_ARRAY_SOL * (r["sol_usd"] or self.sol_usd())
+            if r["status"] == "closed":
+                await self.db.execute(
+                    """update paper_panda_runs set new_arrays = $2, bins = $3, rent_usd = $4,
+                         pnl_usd = pnl_usd - $4 + coalesce(rent_usd, 0), rent_checked = true where id = $1""",
+                    r["id"], new, int(info.get("bins") or r["bins"]), rent,
+                )
+            else:
+                await self.db.execute(
+                    "update paper_panda_runs set new_arrays = $2, bins = $3, rent_checked = true where id = $1",
+                    r["id"], new, int(info.get("bins") or r["bins"]),
+                )
+            log.info("panda %s: %d new bin array(s), rent %.2f USD", r["name"], new, rent)
+
     async def step(self) -> None:
         now = datetime.now(timezone.utc)
+        await self._fix_rent()
         rows = self.rows()
         for r in await self.db.fetch("select * from paper_panda_runs where status = 'open'"):
             await self._tick(dict(r), rows.get(r["pool"]), now)

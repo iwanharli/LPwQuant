@@ -8,7 +8,7 @@
  *
  * Listens on 127.0.0.1 only. The RPC key stays in this process; the browser never sees it.
  */
-import DLMM from "@meteora-ag/dlmm";
+import DLMM, { deriveBinArray } from "@meteora-ag/dlmm";
 import { BN } from "@coral-xyz/anchor";
 import { TOKEN_2022_PROGRAM_ID, getAssociatedTokenAddressSync, getMint, getTransferFeeConfig } from "@solana/spl-token";
 import { ComputeBudgetProgram, Connection, Keypair, PublicKey, type Transaction } from "@solana/web3.js";
@@ -823,6 +823,31 @@ export function startClaimServer(port = config.claimPort, allowed = config.dashb
         return send(res, 200, { owner, suggestions: await swapSuggestions(owner) }, origin);
       } catch (err) {
         return send(res, 502, { detail: err instanceof Error ? err.message : "gagal mengambil quote" }, origin);
+      }
+    }
+    if (req.method === "GET" && url.pathname === "/bin-arrays") {
+      // Which bin arrays a range from the active bin down to `low_pct` below the price would need, and how many of
+      // them do not exist yet: each new one costs 0.0714 SOL of rent that never comes back.
+      const pool = url.searchParams.get("pool") ?? "";
+      const lowPct = Number(url.searchParams.get("low_pct") ?? "-90");
+      if (!BASE58.test(pool) || !(lowPct < 0 && lowPct > -100)) return send(res, 400, { detail: "parameter tidak valid" }, origin);
+      try {
+        const dlmm = await DLMM.create(rpc(), new PublicKey(pool));
+        const active = dlmm.lbPair.activeId;
+        const step = dlmm.lbPair.binStep;
+        const lower = active + Math.floor(Math.log(1 + lowPct / 100) / Math.log(1 + step / 10_000));
+        const first = Math.floor(lower / 70);
+        const last = Math.floor(active / 70);
+        const indexes = Array.from({ length: last - first + 1 }, (_, i) => first + i);
+        const keys = indexes.map((i) => deriveBinArray(new PublicKey(pool), new BN(i), dlmm.program.programId)[0]);
+        const infos = await rpc().getMultipleAccountsInfo(keys);
+        const missing = indexes.filter((_, i) => !infos[i]);
+        return send(res, 200, {
+          pool, active_id: active, bin_step: step, lower_bin: lower, bins: active - lower + 1,
+          arrays: indexes.length, new_arrays: missing.length,
+        }, origin);
+      } catch (err) {
+        return send(res, 502, { detail: err instanceof Error ? err.message : "gagal membaca pool" }, origin);
       }
     }
     if (req.method === "GET" && url.pathname === "/history/sync") {
