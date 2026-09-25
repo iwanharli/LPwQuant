@@ -118,6 +118,48 @@ function SortHeader({
 }
 
 /**
+ * Who holds the token, from GMGN, as at most two chips on the row: bundlers and the dev when they hold enough to
+ * move the price alone, and known KOLs or smart money when they are in. The drawer has the full breakdown.
+ */
+function HolderChips({ insights }: { insights: PoolRow["insights"] }) {
+  if (!insights) return null;
+  const chips: { text: string; cls: string; title: string }[] = [];
+  const bundler = insights.tags?.bundler?.holding_pct;
+  if (bundler != null && bundler >= 20) {
+    chips.push({
+      text: `Bundler ${bundler.toFixed(0)}%`,
+      cls: bundler >= 35 ? "border-rose-400/35 bg-rose-400/10 text-rose-300" : "border-amber-400/35 bg-amber-400/10 text-amber-300",
+      title: `${insights.tags.bundler?.count ?? 0} dompet bundler memegang ${bundler.toFixed(1)}% supply: bisa dilepas serempak`,
+    });
+  }
+  const dev = insights.dev?.hold_pct;
+  if (dev != null && dev >= 5) {
+    chips.push({
+      text: `Dev ${dev.toFixed(0)}%`,
+      cls: dev >= 15 ? "border-rose-400/35 bg-rose-400/10 text-rose-300" : "border-amber-400/35 bg-amber-400/10 text-amber-300",
+      title: `Pembuat token masih memegang ${dev.toFixed(1)}% supply`,
+    });
+  }
+  const kol = (insights.tags?.renowned?.count ?? 0) + (insights.tags?.smart_degen?.count ?? 0);
+  if (chips.length < 2 && kol > 0) {
+    chips.push({
+      text: `KOL/smart ${kol}`,
+      cls: "border-sky-400/30 bg-sky-400/10 text-sky-300",
+      title: `${kol} dompet KOL atau smart money ikut memegang token ini`,
+    });
+  }
+  return (
+    <>
+      {chips.slice(0, 2).map((c) => (
+        <span key={c.text} title={c.title} className={`whitespace-nowrap rounded-full border px-1.5 py-px text-[10px] font-medium ${c.cls}`}>
+          {c.text}
+        </span>
+      ))}
+    </>
+  );
+}
+
+/**
  * The recommendation, taken from the paper profile with the best record rather than the default rules (which lost
  * money on paper). "Siap" means the profile would enter now; otherwise the bar shows how much of the fee its gate
  * asks for the pool is earning, so the pools that are nearly there stand out from the ones that are nowhere near.
@@ -125,10 +167,13 @@ function SortHeader({
 function BestCell({ best }: { best: BestDecision }) {
   const cov = best.coverage;
   const pct = cov == null ? null : Math.min(100, Math.max(0, cov * 100));
-  const state = best.enter ? "ready" : cov != null && cov >= 0.5 ? "near" : "wait";
+  // A pool too young to have price history is not a bad pool: say so rather than lumping it with the refusals.
+  const young = !best.enter && /candle belum cukup|riwayat harga/i.test(best.reason ?? "");
+  const state = best.enter ? "ready" : young ? "young" : cov != null && cov >= 0.5 ? "near" : "wait";
   const chip = {
     ready: { text: "Siap masuk", cls: "border-emerald-400/35 bg-emerald-400/10 text-emerald-300" },
     near: { text: "Hampir siap", cls: "border-amber-400/35 bg-amber-400/10 text-amber-300" },
+    young: { text: "Terlalu baru", cls: "border-sky-400/30 bg-sky-400/10 text-sky-300" },
     wait: { text: "Belum", cls: "border-white/[0.08] bg-white/[0.03] text-ink-3" },
   }[state];
   return (
@@ -139,6 +184,8 @@ function BestCell({ best }: { best: BestDecision }) {
       <span className={`w-fit rounded-full border px-2 py-0.5 text-[11px] font-medium ${chip.cls}`}>{chip.text}</span>
       {best.enter ? (
         <span className="text-[11px] text-ink-3">menurut {best.label}</span>
+      ) : young ? (
+        <span className="text-[11px] text-ink-3">belum cukup data harga untuk dinilai</span>
       ) : pct != null ? (
         <div>
           <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/[0.06]">
@@ -243,8 +290,9 @@ export default function PoolTable({
                           </>
                         )}
                       </div>
-                      {p.flags.length > 0 && (
-                        <div className="mt-1">
+                      {(p.flags.length > 0 || p.insights) && (
+                        <div className="mt-1 flex flex-wrap items-center gap-1">
+                          <HolderChips insights={p.insights} />
                           <FlagChips flags={p.flags} max={2} />
                         </div>
                       )}
