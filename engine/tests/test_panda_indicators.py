@@ -119,3 +119,17 @@ def test_exit_needs_the_dump_to_have_happened_first():
 
     # One that fell 5% below entry is, whatever the clock says.
     assert (1 - min(0.95, 0.98)) * 100 >= MIN_DROP_BEFORE_EXIT_PCT
+
+
+def test_range_behaviour_covers_a_position_shorter_than_one_candle():
+    import asyncio
+
+    from app import portfolio
+
+    class FakeDb:
+        async def fetch(self, *_args):
+            return [{"ts": 0, "close": 10.0}]  # one 30m candle opening before the position
+
+    positions = [{"opened_at": 60_000, "closed_at": 180_000, "min_price": 9.0, "max_price": 12.0}]
+    asyncio.run(portfolio.range_behaviour(FakeDb(), "pool", positions))
+    assert positions[0]["in_range_pct"] == 100.0 and positions[0]["exit_side"] == "inside"

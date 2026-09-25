@@ -743,16 +743,23 @@ async def range_behaviour(db, pool: str, positions: list[dict[str, Any]]) -> Non
         pool, min(a for a, _ in spans), max(b for _, b in spans),
     )
     candles = [(r["ts"], float(r["close"])) for r in rows]
+    span_ms = 30 * 60_000  # stored candles are 30m
     # Pools the ingestor does not track have no stored candles -- often exactly the new pools a position was just
     # opened in. Fetch the window from Meteora once (5m candles, cached) so recent positions still get their range
     # story. Only for the last week, to keep this to a handful of calls.
     week_ago = (time.time() - 7 * 86_400) * 1000
     if not candles and max(b for _, b in spans) >= week_ago:
         candles = await _fetched_candles(pool, min(a for a, _ in spans), max(b for _, b in spans))
+        span_ms = 5 * 60_000
     for p in positions:
         opened, closed = p.get("opened_at"), p.get("closed_at")
         lo, hi = p.get("min_price") or 0.0, p.get("max_price") or 0.0
-        window = [c for ts, c in candles if opened and closed and opened <= ts <= closed] if lo and hi else []
+        # A candle counts when its interval overlaps the position, not only when it opens inside it: a position that
+        # lived two minutes sits inside one 5m candle and would otherwise match none.
+        window = (
+            [c for ts, c in candles if opened and closed and ts <= closed and ts + span_ms >= opened]
+            if lo and hi else []
+        )
         if not window:
             p["in_range_pct"] = None
             p["exit_side"] = None
