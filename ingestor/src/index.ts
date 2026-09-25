@@ -24,6 +24,8 @@ for (const level of ["log", "warn", "error"] as const) {
 
 /** Pools the engine's paper trader holds positions in (engine/app/service.py keeps this set current). */
 const PAPER_OPEN_POOLS_KEY = "paper:open_pools";
+/** Pools someone has open on the dashboard's pool page (engine/app/main.py watch_pool): address -> until, ms. */
+const VIEWED_POOLS_KEY = "viewed:pools";
 
 /** Keep tracking pools with open paper positions even after they drop out of the top-volume screen, so a
  * position is closed by its own exit rules rather than because the screener stopped watching the pool. */
@@ -122,7 +124,8 @@ async function main(): Promise<void> {
   // loop, and the process then looks alive while collecting nothing -- which is exactly what happened on
   // 2026-09-25. The caller therefore bounds the cycle as a whole.
   const pollOnce = async (started: number) => {
-      const pinned = await redis.smembers(PAPER_OPEN_POOLS_KEY);
+      const viewed = await redis.zrangebyscore(VIEWED_POOLS_KEY, Date.now(), "+inf");
+      const pinned = [...new Set([...(await redis.smembers(PAPER_OPEN_POOLS_KEY)), ...viewed])];
       const listed = await fetchPools();
       const known = new Set(listed.map((p) => p.address));
       const fresh = newPools.current().filter((p) => !known.has(p.address));
@@ -136,7 +139,7 @@ async function main(): Promise<void> {
       flow.maybeRefresh(pools);
       gmgn?.maybeRefresh(pools);
       bins?.maybeRefresh(pools, pinned);
-      await watcher?.sync(pools);
+      await watcher?.sync(pools, viewed);
       if (started - lastPrune > 3_600_000) {
         await pruneOld();
         lastPrune = started;

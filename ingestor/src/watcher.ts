@@ -73,9 +73,12 @@ export class PoolWatcher {
     return this.watched.size;
   }
 
-  /** Watch the top-N pools (input is already sorted by volume). */
-  async sync(pools: PoolSnapshot[]): Promise<void> {
-    const targets = pools.slice(0, config.watchTopN);
+  /** Watch the top-N pools (input is already sorted by volume), plus any pool someone is looking at right now:
+   * its page shows one-minute candles, which need per-block prices to be worth anything. */
+  async sync(pools: PoolSnapshot[], viewed: string[] = []): Promise<void> {
+    const top = pools.slice(0, config.watchTopN);
+    const extra = pools.filter((p) => viewed.includes(p.address) && !top.some((t) => t.address === p.address));
+    const targets = [...top, ...extra];
     const wanted = new Set(targets.map((p) => p.address));
 
     for (const [address, pool] of this.watched) {

@@ -6,6 +6,7 @@ from our own `candles` table (the ingestor keeps ~8 days) when present.
 """
 
 import asyncio
+import logging
 import json
 import time
 import urllib.request
@@ -30,12 +31,16 @@ class Timeframe:
 
 
 TIMEFRAMES = {
+    # Built here, not fetched from Meteora (whose smallest candle is 5m): on-chain price ticks for pools the ingestor
+    # is watching, GeckoTerminal's one-minute bars for the time before that. Short cache, since the point is speed.
+    "1m": Timeframe("1m", 60, 6, 3, 8),
     "5m": Timeframe("5m", 300, 6, 24, 60),
     "30m": Timeframe("30m", 1800, 48, 168, 120),
     "1h": Timeframe("1h", 3600, 72, 168, 300),
     "4h": Timeframe("4h", 14_400, 240, 720, 600),
 }
 MAX_HOURS = 720
+log = logging.getLogger("charts")
 _cache: dict[tuple[str, str, int], tuple[float, dict[str, Any]]] = {}
 _CACHE_MAX = 200
 
@@ -91,6 +96,55 @@ async def _from_db(db: asyncpg.Pool, address: str, hours: int) -> list[dict[str,
     return [dict(r) for r in rows]
 
 
+GECKO_OHLCV = "https://api.geckoterminal.com/api/v2/networks/solana/pools/{pool}/ohlcv/minute"
+
+
+def _gecko_minutes(address: str) -> list[dict[str, Any]]:
+    """GeckoTerminal's one-minute bars, priced in the quote token like Meteora's. Only minutes with a trade exist."""
+    url = GECKO_OHLCV.format(pool=address) + "?aggregate=1&limit=1000&currency=token&token=base"
+    req = urllib.request.Request(url, headers={"Accept": "application/json", "User-Agent": "quant-engine/0.1"})
+    try:
+        with urllib.request.urlopen(req, timeout=15) as res:
+            body = json.load(res)
+    except Exception as err:  # rate limited or unknown pool: the tick candles still stand on their own
+        log.info("geckoterminal minutes for %s: %s", address[:6], err)
+        return []
+    rows = ((body.get("data") or {}).get("attributes") or {}).get("ohlcv_list") or []
+    out: dict[int, dict[str, Any]] = {}
+    for ts, o, h, lo, c, v in rows:
+        out[int(ts) * 1000] = {"ts": int(ts) * 1000, "open": o, "high": h, "low": lo, "close": c, "volume": v or 0.0}
+    return [out[t] for t in sorted(out)]
+
+
+async def _one_minute(db, address: str, hours: int) -> tuple[list[dict[str, Any]], str]:
+    """One-minute candles: on-chain ticks where the ingestor has them (every block), GeckoTerminal elsewhere."""
+    ticks = []
+    if db is not None:
+        ticks = await db.fetch(
+            """select (extract(epoch from date_trunc('minute', ts)) * 1000)::bigint as minute, ts, price
+               from price_ticks where address = $1 and ts > now() - make_interval(hours => $2) order by ts""",
+            address, hours,
+        )
+    bars: dict[int, dict[str, Any]] = {}
+    for r in ticks:
+        m, price = int(r["minute"]), float(r["price"])
+        bar = bars.get(m)
+        if bar is None:
+            bars[m] = {"ts": m, "open": price, "high": price, "low": price, "close": price, "volume": 0.0}
+        else:
+            bar["high"], bar["low"], bar["close"] = max(bar["high"], price), min(bar["low"], price), price
+    gecko = await asyncio.to_thread(_gecko_minutes, address)
+    first_tick = min(bars) if bars else None
+    for bar in gecko:
+        # Before the ticks start, GeckoTerminal fills in; once ticks exist they win, being per block.
+        if first_tick is None or bar["ts"] < first_tick:
+            bars.setdefault(bar["ts"], bar)
+    since = (time.time() - hours * 3600) * 1000
+    candles = [bars[t] for t in sorted(bars) if t >= since]
+    source = "onchain" if ticks and not gecko else "onchain+geckoterminal" if ticks else "geckoterminal"
+    return candles, source
+
+
 async def load_candles(db: asyncpg.Pool | None, address: str, tf_key: str, hours: int | None) -> dict[str, Any]:
     tf = TIMEFRAMES[tf_key]
     hours = min(MAX_HOURS, hours or tf.default_hours)
@@ -102,6 +156,11 @@ async def load_candles(db: asyncpg.Pool | None, address: str, tf_key: str, hours
 
     candles: list[dict[str, Any]] = []
     source = "meteora"
+    if tf_key == "1m":
+        candles, source = await _one_minute(db, address, hours)
+        result = {"address": address, "tf": tf_key, "hours": hours, "source": source, "candles": candles}
+        _cache[key] = (now + tf.cache_ttl_s, result)
+        return result
     if tf_key == "30m" and db is not None:
         candles = await _from_db(db, address, hours)
         source = "db"

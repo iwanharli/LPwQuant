@@ -63,10 +63,26 @@ async def pool_detail(address: str) -> dict:
     }
 
 
+VIEWED_POOLS_KEY = "viewed:pools"  # sorted set: pool address -> watch-until, epoch ms (read by the ingestor)
+VIEW_WATCH_MS = 30 * 60_000
+
+
+@app.post("/api/pools/{address}/watch")
+async def watch_pool(address: str) -> dict:
+    """Ask the ingestor to follow this pool on-chain while someone is looking at it, so its one-minute candles come
+    from per-block prices instead of arriving late. The page renews this while open; it lapses on its own."""
+    if not portfolio.valid_wallet(address):  # same base58 shape as a wallet
+        raise HTTPException(status_code=400, detail="alamat pool tidak valid")
+    until = int(time.time() * 1000) + VIEW_WATCH_MS
+    await engine.redis.zadd(VIEWED_POOLS_KEY, {address: until})
+    await engine.redis.zremrangebyscore(VIEWED_POOLS_KEY, 0, int(time.time() * 1000))
+    return {"address": address, "watch_until": until}
+
+
 @app.get("/api/pools/{address}/candles")
 async def pool_candles(
     address: str,
-    tf: str = Query("30m", pattern="^(5m|30m|1h|4h)$"),
+    tf: str = Query("30m", pattern="^(1m|5m|30m|1h|4h)$"),
     hours: int | None = Query(None, ge=1, le=MAX_HOURS),
 ) -> dict:
     try:

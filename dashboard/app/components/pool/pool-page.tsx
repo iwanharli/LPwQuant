@@ -30,6 +30,7 @@ import CandleChart, { type ChartLevel, type ChartMarker } from "./candle-chart";
 import { SkeletonBox } from "../skeleton";
 
 const TIMEFRAMES: { key: Timeframe; label: string; seconds: number; hint: string }[] = [
+  { key: "1m", label: "1m", seconds: 60, hint: "6 jam" },
   { key: "5m", label: "5m", seconds: 300, hint: "24 jam" },
   { key: "30m", label: "30m", seconds: 1800, hint: "7 hari" },
   { key: "1h", label: "1j", seconds: 3600, hint: "7 hari" },
@@ -201,11 +202,31 @@ function DecisionRow({ d }: { d: ProfileDecision }) {
   );
 }
 
+/** Tell the engine this pool is being looked at, so the ingestor follows it on-chain (per-block prices for the
+ * one-minute candles). Renewed while the page is open and visible; it lapses by itself 30 minutes after. */
+function useWatchWhileOpen(address: string) {
+  useEffect(() => {
+    const ping = () => {
+      if (document.visibilityState !== "visible") return;
+      void fetch(`${ENGINE_URL}/api/pools/${address}/watch`, { method: "POST" }).catch(() => undefined);
+    };
+    ping();
+    const t = setInterval(ping, 10 * 60_000);
+    document.addEventListener("visibilitychange", ping);
+    return () => {
+      clearInterval(t);
+      document.removeEventListener("visibilitychange", ping);
+    };
+  }, [address]);
+}
+
 export default function PoolPage({ address }: { address: string }) {
   const [tf, setTf] = useState<Timeframe>("30m");
   const [logScale, setLogScale] = useState(false);
   const detail = usePolling<PoolDetail>(`/api/pools/${address}`, DETAIL_REFRESH_MS);
-  const candles = usePolling<CandleResponse>(`/api/pools/${address}/candles?tf=${tf}`, CANDLE_REFRESH_MS);
+  // One-minute candles are only worth having if they move: poll them every few seconds, the rest every minute.
+  const candles = usePolling<CandleResponse>(`/api/pools/${address}/candles?tf=${tf}`, tf === "1m" ? 8_000 : CANDLE_REFRESH_MS);
+  useWatchWhileOpen(address);
   const paper = usePolling<{ positions: PoolPaperPosition[] }>(`/api/pools/${address}/paper`, CANDLE_REFRESH_MS);
   const [showProfiles, setShowProfiles] = useState<Record<string, boolean>>({});
 
@@ -404,7 +425,16 @@ export default function PoolPage({ address }: { address: string }) {
             <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line px-4 py-2 text-xs text-ink-3">
               <span>
                 {tfCandles.length} candle {tfInfo.label} · {tfInfo.hint} terakhir · sumber{" "}
-                {candles.data?.source === "db" ? "database (Meteora)" : "Meteora"} · waktu WIB
+                {
+                  {
+                    db: "database (Meteora)",
+                    meteora: "Meteora",
+                    onchain: "harga on-chain per blok",
+                    "onchain+geckoterminal": "on-chain per blok, awalnya GeckoTerminal",
+                    geckoterminal: "GeckoTerminal (on-chain menyusul ~1 menit)",
+                  }[candles.data?.source ?? "meteora"] ?? candles.data?.source
+                }{" "}
+                · waktu WIB
               </span>
               <span>Level range dan exit dihitung dari harga sekarang</span>
             </div>
