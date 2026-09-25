@@ -26,12 +26,14 @@ import BusyHours from "../busy-hours";
 import TopBar from "../top-bar";
 import PumpWarning from "../pump-warning";
 import { Delta, PlanBadge, RegimeBadge, StatusDot, TokenAvatar } from "../ui";
-import CandleChart, { type ChartLevel, type ChartMarker } from "./candle-chart";
+import CandleChart, { INDICATORS, type ChartLevel, type ChartMarker, type IndicatorKey } from "./candle-chart";
 import { SkeletonBox } from "../skeleton";
 
 const TIMEFRAMES: { key: Timeframe; label: string; seconds: number; hint: string }[] = [
-  { key: "1m", label: "1m", seconds: 60, hint: "6 jam" },
-  { key: "5m", label: "5m", seconds: 300, hint: "24 jam" },
+  { key: "1m", label: "1m", seconds: 60, hint: "16 jam" },
+  { key: "3m", label: "3m", seconds: 180, hint: "16 jam" },
+  { key: "5m", label: "5m", seconds: 300, hint: "3 hari" },
+  { key: "15m", label: "15m", seconds: 900, hint: "5 hari" },
   { key: "30m", label: "30m", seconds: 1800, hint: "7 hari" },
   { key: "1h", label: "1j", seconds: 3600, hint: "7 hari" },
   { key: "4h", label: "4j", seconds: 14_400, hint: "30 hari" },
@@ -225,7 +227,11 @@ export default function PoolPage({ address }: { address: string }) {
   const [logScale, setLogScale] = useState(false);
   const detail = usePolling<PoolDetail>(`/api/pools/${address}`, DETAIL_REFRESH_MS);
   // One-minute candles are only worth having if they move: poll them every few seconds, the rest every minute.
-  const candles = usePolling<CandleResponse>(`/api/pools/${address}/candles?tf=${tf}`, tf === "1m" ? 8_000 : CANDLE_REFRESH_MS);
+  const candles = usePolling<CandleResponse>(`/api/pools/${address}/candles?tf=${tf}`, tf === "1m" || tf === "3m" ? 8_000 : CANDLE_REFRESH_MS);
+  const [inUsd, setInUsd] = useState(false);
+  const [indicators, setIndicators] = useState<Record<IndicatorKey, boolean>>({ supertrend: true, ema20: true, ema50: true, bb: true, rsi: true });
+  const quoteUsd = candles.data?.quote_usd ?? null;
+  const quoteName = candles.data?.quote ?? "";
   useWatchWhileOpen(address);
   const paper = usePolling<{ positions: PoolPaperPosition[] }>(`/api/pools/${address}/paper`, CANDLE_REFRESH_MS);
   const [showProfiles, setShowProfiles] = useState<Record<string, boolean>>({});
@@ -364,6 +370,34 @@ export default function PoolPage({ address }: { address: string }) {
                 >
                   Log
                 </button>
+                <button
+                  type="button"
+                  aria-pressed={inUsd}
+                  disabled={quoteUsd == null}
+                  onClick={() => setInUsd((v) => !v)}
+                  title={quoteUsd == null ? "Harga quote token ini dalam USD belum diketahui" : "Tampilkan harga dalam USD, bukan dalam token quote"}
+                  className={`rounded-md px-3 py-1 text-xs font-medium transition-colors disabled:opacity-40 ${
+                    inUsd ? "bg-raised text-ink shadow-sm shadow-black/25" : "text-ink-3 hover:bg-raised/50 hover:text-ink-2"
+                  }`}
+                >
+                  USD
+                </button>
+              </div>
+              <div className="flex flex-wrap items-center gap-1 text-xs">
+                {INDICATORS.map((x) => (
+                  <button
+                    key={x.key}
+                    type="button"
+                    aria-pressed={indicators[x.key]}
+                    onClick={() => setIndicators((s) => ({ ...s, [x.key]: !s[x.key] }))}
+                    className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 transition-colors ${
+                      indicators[x.key] ? "border-white/[0.14] text-ink-2" : "border-white/[0.06] text-ink-3 opacity-60"
+                    }`}
+                  >
+                    <span className="h-0.5 w-3 rounded-full" style={{ background: x.color }} aria-hidden />
+                    {x.label}
+                  </button>
+                ))}
               </div>
               <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-ink-3">
                 {profileKeys.map((k) => {
@@ -412,6 +446,9 @@ export default function PoolPage({ address }: { address: string }) {
                 tfSeconds={tfInfo.seconds}
                 livePrice={pool?.price ?? null}
                 logScale={logScale}
+                indicators={indicators}
+                usdRate={inUsd ? quoteUsd : null}
+                quoteLabel={inUsd && quoteUsd != null ? "USD" : quoteName}
               />
               {!candles.data && !candles.error && (
                 <div className="absolute inset-0 p-2"><SkeletonBox className="h-full w-full rounded-xl" /></div>

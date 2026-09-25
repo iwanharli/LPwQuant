@@ -82,11 +82,15 @@ async def watch_pool(address: str) -> dict:
 @app.get("/api/pools/{address}/candles")
 async def pool_candles(
     address: str,
-    tf: str = Query("30m", pattern="^(1m|5m|30m|1h|4h)$"),
+    tf: str = Query("30m", pattern="^(1m|3m|5m|15m|30m|1h|4h)$"),
     hours: int | None = Query(None, ge=1, le=MAX_HOURS),
 ) -> dict:
     try:
-        return await load_candles(engine.db, address, tf, hours)
+        out = await load_candles(engine.db, address, tf, hours)
+        # USD per quote token, for the chart's USD toggle: stablecoins 1, SOL at the engine's live price.
+        quote = ((engine.rows.get(address) or {}).get("name") or "").rsplit("-", 1)[-1].upper()
+        rate = 1.0 if quote in {"USDC", "USDT", "USD1", "PYUSD"} else engine.sol_usd if quote in {"SOL", "WSOL"} else None
+        return {**out, "quote": quote or None, "quote_usd": rate}
     except Exception as err:  # upstream HTTP errors, timeouts
         raise HTTPException(status_code=502, detail=f"candles unavailable: {str(err)[:120]}") from err
 

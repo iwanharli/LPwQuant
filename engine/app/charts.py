@@ -33,8 +33,10 @@ class Timeframe:
 TIMEFRAMES = {
     # Built here, not fetched from Meteora (whose smallest candle is 5m): on-chain price ticks for pools the ingestor
     # is watching, GeckoTerminal's one-minute bars for the time before that. Short cache, since the point is speed.
-    "1m": Timeframe("1m", 60, 6, 3, 8),
-    "5m": Timeframe("5m", 300, 6, 24, 60),
+    "1m": Timeframe("1m", 60, 6, 16, 8),
+    "3m": Timeframe("3m", 180, 6, 16, 15),
+    "5m": Timeframe("5m", 300, 6, 72, 60),
+    "15m": Timeframe("15m", 900, 6, 120, 90),
     "30m": Timeframe("30m", 1800, 48, 168, 120),
     "1h": Timeframe("1h", 3600, 72, 168, 300),
     "4h": Timeframe("4h", 14_400, 240, 720, 600),
@@ -43,6 +45,25 @@ MAX_HOURS = 720
 log = logging.getLogger("charts")
 _cache: dict[tuple[str, str, int], tuple[float, dict[str, Any]]] = {}
 _CACHE_MAX = 200
+
+
+# Timeframes Meteora does not serve, built by merging a finer one: (source timeframe, bucket seconds).
+DERIVED = {"3m": ("1m", 180), "15m": ("5m", 900)}
+
+
+def aggregate(candles: list[dict[str, Any]], seconds: int) -> list[dict[str, Any]]:
+    """Merge consecutive candles into `seconds`-long buckets (open of the first, close of the last)."""
+    out: dict[int, dict[str, Any]] = {}
+    step = seconds * 1000
+    for c in candles:
+        t = c["ts"] // step * step
+        b = out.get(t)
+        if b is None:
+            out[t] = {**c, "ts": t}
+        else:
+            b["high"], b["low"], b["close"] = max(b["high"], c["high"]), min(b["low"], c["low"]), c["close"]
+            b["volume"] = (b["volume"] or 0) + (c["volume"] or 0)
+    return [out[t] for t in sorted(out)]
 
 
 def windows(end_s: int, hours: int, max_window_hours: int) -> list[tuple[int, int]]:
@@ -176,6 +197,12 @@ async def load_candles(db: asyncpg.Pool | None, address: str, tf_key: str, hours
 
     candles: list[dict[str, Any]] = []
     source = "meteora"
+    if tf_key in DERIVED:
+        base_tf, seconds = DERIVED[tf_key]
+        base = await load_candles(db, address, base_tf, hours)
+        result = {**base, "tf": tf_key, "candles": aggregate(base["candles"], seconds)}
+        _cache[key] = (now + tf.cache_ttl_s, result)
+        return result
     if tf_key == "1m":
         candles, source = await _one_minute(db, address, hours)
         result = {"address": address, "tf": tf_key, "hours": hours, "source": source, "candles": candles}

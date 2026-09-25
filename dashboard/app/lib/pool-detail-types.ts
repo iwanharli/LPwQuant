@@ -1,10 +1,10 @@
 import type { PoolRow, Tier } from "./types";
 
-export type Timeframe = "1m" | "5m" | "30m" | "1h" | "4h";
+export type Timeframe = "1m" | "3m" | "5m" | "15m" | "30m" | "1h" | "4h";
 
 export type Candle = { ts: number; open: number; high: number; low: number; close: number; volume: number };
 
-export type CandleResponse = { address: string; tf: Timeframe; hours: number; source: "db" | "meteora" | "onchain" | "onchain+geckoterminal" | "geckoterminal"; candles: Candle[] };
+export type CandleResponse = { address: string; tf: Timeframe; hours: number; source: "db" | "meteora" | "onchain" | "onchain+geckoterminal" | "geckoterminal"; candles: Candle[]; quote?: string | null; quote_usd?: number | null };
 
 export type ProfileDecision = {
   key: string;
