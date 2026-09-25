@@ -99,7 +99,27 @@ async def _from_db(db: asyncpg.Pool, address: str, hours: int) -> list[dict[str,
 GECKO_OHLCV = "https://api.geckoterminal.com/api/v2/networks/solana/pools/{pool}/ohlcv/minute"
 
 
+_gecko_cache: dict[str, tuple[float, list[dict[str, Any]]]] = {}
+
+
 def _gecko_minutes(address: str) -> list[dict[str, Any]]:
+    """GeckoTerminal allows ~30 calls a minute across all pools and the 1m chart polls every few seconds, so each
+    pool's bars are reused for a minute (after a failure, the last good bars are kept for two)."""
+    hit = _gecko_cache.get(address)
+    if hit and hit[0] > time.time():
+        return hit[1]
+    bars = _gecko_minutes_fetch(address)
+    if bars or not hit:
+        _gecko_cache[address] = (time.time() + (60 if bars else 120), bars)
+    else:
+        _gecko_cache[address] = (time.time() + 120, hit[1])
+        bars = hit[1]
+    if len(_gecko_cache) > 200:
+        _gecko_cache.pop(min(_gecko_cache, key=lambda k: _gecko_cache[k][0]))
+    return bars
+
+
+def _gecko_minutes_fetch(address: str) -> list[dict[str, Any]]:
     """GeckoTerminal's one-minute bars, priced in the quote token like Meteora's. Only minutes with a trade exist."""
     url = GECKO_OHLCV.format(pool=address) + "?aggregate=1&limit=1000&currency=token&token=base"
     req = urllib.request.Request(url, headers={"Accept": "application/json", "User-Agent": "quant-engine/0.1"})
