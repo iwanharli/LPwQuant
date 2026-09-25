@@ -37,6 +37,8 @@ export interface TokenSecurity {
    * and how many wallets it spans. Null when the graph could not be read. */
   cluster_pct: number | null;
   cluster_size: number | null;
+  /** When RugCheck first saw the mint (ms): close to the token's launch for anything under a few days old. */
+  token_created_at: number | null;
   danger_count: number;
   warn_count: number;
   risks: { name: string; level: string; description?: string }[];
@@ -52,6 +54,7 @@ interface RugcheckReport {
   risks?: { name: string; level: string; description?: string }[] | null;
   knownAccounts?: Record<string, { name: string; type: string }> | null;
   token?: { supply?: number } | null;
+  detectedAt?: string | null;
   topHolders?: { address?: string; owner?: string; pct?: number }[] | null;
   markets?: { lp?: { lpLockedPct?: number } | null }[] | null;
   token_extensions?: {
@@ -153,6 +156,7 @@ export function normalizeReport(mint: string, report: RugcheckReport, fetchedAt:
     // Above 100% the graph and the supply disagree (seen on large tokens with exchange networks): unknown, not huge.
     cluster_pct: cluster && cluster.pct <= 100 ? cluster.pct : null,
     cluster_size: cluster ? cluster.size : null,
+    token_created_at: report.detectedAt ? Date.parse(report.detectedAt) || null : null,
     danger_count: risks.filter((r) => r.level === "danger").length,
     warn_count: risks.filter((r) => r.level === "warn").length,
     risks,

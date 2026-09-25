@@ -49,12 +49,27 @@ def _clean(value: Any) -> Any:
     return value
 
 
+NEW_TOKEN_HOURS = 24  # a pool whose token launched within this counts as "new token", else "old token"
+
+
+def token_created_ms(security: dict[str, Any] | None, pump: dict[str, Any] | None) -> int | None:
+    """The token's launch time: pump.fun's own record when it is a pump token, else when RugCheck first saw it."""
+    times = []
+    raw = (pump or {}).get("created_ts")
+    if raw:
+        times.append(int(raw if raw > 1e12 else raw * 1000))
+    if (security or {}).get("token_created_at"):
+        times.append(int(security["token_created_at"]))
+    return min(times) if times else None
+
+
 def _security_summary(security: dict[str, Any] | None) -> dict[str, Any] | None:
     if security is None:
         return None
     keys = (
         "score_normalised", "rugged", "mint_authority", "freeze_authority", "top10_pct",
         "insiders_detected", "total_holders", "lp_locked_pct", "danger_count", "warn_count", "fetched_at",
+        "transfer_fee_pct", "transfer_fee_mutable", "cluster_pct", "cluster_size", "token_created_at",
     )
     summary = {k: _clean(security.get(k)) for k in keys}
     summary["risks"] = [f"{r['name']} ({r['level']})" for r in security.get("risks", [])]
@@ -495,6 +510,7 @@ class Engine:
             "insights": _clean(insights),
             "organic": _clean(organic),
             "pump": _clean(pump),
+            "token_age_hours": None if (tc := token_created_ms(security, pump)) is None else max(0.0, (now_ms - tc) / 3_600_000),
             "depth_per_bin_y": pool_per_bin_y,
             "depth": None if depth is None else {
                 "age_sec": round((now_ms - depth.ts) / 1000),

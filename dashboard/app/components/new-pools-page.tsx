@@ -29,11 +29,19 @@ type NewPool = {
   top10_pct: number | null;
   flags: string[];
   pool_age_hours: number;
+  token_age_hours: number | null;
+  token_kind: "new" | "old" | null;
   verdict: "ok" | "pending" | "blocked";
   reason: string;
 };
 
 type Filter = "all" | "ok" | "pending" | "blocked";
+type TokenFilter = "all" | "new" | "old";
+
+const TOKEN_KIND = {
+  new: { label: "Token baru", cls: "border-accent/45 bg-accent/10 text-accent", hint: "Token diluncurkan kurang dari 24 jam lalu" },
+  old: { label: "Token lama", cls: "border-sky-400/35 bg-sky-400/10 text-sky-300", hint: "Token sudah lama ada; ini pool tambahan untuknya" },
+};
 
 const VERDICT = {
   ok: { label: "Lolos cek", severity: "good" as const, cls: "border-good/35 bg-good/10 text-good" },
@@ -89,13 +97,19 @@ function reasonText(p: NewPool): string {
 
 const ageText = (hours: number) => {
   const m = Math.max(0, Math.round(hours * 60));
-  return m < 1 ? "baru saja" : `${m} mnt lalu`;
+  if (m < 1) return "baru saja";
+  if (m < 60) return `${m} mnt lalu`;
+  if (hours < 48) return `${Math.round(hours)} jam lalu`;
+  return `${Math.round(hours / 24)} hari lalu`;
 };
 
 export default function NewPoolsPage() {
   const { data, error } = useNewPools();
   const [filter, setFilter] = useState<Filter>("all");
-  const pools = data?.pools ?? [];
+  const [tokenFilter, setTokenFilter] = useState<TokenFilter>("all");
+  const pools = (data?.pools ?? []).filter((p) => tokenFilter === "all" || p.token_kind === tokenFilter);
+  const byToken = { all: data?.pools.length ?? 0, new: 0, old: 0 };
+  for (const p of data?.pools ?? []) if (p.token_kind) byToken[p.token_kind] += 1;
   const counts = { all: pools.length, ok: 0, pending: 0, blocked: 0 };
   for (const p of pools) counts[p.verdict] += 1;
   const shown = filter === "all" ? pools : pools.filter((p) => p.verdict === filter);
@@ -116,6 +130,24 @@ export default function NewPoolsPage() {
         />
 
         <div className="flex flex-wrap items-center gap-2">
+          <div className="flex rounded-full border border-line bg-bg/40 p-0.5" role="group" aria-label="Jenis token">
+            {(["all", "new", "old"] as TokenFilter[]).map((f) => (
+              <button
+                key={f}
+                type="button"
+                aria-pressed={tokenFilter === f}
+                onClick={() => setTokenFilter(f)}
+                title={f === "all" ? undefined : TOKEN_KIND[f].hint}
+                className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                  tokenFilter === f ? "bg-white/[0.08] text-ink" : "text-ink-3 hover:text-ink-2"
+                }`}
+              >
+                {f === "all" ? "Semua token" : TOKEN_KIND[f].label}
+                <span className="ml-1.5 tabular-nums text-ink-3">{byToken[f]}</span>
+              </button>
+            ))}
+          </div>
+          <span className="mx-1 h-5 w-px bg-line" aria-hidden />
           {(["all", "ok", "pending", "blocked"] as Filter[]).map((f) => (
             <button
               key={f}
@@ -156,8 +188,17 @@ export default function NewPoolsPage() {
                       <div className="mt-0.5 empty:hidden">
                         <PumpWarning changePct1h={p.change_pct_1h} compact />
                       </div>
+                      {p.token_kind && (
+                        <span
+                          title={TOKEN_KIND[p.token_kind].hint}
+                          className={`mt-1 inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${TOKEN_KIND[p.token_kind].cls}`}
+                        >
+                          {TOKEN_KIND[p.token_kind].label}
+                          {p.token_age_hours != null && <span className="ml-1 font-normal opacity-80">· {ageText(p.token_age_hours)}</span>}
+                        </span>
+                      )}
                       <div className="text-[11px] tabular-nums text-ink-3">
-                        dibuat {ageText(p.pool_age_hours)} · {p.bin_step}bps{p.base_fee_pct != null ? ` · fee ${fmtNum(p.base_fee_pct, 2)}%` : ""}
+                        pool dibuat {ageText(p.pool_age_hours)} · {p.bin_step}bps{p.base_fee_pct != null ? ` · fee ${fmtNum(p.base_fee_pct, 2)}%` : ""}
                       </div>
                     </div>
                     <Metric label="TVL" value={usdCompact.format(p.tvl)} />

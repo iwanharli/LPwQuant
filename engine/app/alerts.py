@@ -164,6 +164,25 @@ def _age_text(age: float | None) -> str:
     return f"{age / 24:.0f} hari lalu"
 
 
+def token_kind(row: dict[str, Any]) -> str | None:
+    """"new" when the token itself launched within a day (a fresh launch getting its first pool), "old" when an
+    established token got another pool, None when the launch time is unknown."""
+    age = _num(row.get("token_age_hours"))
+    if age is None:
+        return None
+    from .service import NEW_TOKEN_HOURS
+    return "new" if age <= NEW_TOKEN_HOURS else "old"
+
+
+def _token_line(row: dict[str, Any]) -> str | None:
+    kind, age = token_kind(row), _num(row.get("token_age_hours"))
+    if kind is None:
+        return None
+    if kind == "new":
+        return f"🐣 <b>Token baru</b>: diluncurkan {_age_text(age)}. Risiko tinggi, harga belum punya riwayat."
+    return f"🏛 <b>Token lama</b>: sudah ada sejak {_age_text(age)}, ini pool tambahan untuknya."
+
+
 def concerns(row: dict[str, Any]) -> list[str]:
     """Plain-language warnings from the same fields the message shows, worst first."""
     security = row.get("security") or {}
@@ -208,6 +227,7 @@ def message(row: dict[str, Any], kind: str) -> str:
     lines = [
         f"<b>{_esc(TITLES.get(kind, kind))}</b>",
         f"<b>{_esc(str(row.get('name') or '?'))}</b>",
+        *([t] if (t := _token_line(row)) else []),
         "",
         _esc(why),
         verdict,

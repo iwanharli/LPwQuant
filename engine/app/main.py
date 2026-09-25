@@ -240,7 +240,7 @@ async def get_closed_orders(wallet: str, fresh: bool = False) -> dict:
 async def new_pools(max_age_hours: float = Query(1.0, gt=0, le=24), min_tvl: float = Query(500, ge=0)) -> dict:
     """Pools created within `max_age_hours` with at least `min_tvl`, newest first, each with the same safety verdict
     the Telegram new-pool alert uses, so the page and the alert never disagree."""
-    from .alerts import safe_new_pool, top10_pct
+    from .alerts import safe_new_pool, token_kind, top10_pct
 
     out = []
     for row in engine.sorted_rows():
@@ -254,6 +254,8 @@ async def new_pools(max_age_hours: float = Query(1.0, gt=0, le=24), min_tvl: flo
                                      "volume_24h", "fees_24h", "price", "change_pct_1h", "market_cap", "holders",
                                      "flags", "pool_age_hours")},
             "top10_pct": top10_pct(row),
+            "token_age_hours": row.get("token_age_hours"),
+            "token_kind": token_kind(row),
             "verdict": "pending" if pending else ("ok" if ok else "blocked"),
             "reason": reason,
         })
