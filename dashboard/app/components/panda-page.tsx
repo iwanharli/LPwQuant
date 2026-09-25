@@ -298,10 +298,10 @@ function RunTable({ runs, empty }: { runs: Run[]; empty: string }) {
   );
 }
 
-export default function PandaPage() {
+export default function PandaPage({ embedded = false }: { embedded?: boolean }) {
   const [r, setR] = useState<Report | null>(null);
   const [error, setError] = useState(false);
-  const [view, setView] = useUrlState<View>("view", "running", VIEWS);
+  const [view, setView] = useUrlState<View>("panda", "running", VIEWS);
 
   useEffect(() => {
     let cancelled = false;
@@ -334,15 +334,14 @@ export default function PandaPage() {
   const running = r?.runs.filter((x) => x.status === "open") ?? [];
   const finished = r?.runs.filter((x) => x.status === "closed") ?? [];
 
-  return (
-    <div className="flex min-h-screen min-w-0 flex-col overflow-x-hidden">
-      <TopBar />
-      <main className="mx-auto w-full min-w-0 max-w-full flex-1 space-y-5 overflow-x-hidden px-4 py-6 sm:px-6 lg:py-7 2xl:px-8">
-        <PageHeader
-          title="Uji" accent="Panda Strat"
-          subtitle="Paper, tanpa transaksi: seleksi ketat, range lebar satu sisi, keluar di pantulan pertama."
-        />
-
+  const header = (
+    <PageHeader
+      title="Uji" accent="Panda Strat"
+      subtitle="Paper, tanpa transaksi: seleksi ketat, range lebar satu sisi, keluar di pantulan pertama."
+    />
+  );
+  const body = (
+    <>
         {error && !r && <p className="rounded-2xl border border-white/[0.06] bg-panel px-4 py-8 text-sm text-ink-3">Engine tidak bisa dihubungi.</p>}
 
         {!r && !error && (
@@ -408,6 +407,15 @@ export default function PandaPage() {
             {view === "rules" && <Rules p={p} approximations={r.approximations} />}
           </>
         )}
+    </>
+  );
+  if (embedded) return <div className="space-y-5">{body}</div>;
+  return (
+    <div className="flex min-h-screen min-w-0 flex-col overflow-x-hidden">
+      <TopBar />
+      <main className="mx-auto w-full min-w-0 max-w-full flex-1 space-y-5 overflow-x-hidden px-4 py-6 sm:px-6 lg:py-7 2xl:px-8">
+        {header}
+        {body}
       </main>
     </div>
   );

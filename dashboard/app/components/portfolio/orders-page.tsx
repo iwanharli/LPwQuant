@@ -11,7 +11,6 @@ import { ClosedOrders } from "./closed-history";
 import { useUrlState } from "../../lib/url-state";
 import PortfolioHeader from "./portfolio-header";
 import LimitRecs from "./limit-recs";
-import PaperLimitOrders from "./paper-lo";
 import PortfolioTabs from "./portfolio-tabs";
 import { SkeletonTable } from "../skeleton";
 
@@ -118,8 +117,8 @@ type CancelState =
   | { phase: "done"; signature: string }
   | { phase: "error"; message: string };
 
-type OrdersView = "open" | "recs" | "history" | "paper";
-const ORDERS_VIEWS = ["open", "recs", "history", "paper"] as const;
+type OrdersView = "open" | "recs" | "history";
+const ORDERS_VIEWS = ["open", "recs", "history"] as const;
 
 export default function OrdersPage() {
   const [view, setView] = useUrlState<OrdersView>("view", "open", ORDERS_VIEWS);
@@ -224,7 +223,6 @@ export default function OrdersPage() {
                   { value: "open", label: `Order terbuka${orders.length ? ` (${orders.length})` : ""}` },
                   { value: "recs", label: "Rekomendasi" },
                   { value: "history", label: "Riwayat" },
-                  { value: "paper", label: "Uji engine" },
                 ] as const
               ).map((o) => (
                 <button
@@ -342,7 +340,6 @@ export default function OrdersPage() {
 
             {view === "history" && <ClosedOrders wallet={connected.address} />}
 
-            {view === "paper" && <PaperLimitOrders />}
           </>
         )}
 

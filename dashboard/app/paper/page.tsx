@@ -1,11 +1,11 @@
 import type { Metadata } from "next";
-import PaperPage from "../components/paper/paper-page";
+import PaperHub from "../components/paper/paper-hub";
 
 export const metadata: Metadata = {
   title: "Paper trading · Quant",
-  description: "Posisi LP virtual dari rencana posisi live",
+  description: "Semua uji paper: profil LP, Panda, pembuat pool, dan limit order, dengan ukuran yang sama",
 };
 
 export default function Page() {
-  return <PaperPage />;
+  return <PaperHub />;
 }

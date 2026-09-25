@@ -1,11 +1,6 @@
-import type { Metadata } from "next";
-import PandaPage from "../components/panda-page";
+import { redirect } from "next/navigation";
 
-export const metadata: Metadata = {
-  title: "Uji Panda Strat · Quant",
-  description: "Uji paper strategi Panda: seleksi ketat, range lebar satu sisi, keluar di pantulan pertama",
-};
-
+// Moved into the Paper trading page; old links and bookmarks land on the right tab.
 export default function Page() {
-  return <PandaPage />;
+  redirect("/paper?tab=panda");
 }

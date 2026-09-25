@@ -723,9 +723,9 @@ function PositionsCard({
   );
 }
 
-export default function PaperPage() {
+export default function PaperPage({ embedded = false, initialProfile }: { embedded?: boolean; initialProfile?: string }) {
   // Until the reader picks one, show the profile with the highest total PnL (derived, so it follows the leader).
-  const [picked, setProfile] = useState<string | null>(null);
+  const [picked, setProfile] = useState<string | null>(initialProfile ?? null);
   const [leader, setLeader] = useState("moderat");
   const profile = picked ?? leader;
   const { data, error } = usePaperData(profile);
@@ -738,10 +738,7 @@ export default function PaperPage() {
   const totalPnl = s ? s.equity_usd - s.start_equity_usd : 0;
   const totalPct = s ? (totalPnl / s.start_equity_usd) * 100 : 0;
 
-  return (
-    <div className="flex min-h-screen min-w-0 flex-col overflow-x-hidden">
-      <TopBar />
-      <main className="mx-auto w-full min-w-0 max-w-full flex-1 space-y-5 overflow-x-hidden px-4 py-6 sm:px-6 lg:py-7 2xl:px-8">
+  const header = (
         <PageHeader
           title={<>Paper trading{s?.profile ? <span className="text-ink-3"> · {s.profile.label}</span> : null}</>}
           subtitle="LP virtual otomatis dari rencana live, tanpa transaksi on-chain."
@@ -752,8 +749,9 @@ export default function PaperPage() {
             </div>
           }
         />
-
-        {error && (
+  );
+  const body = (
+    <>        {error && (
           <p className="flex items-center gap-2 rounded-2xl border border-critical/30 bg-critical/10 px-4 py-3 text-sm text-ink-2 shadow-sm shadow-black/20">
             <StatusDot severity="critical" /> {error}. Pastikan engine berjalan di {ENGINE_URL}.
           </p>
@@ -862,6 +860,15 @@ export default function PaperPage() {
           )}{" "}
           Bukan saran finansial.
         </p>
+    </>
+  );
+  if (embedded) return <div className="space-y-5">{body}</div>;
+  return (
+    <div className="flex min-h-screen min-w-0 flex-col overflow-x-hidden">
+      <TopBar />
+      <main className="mx-auto w-full min-w-0 max-w-full flex-1 space-y-5 overflow-x-hidden px-4 py-6 sm:px-6 lg:py-7 2xl:px-8">
+        {header}
+        {body}
       </main>
     </div>
   );

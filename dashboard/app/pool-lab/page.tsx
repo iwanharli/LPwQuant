@@ -1,11 +1,6 @@
-import type { Metadata } from "next";
-import PoolLabPage from "../components/pool-lab-page";
+import { redirect } from "next/navigation";
 
-export const metadata: Metadata = {
-  title: "Uji pembuat pool · Quant",
-  description: "Uji paper: apakah membuat pool DLMM dengan fee tinggi menguntungkan",
-};
-
+// Moved into the Paper trading page; old links and bookmarks land on the right tab.
 export default function Page() {
-  return <PoolLabPage />;
+  redirect("/paper?tab=pool");
 }
