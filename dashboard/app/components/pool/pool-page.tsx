@@ -23,6 +23,7 @@ import type {
 } from "../../lib/pool-detail-types";
 import { isActivePlan, type ActivePlan } from "../../lib/types";
 import BusyHours from "../busy-hours";
+import HoldersMap from "./holders-map";
 import TopBar from "../top-bar";
 import PumpWarning from "../pump-warning";
 import { Delta, PlanBadge, RegimeBadge, StatusDot, TokenAvatar } from "../ui";
@@ -528,6 +529,8 @@ export default function PoolPage({ address }: { address: string }) {
             </section>
           </aside>
         </div>
+
+        <HoldersMap mint={pool?.base_mint ?? null} symbol={pool?.base_symbol ?? pool?.name.split("-")[0] ?? ""} />
 
         <section className="overflow-hidden rounded-2xl border border-white/[0.06] bg-panel shadow-[0_14px_42px_rgba(0,0,0,0.20),inset_0_1px_0_rgba(255,255,255,0.04)]">
           <div className="flex items-center justify-between gap-3 border-b border-line bg-white/[0.02] px-4 py-3">
