@@ -150,7 +150,8 @@ export function normalizeReport(mint: string, report: RugcheckReport, fetchedAt:
     lp_locked_pct: lpLocked.length ? Math.max(...lpLocked) : null,
     transfer_fee_pct: fee.pct,
     transfer_fee_mutable: fee.mutable,
-    cluster_pct: cluster ? cluster.pct : null,
+    // Above 100% the graph and the supply disagree (seen on large tokens with exchange networks): unknown, not huge.
+    cluster_pct: cluster && cluster.pct <= 100 ? cluster.pct : null,
     cluster_size: cluster ? cluster.size : null,
     danger_count: risks.filter((r) => r.level === "danger").length,
     warn_count: risks.filter((r) => r.level === "warn").length,

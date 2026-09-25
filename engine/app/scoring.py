@@ -27,6 +27,7 @@ RISKY_FLAGS = {"rugged", "mint_authority", "freeze_authority", "rugcheck_danger"
 # A Token-2022 transfer fee is paid on every move: deposit, withdrawal, fee claim and swap. From this rate on, an LP
 # round trip loses more than a day of fees in most pools.
 TRANSFER_FEE_RISKY_PCT = 1.0
+CLUSTER_MAX_MCAP = 20_000_000
 
 PUMP_PCT_1H = 30.0  # LPs entering a vertical pump end up holding the token at the top
 DUMP_PCT_1H = -15.0
@@ -317,7 +318,8 @@ def score_pool(
             penalize("mint_authority", 15)
         # Wallets linked by transfers of this token, as one holder. A warning only for now: whether it predicts a
         # bad LP outcome is being measured on the paper positions (the security snapshot at entry keeps it).
-        cluster = security.get("cluster_pct")
+        # Large established tokens show exchange and market-maker networks as "clusters"; the check is for memecoins.
+        cluster = security.get("cluster_pct") if not issuer and market_cap < CLUSTER_MAX_MCAP else None
         if cluster is not None and cluster >= 10:
             penalize("cluster_10", 8)
         elif cluster is not None and cluster >= 5:
