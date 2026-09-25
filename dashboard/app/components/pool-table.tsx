@@ -2,7 +2,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { STRATEGY_LABEL } from "../lib/flags";
 import { binStepPct, fmtAge, fmtPct, fmtPrice, usdCompact } from "../lib/format";
-import { isActivePlan, type ConnectionStatus, type PoolRow, type SortKey } from "../lib/types";
+import { type BestDecision, isActivePlan, type ConnectionStatus, type PoolRow, type SortKey } from "../lib/types";
 import { CandleIcon, ExternalLinkIcon } from "./icons";
 import { Delta, FlagChips, PlanBadge, RegimeBadge, ScoreCell, TokenAvatar } from "./ui";
 import PumpWarning from "./pump-warning";
@@ -20,7 +20,12 @@ type Column = {
 
 const COLUMNS: Column[] = [
   { label: "Pool", align: "left", sorts: [{ key: "pool_age_hours", label: "Umur" }] },
-  { label: "Tier risiko", align: "left", title: "Rendah / menengah / tinggi, dengan strategi dan range" },
+  {
+    label: "Rekomendasi",
+    align: "left",
+    title: "Keputusan profil paper dengan hasil terbaik, dan seberapa dekat syarat fee-nya terpenuhi",
+    sorts: [{ key: "coverage", label: "Terdekat lolos" }],
+  },
   {
     label: "Skor · Rezim",
     align: "left",
@@ -110,6 +115,45 @@ function SortHeader({
     );
   }
   return <span className="inline-flex items-center">{buttons}</span>;
+}
+
+/**
+ * The recommendation, taken from the paper profile with the best record rather than the default rules (which lost
+ * money on paper). "Siap" means the profile would enter now; otherwise the bar shows how much of the fee its gate
+ * asks for the pool is earning, so the pools that are nearly there stand out from the ones that are nowhere near.
+ */
+function BestCell({ best }: { best: BestDecision }) {
+  const cov = best.coverage;
+  const pct = cov == null ? null : Math.min(100, Math.max(0, cov * 100));
+  const state = best.enter ? "ready" : cov != null && cov >= 0.5 ? "near" : "wait";
+  const chip = {
+    ready: { text: "Siap masuk", cls: "border-emerald-400/35 bg-emerald-400/10 text-emerald-300" },
+    near: { text: "Hampir siap", cls: "border-amber-400/35 bg-amber-400/10 text-amber-300" },
+    wait: { text: "Belum", cls: "border-white/[0.08] bg-white/[0.03] text-ink-3" },
+  }[state];
+  return (
+    <div
+      className="flex w-[10.5rem] flex-col gap-1.5"
+      title={`${best.label} (${best.return_pct >= 0 ? "+" : ""}${best.return_pct.toFixed(1)}% di paper)${best.reason ? ` · ${best.reason}` : ""}`}
+    >
+      <span className={`w-fit rounded-full border px-2 py-0.5 text-[11px] font-medium ${chip.cls}`}>{chip.text}</span>
+      {best.enter ? (
+        <span className="text-[11px] text-ink-3">menurut {best.label}</span>
+      ) : pct != null ? (
+        <div>
+          <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/[0.06]">
+            <div
+              className={`h-full rounded-full ${state === "near" ? "bg-amber-400/80" : "bg-ink-3/60"}`}
+              style={{ width: `${pct}%` }}
+            />
+          </div>
+          <div className="mt-1 text-[10px] tabular-nums text-ink-3">fee {pct.toFixed(0)}% dari syarat</div>
+        </div>
+      ) : (
+        <span className="truncate text-[11px] text-ink-3">{best.reason ?? "–"}</span>
+      )}
+    </div>
+  );
 }
 
 export default function PoolTable({
@@ -208,17 +252,21 @@ export default function PoolTable({
                   </div>
                 </td>
                 <td className={CELL}>
-                  <div className="flex flex-col items-start gap-1">
-                    <PlanBadge plan={plan} />
-                    <span
-                      className="max-w-[10.5rem] truncate text-[11px] text-ink-3"
-                      title={isActivePlan(plan) ? plan.note : plan.reason}
-                    >
-                      {isActivePlan(plan)
-                        ? `${STRATEGY_LABEL[plan.strategy]} ${plan.range_low_pct}% / +${plan.range_high_pct}%`
-                        : plan.reason}
-                    </span>
-                  </div>
+                  {p.best ? (
+                    <BestCell best={p.best} />
+                  ) : (
+                    <div className="flex flex-col items-start gap-1">
+                      <PlanBadge plan={plan} />
+                      <span
+                        className="max-w-[10.5rem] truncate text-[11px] text-ink-3"
+                        title={isActivePlan(plan) ? plan.note : plan.reason}
+                      >
+                        {isActivePlan(plan)
+                          ? `${STRATEGY_LABEL[plan.strategy]} ${plan.range_low_pct}% / +${plan.range_high_pct}%`
+                          : plan.reason}
+                      </span>
+                    </div>
+                  )}
                 </td>
                 <td className={CELL}>
                   <div className="flex flex-col items-start gap-1">

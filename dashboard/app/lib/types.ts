@@ -154,7 +154,20 @@ export type PumpToken = {
   website: string | null;
 };
 
+/** What the paper profile with the best record would do with a pool (engine/app/service.py _best_decision). */
+export type BestDecision = {
+  key: string;
+  label: string;
+  enter: boolean;
+  reason: string | null;
+  /** Fee the pool earns now over what the profile's gate asks for: 1 and above opens. */
+  coverage: number | null;
+  /** The profile's own return so far, so the page can say why it is the one being followed. */
+  return_pct: number;
+};
+
 export type PoolRow = {
+  best?: BestDecision | null;
   address: string;
   name: string;
   base_symbol: string | null;
@@ -212,7 +225,7 @@ export type SortKey = keyof Pick<
   | "change_pct_1h"
   | "realized_vol_pct_1h"
   | "pool_age_hours"
->;
+> | "coverage";
 
 export type TagStats = { count: number; holding_pct: number; netflow_usd: number };
 

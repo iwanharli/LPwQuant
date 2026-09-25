@@ -51,8 +51,8 @@ export default function Dashboard() {
     return baseFiltered
       .filter((p) => tierFilter === "all" || rowTier(p) === tierFilter)
       .sort((a, b) => {
-        const av = a[sortKey];
-        const bv = b[sortKey];
+        const av = sortKey === "coverage" ? (a.best?.enter ? 99 : a.best?.coverage) : a[sortKey];
+        const bv = sortKey === "coverage" ? (b.best?.enter ? 99 : b.best?.coverage) : b[sortKey];
         if (av == null) return 1;
         if (bv == null) return -1;
         return (av - bv) * dir;
