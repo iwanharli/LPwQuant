@@ -7,6 +7,7 @@ import { config } from "./config";
 import { pg } from "./db";
 import { createFailoverFetch } from "./rpc";
 import { costsOf } from "./tx-costs";
+import { MAX_TX_VERSION } from "./tx-version";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -20,7 +21,7 @@ async function main(): Promise<void> {
     let tx = null;
     for (let attempt = 0; attempt < 4 && !tx; attempt++) {
       try {
-        tx = await conn.getParsedTransaction(signature, { maxSupportedTransactionVersion: 0 });
+        tx = await conn.getParsedTransaction(signature, { maxSupportedTransactionVersion: MAX_TX_VERSION });
         if (!tx) break;
       } catch {
         await sleep(1000 * 2 ** attempt);

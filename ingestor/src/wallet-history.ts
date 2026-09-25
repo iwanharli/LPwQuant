@@ -11,6 +11,7 @@ import { config } from "./config";
 import { pg } from "./db";
 import { apiFetch, createFailoverFetch } from "./rpc";
 import { costsOf, type TxCosts } from "./tx-costs";
+import { MAX_TX_VERSION } from "./tx-version";
 
 const EVERY_MS = 5 * 60_000;
 const FIRST_SYNC_LIMIT = 150; // how far back a newly watched wallet is read
@@ -249,7 +250,7 @@ export class WalletHistory {
     const records: { sig: string; ts: number; ok: boolean; kind: string; ix: string[]; progs: string[]; ch: Changes; cost: TxCosts }[] = [];
     for (const s of sigs) {
       const tx = await withRetry(() =>
-        this.connection.getParsedTransaction(s.signature, { maxSupportedTransactionVersion: 0 }),
+        this.connection.getParsedTransaction(s.signature, { maxSupportedTransactionVersion: MAX_TX_VERSION }),
       );
       await sleep(GAP_MS);
       if (!tx) continue;
