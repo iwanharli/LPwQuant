@@ -198,6 +198,8 @@ async def get_recent_positions(wallet: str, limit: int = Query(20, ge=1, le=500)
     """Closed LP positions newest first, as one stream: the flows in and out, the range, and how it behaved."""
     _wallet_or_400(wallet)
     positions = await portfolio.recent_closed_positions(engine.db, wallet, limit, before)
+    if any(p["net_usd"] is None for p in positions):
+        netpnl.refresh_soon(engine.db, wallet)  # new closes: fill their net in now, not at the next round
     await portfolio.position_flows(engine.db, positions)
     for pool in {p["pool"] for p in positions}:
         await portfolio.range_behaviour(engine.db, pool, [p for p in positions if p["pool"] == pool])

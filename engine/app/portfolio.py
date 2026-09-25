@@ -701,6 +701,27 @@ async def position_flows(db, positions: list[dict[str, Any]]) -> None:
         p["amount_y_out"] = float(remove_row["amount_y"]) if remove_row else None
 
 
+_candle_cache: dict[tuple[str, int, int], list[tuple[int, float]]] = {}
+
+
+async def _fetched_candles(pool: str, start_ms: int, end_ms: int) -> list[tuple[int, float]]:
+    key = (pool, start_ms // 300_000, end_ms // 300_000)
+    if key in _candle_cache:
+        return _candle_cache[key]
+    from . import charts  # local: charts imports portfolio types
+
+    try:
+        rows = await asyncio.to_thread(charts._fetch_window, pool, "5m", start_ms // 1000 - 300, end_ms // 1000 + 300)
+    except Exception as err:
+        log.warning("candles for %s failed: %s", pool[:6], err)
+        rows = []
+    out = [(int(r["ts"]), float(r["close"])) for r in rows]
+    if len(_candle_cache) > 500:
+        _candle_cache.clear()
+    _candle_cache[key] = out
+    return out
+
+
 async def range_behaviour(db, pool: str, positions: list[dict[str, Any]]) -> None:
     """Fill in how each position actually behaved inside its range, from the 30m candles this app stores.
 
@@ -722,6 +743,12 @@ async def range_behaviour(db, pool: str, positions: list[dict[str, Any]]) -> Non
         pool, min(a for a, _ in spans), max(b for _, b in spans),
     )
     candles = [(r["ts"], float(r["close"])) for r in rows]
+    # Pools the ingestor does not track have no stored candles -- often exactly the new pools a position was just
+    # opened in. Fetch the window from Meteora once (5m candles, cached) so recent positions still get their range
+    # story. Only for the last week, to keep this to a handful of calls.
+    week_ago = (time.time() - 7 * 86_400) * 1000
+    if not candles and max(b for _, b in spans) >= week_ago:
+        candles = await _fetched_candles(pool, min(a for a, _ in spans), max(b for _, b in spans))
     for p in positions:
         opened, closed = p.get("opened_at"), p.get("closed_at")
         lo, hi = p.get("min_price") or 0.0, p.get("max_price") or 0.0

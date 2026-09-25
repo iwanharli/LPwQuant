@@ -87,7 +87,7 @@ function Stat({ label, value, hint, cls = "text-ink" }: { label: string; value: 
 
 /** Every tile is the same height whatever it holds: one line of label, one of value, one of hint. Cards sit side
  * by side in a grid, so a tile that wraps would push its neighbours' rows out of line. */
-function Tile({ label, value, hint, cls }: { label: string; value: string; hint?: string; cls?: string }) {
+function Tile({ label, value, hint, cls }: { label: string; value: React.ReactNode; hint?: string; cls?: string }) {
   return (
     <div className="rounded-xl border border-white/[0.07] bg-[#1b222c] px-3 py-2.5 transition-colors hover:border-white/[0.14] hover:bg-[#222a36]">
       <div className="truncate text-[10px] font-medium uppercase tracking-[0.08em] text-ink-3">{label}</div>
@@ -169,9 +169,14 @@ function PositionCard({ p, pool, cost, net }: { p: ClosedPosition; pool?: string
         <div className="min-w-0">
           <div className="text-[10px] font-medium uppercase tracking-[0.12em] text-ink-3">Hasil bersih</div>
           <div className="mt-1 flex items-baseline gap-2">
-            <span className={`text-[26px] font-semibold leading-none tracking-tight tabular-nums ${net == null ? "text-ink-3" : tone(net)}`}>
-              {net == null ? "…" : signed(net)}
-            </span>
+            {net == null ? (
+              <span className="flex items-center gap-2" title="Hasil bersih posisi ini sedang dihitung">
+                <span className="h-[26px] w-28 animate-pulse rounded-md bg-white/[0.08]" />
+                <span className="text-[11px] text-ink-3">menghitung…</span>
+              </span>
+            ) : (
+              <span className={`text-[26px] font-semibold leading-none tracking-tight tabular-nums ${tone(net)}`}>{signed(net)}</span>
+            )}
             {pct != null && (
               <span
                 className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold tabular-nums ${
@@ -200,7 +205,7 @@ function PositionCard({ p, pool, cost, net }: { p: ClosedPosition; pool?: string
         <Tile label="Fee terkumpul" value={usd.format(p.fees_usd)} cls="text-emerald-300" hint="menurut Meteora" />
         <Tile
           label="Biaya"
-          value={cost == null ? "…" : usd.format(cost)}
+          value={cost == null ? <span className="inline-block h-[18px] w-16 animate-pulse rounded bg-white/[0.08] align-middle" /> : usd.format(cost)}
           cls="text-amber-300"
           hint="jaringan + fee swap Meteora"
         />
@@ -331,9 +336,11 @@ function useClosedPositions(wallet: string) {
   const [cursor, setCursor] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
+  const [recheck, setRecheck] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
+    let again: ReturnType<typeof setTimeout> | undefined;
     const url = `${ENGINE_URL}/api/portfolio/positions/recent?wallet=${wallet}&limit=${PAGE_SIZE}${cursor ? `&before=${cursor}` : ""}`;
     fetch(url)
       .then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
@@ -343,6 +350,9 @@ function useClosedPositions(wallet: string) {
         setPages((old) => (cursor ? [...old, page] : [page]));
         setError(false);
         setLoading(false);
+        // A just-closed position arrives before its accounting; the server starts that at once, so look again
+        // shortly instead of showing "menghitung" until the next full refresh.
+        if (!cursor && body.positions.some((p) => p.net_usd == null)) again = setTimeout(() => setRecheck((n) => n + 1), 5000);
       })
       .catch(() => {
         if (cancelled) return;
@@ -351,8 +361,9 @@ function useClosedPositions(wallet: string) {
       });
     return () => {
       cancelled = true;
+      if (again) clearTimeout(again);
     };
-  }, [wallet, cursor]);
+  }, [wallet, cursor, recheck]);
 
   const positions = pages.flatMap((p) => p.positions);
   return {

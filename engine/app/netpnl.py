@@ -171,7 +171,17 @@ async def _data_version(db, wallet: str) -> tuple:
     return (r["n"], r["last"], r["costed"], r["open"])
 
 
-NET_REFRESH_S = 600
+NET_REFRESH_S = 120  # a full recompute takes ~3s now, so two minutes costs little and keeps new closes fresh
+_soon: dict[str, asyncio.Task] = {}
+
+
+def refresh_soon(db, wallet: str) -> None:
+    """Recompute one wallet now, in the background, at most one run at a time. Called when a page finds positions
+    the accounting has not reached yet, so they fill in within seconds instead of at the next scheduled round."""
+    task = _soon.get(wallet)
+    if task and not task.done():
+        return
+    _soon[wallet] = asyncio.create_task(compute(db, wallet, fresh=True))
 
 
 async def refresh_loop(db) -> None:
