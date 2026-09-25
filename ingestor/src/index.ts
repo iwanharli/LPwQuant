@@ -102,14 +102,27 @@ async function main(): Promise<void> {
   let polling = false;
   const newPools = new NewPoolFeed((added) => {
     security.enqueueFirst(added);
-    if (polling || stopped) return;
+    pollNow();
+  });
+
+  // Asked for while a cycle is running: run again as soon as it ends instead of waiting the full interval.
+  let rerun = false;
+  const pollNow = () => {
+    if (stopped) return;
+    if (polling) {
+      rerun = true;
+      return;
+    }
     if (timer) clearTimeout(timer);
     void poll();
-  });
+  };
+  // A new pool's alert waits on its safety check: once that lands, publish at once rather than on the next cycle.
+  security.onPriorityDone = pollNow;
 
   const poll = async () => {
     if (polling) return;
     polling = true;
+    rerun = false;
     const started = Date.now();
     try {
       await withTimeout(pollOnce(started), config.pollTimeoutMs, "poll");
@@ -117,7 +130,7 @@ async function main(): Promise<void> {
       console.error("[poller] failed", err);
     }
     polling = false;
-    if (!stopped) timer = setTimeout(poll, config.pollIntervalMs);
+    if (!stopped) timer = setTimeout(poll, rerun ? 0 : config.pollIntervalMs);
   };
 
   // One cycle. Everything it awaits has its own timeout, but a socket that never answers still hangs the whole

@@ -168,6 +168,9 @@ export class SecurityFetcher {
   private readonly queued = new Set<string>();
   private running = false;
   private stopped = false;
+  private readonly priority = new Set<string>();
+  /** Called after a mint queued with enqueueFirst (a brand-new pool) has been checked. */
+  onPriorityDone: (() => void) | null = null;
 
   get known(): number {
     return this.cache.size;
@@ -212,6 +215,7 @@ export class SecurityFetcher {
       // Index 1, not 0: the drain loop is working on queue[0] and removes it when done.
       if (at !== 0) this.queue.splice(this.running && this.queue.length ? 1 : 0, 0, mint);
       this.queued.add(mint);
+      this.priority.add(mint);
     }
     if (!this.running) void this.drain();
   }
@@ -236,13 +240,14 @@ export class SecurityFetcher {
         // The transfer graph is a second call; without it the report still saves, with the cluster unknown.
         let graph: InsiderGraph | null = null;
         try {
-          await sleep(REQUEST_GAP_MS);
+          if (!this.priority.has(mint)) await sleep(REQUEST_GAP_MS); // a new pool's alert is waiting: no pause
           const g = await apiFetch("rugcheck", "graph", `${REPORT_URL}/${mint}/insiders/graph`, { signal: AbortSignal.timeout(30_000) });
           if (g.ok) graph = ((await g.json()) as InsiderGraph | null) ?? [];
         } catch {
           graph = null;
         }
         await this.save(normalizeReport(mint, report, Date.now(), graph));
+        if (this.priority.delete(mint)) this.onPriorityDone?.();
       } catch (err) {
         // Dropped from the queue; the next poll re-enqueues it because it is still missing/stale.
         console.error(`[security] ${mint} failed: ${err instanceof Error ? err.message : err}`);
