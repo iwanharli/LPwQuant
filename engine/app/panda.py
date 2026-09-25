@@ -350,6 +350,9 @@ async def report(db, rows: dict[str, dict[str, Any]] | None = None) -> dict[str,
             "last_tvl": r["last_tvl"], "costs_usd": r["costs_usd"], "rent_usd": r["rent_usd"],
             "pnl_usd": r["pnl_usd"] if r["status"] == "closed" else quote_usd + token_usd + r["fees_usd"] - r["size_usd"],
             "opened_at": ms(r["opened_at"]), "closed_at": ms(r["closed_at"]),
+            "mint": r["mint"], "entry_price": r["entry_price"], "last_price": r["last_price"],
+            "range_low_pct": r["range_low_pct"], "bins": r["bins"], "sol_usd": r["sol_usd"],
+            "checked_at": ms(r["checked_at"]),
         })
     return {
         "params": {

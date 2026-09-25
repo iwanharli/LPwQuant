@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { ENGINE_URL, fmtDateTime, fmtNum, usd, usdCompact } from "../lib/format";
 import { useUrlState } from "../lib/url-state";
 import PageHeader from "./page-header";
@@ -27,6 +27,13 @@ type Run = {
   pnl_usd: number;
   opened_at: number;
   closed_at: number | null;
+  mint: string;
+  entry_price: number;
+  last_price: number | null;
+  range_low_pct: number;
+  bins: number;
+  sol_usd: number;
+  checked_at: number | null;
 };
 type Report = {
   params: {
@@ -167,7 +174,58 @@ function Funnel({ funnel }: { funnel: Record<string, number> }) {
   );
 }
 
+function price(n: number | null): string {
+  if (n == null || !Number.isFinite(n)) return "–";
+  return n >= 1 ? n.toPrecision(6) : n.toPrecision(4);
+}
+
+function duration(from: number, to: number): string {
+  const min = Math.max(0, Math.round((to - from) / 60_000));
+  return min < 60 ? `${min} mnt` : `${Math.floor(min / 60)} j ${min % 60} mnt`;
+}
+
+function Detail({ x }: { x: Run }) {
+  const low = x.entry_price * (1 + x.range_low_pct / 100);
+  const end = x.closed_at ?? x.checked_at ?? x.opened_at;
+  const cost = (x.costs_usd ?? 0) + (x.rent_usd ?? 0);
+  const items: [string, string, string?][] = [
+    ["Harga masuk", price(x.entry_price)],
+    [x.status === "open" ? "Harga terakhir" : "Harga keluar", price(x.last_price), tone(x.price_change_pct)],
+    ["Range", `${price(low)} – ${price(x.entry_price)}`, "text-ink-2"],
+    ["Lebar range", `${fmtNum(x.range_low_pct, 0)}% · ${x.bins} bin`],
+    ["Dibuka", fmtDateTime(x.opened_at)],
+    [x.status === "open" ? "Dicek terakhir" : "Ditutup", fmtDateTime(end)],
+    ["Lama dipegang", duration(x.opened_at, end)],
+    ["Turun terdalam", `${fmtNum(x.deepest_drop_pct, 1)}%`],
+    ["Fee didapat", `+${usd.format(x.fees_usd)}`, "text-emerald-300"],
+    ["Nilai token", usd.format(x.token_value_usd)],
+    ["Biaya swap", x.costs_usd == null ? "–" : usd.format(x.costs_usd), "text-amber-300/90"],
+    ["Rent bin (hangus)", x.rent_usd == null ? "–" : usd.format(x.rent_usd), "text-amber-300/90"],
+    ["Total biaya", x.status === "closed" ? usd.format(cost) : "saat ditutup", "text-amber-300/90"],
+    ["Harga SOL saat masuk", usd.format(x.sol_usd)],
+  ];
+  return (
+    <div className="grid gap-4 bg-white/[0.015] px-4 py-4 md:grid-cols-[1fr_auto]">
+      <dl className="grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-3 lg:grid-cols-4">
+        {items.map(([k, v, cls]) => (
+          <div key={k}>
+            <dt className="text-[11px] uppercase tracking-[0.08em] text-ink-3">{k}</dt>
+            <dd className={`mt-0.5 font-medium ${cls ?? "text-ink"}`}>{v}</dd>
+          </div>
+        ))}
+      </dl>
+      <div className="flex flex-col gap-2 text-xs md:items-end">
+        <Link href={`/pool/${x.pool}`} className="btn-accent rounded-full px-3 py-1.5 font-medium">Buka grafik pool</Link>
+        <a href={`https://app.meteora.ag/dlmm/${x.pool}`} target="_blank" rel="noreferrer" className="text-ink-3 hover:text-accent">Meteora ↗</a>
+        {x.mint && <a href={`https://gmgn.ai/sol/token/${x.mint}`} target="_blank" rel="noreferrer" className="text-ink-3 hover:text-accent">GMGN ↗</a>}
+        <span className="font-mono text-[11px] text-ink-3">{x.pool.slice(0, 6)}…{x.pool.slice(-4)}</span>
+      </div>
+    </div>
+  );
+}
+
 function RunTable({ runs, empty }: { runs: Run[]; empty: string }) {
+  const [open, setOpen] = useState<number | null>(null);
   if (runs.length === 0) return <p className="rounded-2xl border border-white/[0.06] bg-panel px-4 py-10 text-center text-sm text-ink-3">{empty}</p>;
   return (
     <section className="overflow-hidden rounded-2xl border border-white/[0.06] bg-panel">
@@ -191,11 +249,16 @@ function RunTable({ runs, empty }: { runs: Run[]; empty: string }) {
               const st = REASON[x.status === "open" ? "open" : x.exit_reason ?? "time"] ?? REASON.time;
               const cost = (x.costs_usd ?? 0) + (x.rent_usd ?? 0);
               return (
-                <tr key={x.id} className="border-b border-line/60 last:border-b-0">
+                <Fragment key={x.id}>
+                <tr
+                  onClick={() => setOpen(open === x.id ? null : x.id)}
+                  className={`cursor-pointer border-b border-line/60 hover:bg-white/[0.02] ${open === x.id ? "bg-white/[0.02]" : ""}`}
+                >
                   <td className="px-4 py-2.5">
-                    <Link href={`/pool/${x.pool}`} className="font-medium text-ink hover:text-accent">
+                    <span className="font-medium text-ink">
+                      <span className="mr-1.5 inline-block w-3 text-ink-3">{open === x.id ? "▾" : "▸"}</span>
                       {x.name.replace("-", "/")}
-                    </Link>
+                    </span>
                     <div className="text-[11px] text-ink-3">
                       modal {usd.format(x.size_usd)} · TVL {x.last_tvl == null ? "–" : usdCompact.format(x.last_tvl)}
                     </div>
@@ -220,6 +283,12 @@ function RunTable({ runs, empty }: { runs: Run[]; empty: string }) {
                   </td>
                   <td className="px-4 py-2.5 text-right text-[11px] text-ink-3">{fmtDateTime(x.closed_at ?? x.opened_at)}</td>
                 </tr>
+                {open === x.id && (
+                  <tr className="border-b border-line/60">
+                    <td colSpan={9} className="p-0"><Detail x={x} /></td>
+                  </tr>
+                )}
+                </Fragment>
               );
             })}
           </tbody>
