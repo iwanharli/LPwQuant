@@ -291,6 +291,7 @@ type RecentPosition = ClosedPosition & {
 /** Closed positions as one stream, newest first. Grouping by pool hid the thing that matters most -- what you did
  * last -- behind a click, and most pools here hold a single position anyway. */
 const PAGE_SIZE = 60;
+const CARDS_PER_PAGE = 9;
 
 /** The shape of the page while the first rows are still coming, so the layout does not jump when they land. */
 function HistorySkeleton() {
@@ -403,6 +404,9 @@ export function ClosedPositions({ wallet }: { wallet: string }) {
   const [sort, setSort] = useState<"recent" | "best" | "worst" | "size">("recent");
   const [query, setQuery] = useState("");
   const { positions, error, loading, done, loadMore } = useClosedPositions(wallet);
+  // Page number belongs to one filter combination: changing any filter goes back to page 1.
+  const filterKey = `${period}|${result}|${exit}|${sort}|${query}`;
+  const [pager, setPager] = useState({ key: "", n: 0 });
 
   if (error && positions.length === 0)
     return <p className="rounded-2xl border border-white/[0.06] bg-panel px-4 py-8 text-sm text-ink-3">Gagal memuat riwayat posisi.</p>;
@@ -424,6 +428,14 @@ export function ClosedPositions({ wallet }: { wallet: string }) {
             ? (b.deposited_usd ?? b.deposit_usd) - (a.deposited_usd ?? a.deposit_usd)
             : (b.closed_at ?? 0) - (a.closed_at ?? 0),
     );
+
+  const pages = Math.max(1, Math.ceil(shown.length / CARDS_PER_PAGE));
+  const pageNo = Math.min(pager.key === filterKey ? pager.n : 0, pages - 1);
+  const pageItems = shown.slice(pageNo * CARDS_PER_PAGE, (pageNo + 1) * CARDS_PER_PAGE);
+  const goTo = (n: number) => {
+    setPager({ key: filterKey, n });
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
 
   const nets = all.map((p) => p.net_usd).filter((n): n is number => n != null);
   const pending = all.length - nets.length; // positions the cost accounting has not reached yet
@@ -520,7 +532,7 @@ export function ClosedPositions({ wallet }: { wallet: string }) {
       </div>
 
       <div className="grid gap-3 lg:grid-cols-2 2xl:grid-cols-3">
-        {shown.map((p) => (
+        {pageItems.map((p) => (
           <PositionCard key={p.address} p={p} pool={p.name} cost={p.cost_usd} net={p.net_usd} />
         ))}
         {shown.length === 0 && (
@@ -541,7 +553,45 @@ export function ClosedPositions({ wallet }: { wallet: string }) {
         )}
       </div>
 
-      {!done && (
+      {pages > 1 && (
+        <nav className="flex items-center justify-center gap-1.5 text-xs" aria-label="Halaman">
+          <button
+            type="button"
+            onClick={() => goTo(pageNo - 1)}
+            disabled={pageNo === 0}
+            className="h-8 rounded-full border border-white/[0.08] px-3 text-ink-2 hover:text-ink disabled:opacity-40"
+          >
+            ‹ Sebelumnya
+          </button>
+          {Array.from({ length: pages }, (_, i) => i)
+            .filter((i) => i === 0 || i === pages - 1 || Math.abs(i - pageNo) <= 1)
+            .map((i, j, arr) => (
+              <span key={i} className="flex items-center gap-1.5">
+                {j > 0 && i - arr[j - 1] > 1 && <span className="text-ink-3">…</span>}
+                <button
+                  type="button"
+                  onClick={() => goTo(i)}
+                  aria-current={i === pageNo ? "page" : undefined}
+                  className={`h-8 min-w-8 rounded-full px-2.5 tabular-nums ${
+                    i === pageNo ? "btn-accent font-semibold" : "border border-white/[0.08] text-ink-2 hover:text-ink"
+                  }`}
+                >
+                  {i + 1}
+                </button>
+              </span>
+            ))}
+          <button
+            type="button"
+            onClick={() => goTo(pageNo + 1)}
+            disabled={pageNo >= pages - 1}
+            className="h-8 rounded-full border border-white/[0.08] px-3 text-ink-2 hover:text-ink disabled:opacity-40"
+          >
+            Berikutnya ›
+          </button>
+        </nav>
+      )}
+
+      {!done && pageNo === pages - 1 && (
         <button
           type="button"
           onClick={loadMore}
