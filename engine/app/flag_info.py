@@ -28,6 +28,10 @@ FLAGS: dict[str, Flag] = {
     "rugged": Flag("Rugged", "RugCheck menandai token ini sudah rug.", "critical"),
     "mint_authority": Flag("Mint aktif", "Mint authority masih aktif: supply bisa dicetak lagi kapan saja.", "critical"),
     "freeze_authority": Flag("Freeze aktif", "Freeze authority aktif: token di wallet kamu bisa dibekukan.", "critical"),
+    "cluster_10": Flag(
+        "Kelompok ≥10%", "Wallet yang saling transfer token ini memegang ≥10% supply: bisa jual serentak.", "serious"
+    ),
+    "cluster_5": Flag("Kelompok ≥5%", "Wallet yang saling transfer token ini memegang 5–10% supply.", "warning"),
     "transfer_fee": Flag(
         "Pajak transfer",
         "Token Token-2022 dengan pajak transfer ≥1%: dipotong setiap token masuk/keluar posisi, klaim fee, dan swap.",

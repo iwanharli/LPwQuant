@@ -315,6 +315,13 @@ def score_pool(
             flags.append("rugged")
         if has_mint and not issuer:
             penalize("mint_authority", 15)
+        # Wallets linked by transfers of this token, as one holder. A warning only for now: whether it predicts a
+        # bad LP outcome is being measured on the paper positions (the security snapshot at entry keeps it).
+        cluster = security.get("cluster_pct")
+        if cluster is not None and cluster >= 10:
+            penalize("cluster_10", 8)
+        elif cluster is not None and cluster >= 5:
+            penalize("cluster_5", 3)
         fee_pct = security.get("transfer_fee_pct") or 0.0
         if fee_pct >= TRANSFER_FEE_RISKY_PCT:
             penalize("transfer_fee", 20)

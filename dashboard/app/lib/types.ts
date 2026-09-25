@@ -102,6 +102,8 @@ export type Security = {
   lp_locked_pct: number | null;
   transfer_fee_pct?: number | null;
   transfer_fee_mutable?: boolean;
+  cluster_pct?: number | null;
+  cluster_size?: number | null;
   danger_count: number;
   warn_count: number;
   fetched_at: number;

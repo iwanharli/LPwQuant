@@ -33,6 +33,10 @@ export interface TokenSecurity {
   transfer_fee_pct: number | null;
   /** Someone can still change the transfer fee (a fee config authority is set). */
   transfer_fee_mutable: boolean;
+  /** Largest group of wallets linked by transfers of this token (RugCheck insider graph): % of supply it holds,
+   * and how many wallets it spans. Null when the graph could not be read. */
+  cluster_pct: number | null;
+  cluster_size: number | null;
   danger_count: number;
   warn_count: number;
   risks: { name: string; level: string; description?: string }[];
@@ -47,6 +51,7 @@ interface RugcheckReport {
   graphInsidersDetected?: number;
   risks?: { name: string; level: string; description?: string }[] | null;
   knownAccounts?: Record<string, { name: string; type: string }> | null;
+  token?: { supply?: number } | null;
   topHolders?: { address?: string; owner?: string; pct?: number }[] | null;
   markets?: { lp?: { lpLockedPct?: number } | null }[] | null;
   token_extensions?: {
@@ -56,6 +61,49 @@ interface RugcheckReport {
       olderTransferFee?: { transferFeeBasisPoints?: number } | null;
     } | null;
   } | string | null;
+}
+
+type InsiderGraph = { nodes?: { id: string; holdings?: number }[]; links?: { source: string; target: string }[] }[];
+
+/** Union the graph's linked wallets and return the group holding the most supply. Pools and lockers are skipped. */
+export function largestCluster(graph: InsiderGraph, supply: number, skip: Set<string>): { pct: number; size: number } {
+  const parent = new Map<string, string>();
+  const holdings = new Map<string, number>();
+  const find = (x: string): string => {
+    let r = x;
+    while (parent.get(r) !== r) r = parent.get(r)!;
+    parent.set(x, r);
+    return r;
+  };
+  const add = (id: string) => {
+    if (!parent.has(id)) parent.set(id, id);
+  };
+  for (const net of graph) {
+    for (const n of net.nodes ?? []) {
+      add(n.id);
+      holdings.set(n.id, Math.max(holdings.get(n.id) ?? 0, n.holdings ?? 0));
+    }
+    for (const l of net.links ?? []) {
+      add(l.source);
+      add(l.target);
+      const a = find(l.source);
+      const b = find(l.target);
+      if (a !== b) parent.set(a, b);
+    }
+  }
+  const groups = new Map<string, { held: number; size: number }>();
+  for (const id of parent.keys()) {
+    const g = groups.get(find(id)) ?? { held: 0, size: 0 };
+    g.size += 1;
+    if (!skip.has(id)) g.held += holdings.get(id) ?? 0;
+    groups.set(find(id), g);
+  }
+  let best = { pct: 0, size: 0 };
+  for (const g of groups.values()) {
+    const pct = supply > 0 ? (g.held / supply) * 100 : 0;
+    if (g.size >= 2 && pct > best.pct) best = { pct, size: g.size };
+  }
+  return best;
 }
 
 const NO_AUTHORITY = new Set(["", "11111111111111111111111111111111"]);
@@ -76,7 +124,7 @@ export function baseMint(pool: PoolSnapshot): string {
     : pool.token_x.mint;
 }
 
-export function normalizeReport(mint: string, report: RugcheckReport, fetchedAt: number): TokenSecurity {
+export function normalizeReport(mint: string, report: RugcheckReport, fetchedAt: number, graph?: InsiderGraph | null): TokenSecurity {
   const known = report.knownAccounts ?? {};
   const isPoolOrLocker = (address?: string) =>
     !!address && (known[address]?.type === "AMM" || known[address]?.type === "LOCKER");
@@ -86,6 +134,8 @@ export function normalizeReport(mint: string, report: RugcheckReport, fetchedAt:
     .map((m) => m.lp?.lpLockedPct)
     .filter((v): v is number => typeof v === "number");
   const fee = transferFee(report);
+  const pools = new Set(Object.entries(known).filter(([, k]) => k.type === "AMM" || k.type === "LOCKER").map(([a]) => a));
+  const cluster = graph ? largestCluster(graph, Number(report.token?.supply ?? 0), pools) : null;
 
   return {
     mint,
@@ -100,6 +150,8 @@ export function normalizeReport(mint: string, report: RugcheckReport, fetchedAt:
     lp_locked_pct: lpLocked.length ? Math.max(...lpLocked) : null,
     transfer_fee_pct: fee.pct,
     transfer_fee_mutable: fee.mutable,
+    cluster_pct: cluster ? cluster.pct : null,
+    cluster_size: cluster ? cluster.size : null,
     danger_count: risks.filter((r) => r.level === "danger").length,
     warn_count: risks.filter((r) => r.level === "warn").length,
     risks,
@@ -179,7 +231,17 @@ export class SecurityFetcher {
           continue;
         }
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        await this.save(normalizeReport(mint, (await res.json()) as RugcheckReport, Date.now()));
+        const report = (await res.json()) as RugcheckReport;
+        // The transfer graph is a second call; without it the report still saves, with the cluster unknown.
+        let graph: InsiderGraph | null = null;
+        try {
+          await sleep(REQUEST_GAP_MS);
+          const g = await apiFetch("rugcheck", "graph", `${REPORT_URL}/${mint}/insiders/graph`, { signal: AbortSignal.timeout(30_000) });
+          if (g.ok) graph = ((await g.json()) as InsiderGraph | null) ?? [];
+        } catch {
+          graph = null;
+        }
+        await this.save(normalizeReport(mint, report, Date.now(), graph));
       } catch (err) {
         // Dropped from the queue; the next poll re-enqueues it because it is still missing/stale.
         console.error(`[security] ${mint} failed: ${err instanceof Error ? err.message : err}`);

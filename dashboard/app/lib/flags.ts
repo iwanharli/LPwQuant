@@ -20,6 +20,12 @@ const FLAG_META: Record<string, FlagMeta> = {
   rugged: { label: "Rugged", title: "RugCheck menandai token ini sudah rug", severity: "critical" },
   mint_authority: { label: "Mint aktif", title: "Mint authority aktif: supply bisa dicetak lagi", severity: "critical" },
   freeze_authority: { label: "Freeze aktif", title: "Freeze authority aktif: token bisa dibekukan", severity: "critical" },
+  cluster_10: {
+    label: "Kelompok ≥10%",
+    title: "Wallet yang saling transfer token ini memegang ≥10% supply: bisa jual serentak. Lihat peta pemegang",
+    severity: "serious",
+  },
+  cluster_5: { label: "Kelompok ≥5%", title: "Wallet yang saling transfer token ini memegang 5–10% supply", severity: "warning" },
   transfer_fee: {
     label: "Pajak transfer",
     title: "Token memotong ≥1% setiap transfer: masuk/keluar posisi, klaim fee, dan swap semuanya kena",
