@@ -449,6 +449,7 @@ class PaperTrader:
         self.peak_equity_usd = cfg.start_equity_usd
         self.entries_paused = False
         self.realized_usd = 0.0
+        self.closed_count = 0
         self.started_at: int | None = None
 
     async def load(self) -> None:
@@ -493,6 +494,9 @@ class PaperTrader:
             self.realized_usd = float(await conn.fetchval(
                 "select coalesce(sum(capital_usd * pnl_pct / 100), 0) from paper_positions where status = 'closed' and profile = $1",
                 self.cfg.profile,
+            ))
+            self.closed_count = int(await conn.fetchval(
+                "select count(*) from paper_positions where status = 'closed' and profile = $1", self.cfg.profile,
             ))
             self.started_at = _ms(await conn.fetchval("select min(entry_ts) from paper_positions where profile = $1", self.cfg.profile))
             self.peak_equity_usd = max(
@@ -545,6 +549,7 @@ class PaperTrader:
         self.last_closed.clear()
         self.last_closed_mints.clear()
         self.realized_usd = 0.0
+        self.closed_count = 0
         self.peak_equity_usd = self.cfg.start_equity_usd
         self.entries_paused = False
         self.started_at = None
@@ -643,6 +648,7 @@ class PaperTrader:
             pos.cost_exit_y, pos.cost_pct(), pos.gross_pnl_pct(),
         )
         self.realized_usd += pos.capital_usd * pnl / 100
+        self.closed_count += 1
         self.last_closed[pos.address] = now_ms
         if pos.base_mint:
             self.last_closed_mints[pos.base_mint] = now_ms

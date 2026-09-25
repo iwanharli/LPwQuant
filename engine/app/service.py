@@ -15,6 +15,7 @@ from . import config
 from .alerts import Alerter, serve_commands
 from .paper_lo import PaperLimitOrders
 from . import netpnl
+from .charts import profile_decision
 from .panda import PandaPaper
 from .paper_pool import PaperPoolCreator
 from .portfolio import snapshot_loop as portfolio_snapshot_loop
@@ -27,6 +28,8 @@ from .costs import fixed_cost_usd, round_trip_cost_pct
 from .profiles import PROFILES, paper_config
 from .recommend import PlanParams, apply_cost_gate, bins_below, bins_for_width, plan_position, risky_range
 from .scoring import base_token, effective_tvl, expected_fee_pct_day, fee_tvl_pct_sane, score_pool
+
+BEST_PROFILE_MIN_CLOSED = 15
 
 log = logging.getLogger("engine")
 
@@ -503,7 +506,37 @@ class Engine:
             },
             **scored,
         }
+        row["best"] = self._best_decision(row)
         return {k: _clean(v) for k, v in row.items()}
+
+    def _best_profile(self):
+        """The paper profile that is actually making money, so the screener recommends by rules with a track record
+        rather than by the default ones. Needs MIN_CLOSED closed positions to count; ties go to the larger sample."""
+        best, best_key = None, None
+        for trader in self.papers.values():
+            closed = trader.closed_count
+            if closed < BEST_PROFILE_MIN_CLOSED:
+                continue
+            ret = trader.equity_usd() / trader.cfg.start_equity_usd - 1 if trader.cfg.start_equity_usd else 0.0
+            key = (ret, closed)
+            if best_key is None or key > best_key:
+                best, best_key = trader, key
+        return best
+
+    def _best_decision(self, row: dict[str, Any]) -> dict[str, Any] | None:
+        """What the best profile would do with this pool, and how far its fee gate is from opening. `coverage` is
+        the share of the fee the gate asks for that the pool earns now: 1.0 and up opens, 0.6 means "nearly"."""
+        trader = self._best_profile()
+        if trader is None:
+            return None
+        decision = profile_decision(row, trader)
+        plan = row.get("plan_single") if trader.cfg.plan_variant == "single" else row.get("plan_base")
+        coverage = None
+        if plan and plan.get("round_trip_cost_pct") and plan.get("fee_over_min_hold_pct") is not None:
+            ratio = trader.cfg.min_fee_cost_ratio or 1.0
+            need = plan["round_trip_cost_pct"] * ratio
+            coverage = plan["fee_over_min_hold_pct"] / need if need > 0 else None
+        return {**decision, "coverage": coverage, "return_pct": (trader.equity_usd() / trader.cfg.start_equity_usd - 1) * 100}
 
     async def _save_metrics(self, now_ms: int) -> None:
         assert self.db

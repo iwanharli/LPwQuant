@@ -5,6 +5,7 @@ import { binStepPct, fmtAge, fmtPct, fmtPrice, usdCompact } from "../lib/format"
 import { isActivePlan, type ConnectionStatus, type PoolRow, type SortKey } from "../lib/types";
 import { CandleIcon, ExternalLinkIcon } from "./icons";
 import { Delta, FlagChips, PlanBadge, RegimeBadge, ScoreCell, TokenAvatar } from "./ui";
+import PumpWarning from "./pump-warning";
 
 /**
  * Related metrics share a cell (primary value on top, secondary below) so the table fits laptop widths
@@ -178,8 +179,12 @@ export default function PoolTable({
                     <span className="w-5 text-right text-xs tabular-nums text-ink-3">{i + 1}</span>
                     <TokenAvatar symbol={p.base_symbol} />
                     <div className="min-w-0">
-                      <div className="max-w-[11rem] truncate font-medium text-ink" title={p.name}>
-                        {p.name}
+                      <div className="flex items-center gap-1.5">
+                        <span className="max-w-[11rem] truncate font-medium text-ink" title={p.name}>
+                          {p.name}
+                        </span>
+                        {/* Where the choice is made: the trap that cost ACAT and JEANPHIL, flagged on the row itself. */}
+                        <PumpWarning changePct1h={p.change_pct_1h} compact />
                       </div>
                       <div className="flex items-center gap-1.5 whitespace-nowrap text-[11px] text-ink-3">
                         <span>Fee {p.base_fee_pct}%</span>
