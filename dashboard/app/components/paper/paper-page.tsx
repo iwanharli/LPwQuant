@@ -769,8 +769,10 @@ export default function PaperPage({ embedded = false, initialProfile }: { embedd
         )}
         {s?.risk.entries_paused && (
           <p className="flex items-center gap-2 rounded-2xl border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-ink-2 shadow-sm shadow-black/20">
-            <StatusDot severity="warning" /> Posisi baru dihentikan: equity {fmtPct(s.risk.drawdown_pct, 1)} di bawah puncak{" "}
-            {usd.format(s.risk.peak_equity_usd)} (batas {s.risk.max_drawdown_pct}%). Posisi terbuka tetap dikelola.
+            <StatusDot severity="warning" /> Rem aktif: equity turun lebih dari {s.risk.max_drawdown_pct}% dari puncak{" "}
+            {usd.format(s.risk.peak_equity_usd)}, jadi posisi baru dijeda {s.risk.pause_hours ?? 24} jam
+            {s.risk.resume_at ? ` sampai ${fmtDateTime(s.risk.resume_at)} WIB` : ""}. Setelah itu profil jalan lagi dengan puncak baru. Posisi
+            terbuka tetap dikelola.
           </p>
         )}
         {s && !s.enabled && (

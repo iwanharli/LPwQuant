@@ -179,6 +179,15 @@ create table if not exists paper_equity (
 create index if not exists paper_equity_ts_brin on paper_equity using brin (ts);
 alter table paper_equity add column if not exists profile text not null default 'moderat';
 create index if not exists paper_equity_profile_ts on paper_equity (profile, ts);
+-- Drawdown pauses: entries stop for PAUSE_HOURS, then resume with the peak measured from resumed_at on.
+create table if not exists paper_pauses (
+  profile     text not null,
+  paused_at   timestamptz not null,
+  resume_at   timestamptz not null,
+  equity_usd  double precision not null,
+  peak_usd    double precision not null,
+  primary key (profile, paused_at)
+);
 
 -- GMGN insider/dev/smart-money data per token mint: latest value plus history for later backtests.
 create table if not exists token_insights (

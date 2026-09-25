@@ -17,7 +17,7 @@ import logging
 import math
 from collections import Counter
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Iterable
 
 import asyncpg
@@ -96,6 +96,9 @@ class PaperConfig:
     min_reversal_rate: float | None = None
     # Which plan the profile trades: "base" (two-sided, as the engine recommends) or "single" (quote only).
     plan_variant: str = "base"
+
+
+PAUSE_HOURS = 24  # after a drawdown pause, entries resume this much later with a fresh peak
 
 
 def entries_paused(equity_usd: float, peak_equity_usd: float, max_drawdown_pct: float | None) -> bool:
@@ -448,6 +451,7 @@ class PaperTrader:
         self.sol_usd: float | None = None
         self.peak_equity_usd = cfg.start_equity_usd
         self.entries_paused = False
+        self.resume_at: datetime | None = None
         self.realized_usd = 0.0
         self.closed_count = 0
         self.started_at: int | None = None
@@ -499,10 +503,15 @@ class PaperTrader:
                 "select count(*) from paper_positions where status = 'closed' and profile = $1", self.cfg.profile,
             ))
             self.started_at = _ms(await conn.fetchval("select min(entry_ts) from paper_positions where profile = $1", self.cfg.profile))
+            last = await conn.fetchrow(
+                "select resume_at from paper_pauses where profile = $1 order by paused_at desc limit 1", self.cfg.profile)
+            self.resume_at = last["resume_at"] if last else None
+            # The peak counts only from the last resume: a pause resets it, so the profile trades again afterwards.
             self.peak_equity_usd = max(
-                self.cfg.start_equity_usd,
+                self.cfg.start_equity_usd if self.resume_at is None else 0.0,
                 float(await conn.fetchval(
-                    "select coalesce(max(equity_usd), 0) from paper_equity where profile = $1", self.cfg.profile
+                    "select coalesce(max(equity_usd), 0) from paper_equity where profile = $1 and ($2::timestamptz is null or ts >= $2)",
+                    self.cfg.profile, self.resume_at,
                 )),
             )
         log.info("paper[%s]: %d open positions, realized %.2f USD", self.cfg.profile, len(self.open), self.realized_usd)
@@ -523,11 +532,23 @@ class PaperTrader:
                 await self._close(pos, reason, now_ms)
         await self._save_open(now_ms)
         equity = self.equity_usd()
-        self.peak_equity_usd = max(self.peak_equity_usd, equity)
-        paused = entries_paused(equity, self.peak_equity_usd, self.cfg.max_drawdown_pct)
-        if paused and not self.entries_paused:
-            log.warning("paper[%s]: equity %.2f is %.1f%%+ below peak %.2f, pausing new entries",
-                        self.cfg.profile, equity, self.cfg.max_drawdown_pct, self.peak_equity_usd)
+        now = datetime.fromtimestamp(now_ms / 1000, timezone.utc)
+        waiting = self.resume_at is not None and now < self.resume_at
+        if not waiting:
+            if self.entries_paused:  # the pause is over: start again, measuring the peak from here
+                log.info("paper[%s]: pause over, resuming entries at equity %.2f", self.cfg.profile, equity)
+                self.peak_equity_usd = equity
+            self.peak_equity_usd = max(self.peak_equity_usd, equity)
+            if entries_paused(equity, self.peak_equity_usd, self.cfg.max_drawdown_pct):
+                self.resume_at = now + timedelta(hours=PAUSE_HOURS)
+                waiting = True
+                log.warning("paper[%s]: equity %.2f is %.1f%%+ below peak %.2f, pausing new entries for %dh",
+                            self.cfg.profile, equity, self.cfg.max_drawdown_pct, self.peak_equity_usd, PAUSE_HOURS)
+                await self.db.execute(
+                    "insert into paper_pauses (profile, paused_at, resume_at, equity_usd, peak_usd) values ($1,$2,$3,$4,$5)",
+                    self.cfg.profile, now, self.resume_at, equity, self.peak_equity_usd,
+                )
+        paused = waiting
         self.entries_paused = paused
         if not paused:
             for row in pick_entries(
@@ -552,6 +573,8 @@ class PaperTrader:
         self.closed_count = 0
         self.peak_equity_usd = self.cfg.start_equity_usd
         self.entries_paused = False
+        self.resume_at = None
+        await self.db.execute("delete from paper_pauses where profile = $1", self.cfg.profile)
         self.started_at = None
         log.warning("paper[%s]: reset, %d positions deleted, equity back to %.2f", self.cfg.profile, deleted,
                     self.cfg.start_equity_usd)
@@ -753,6 +776,8 @@ class PaperTrader:
                 "drawdown_pct": (1 - (self.cfg.start_equity_usd + self.realized_usd + unrealized)
                                  / self.peak_equity_usd) * 100 if self.peak_equity_usd > 0 else 0.0,
                 "entries_paused": self.entries_paused,
+                "resume_at": _ms(self.resume_at) if self.entries_paused and self.resume_at else None,
+                "pause_hours": PAUSE_HOURS,
             },
             "costs": {
                 "enabled": costs.enabled,

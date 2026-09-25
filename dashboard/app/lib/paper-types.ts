@@ -73,6 +73,8 @@ export type PaperSummary = {
     peak_equity_usd: number;
     drawdown_pct: number;
     entries_paused: boolean;
+    resume_at?: number | null;
+    pause_hours?: number;
   };
   started_at: number | null;
   start_equity_usd: number;
