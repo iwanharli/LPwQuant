@@ -134,6 +134,7 @@ class Engine:
         ]
         self._tasks.append(asyncio.create_task(portfolio_snapshot_loop(self.db), name="portfolio_snapshots"))
         self._tasks.append(asyncio.create_task(netpnl.refresh_loop(self.db), name="netpnl_refresh"))
+        self._tasks.append(asyncio.create_task(netpnl.watch_new_transactions(self.db), name="netpnl_watch"))
         if config.PAPER_ENABLED:
             creator = PaperPoolCreator(self.db, lambda: self.sol_usd or config.SOL_USD_FALLBACK)
             self._tasks.append(asyncio.create_task(creator.run(), name="paper_pool_creator"))

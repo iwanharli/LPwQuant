@@ -184,6 +184,28 @@ def refresh_soon(db, wallet: str) -> None:
     _soon[wallet] = asyncio.create_task(compute(db, wallet, fresh=True))
 
 
+WATCH_S = 15
+
+
+async def watch_new_transactions(db) -> None:
+    """Every 15s, ask the ingestor for the wallets' newest transactions (one cheap RPC call when nothing changed) and
+    recompute at once when any arrived, so a position closed seconds ago reaches the history without waiting for
+    the two-minute round."""
+    while True:
+        await asyncio.sleep(WATCH_S)
+        try:
+            for r in await db.fetch("select address from portfolio_wallets"):
+                url = f"{config.CLAIM_SERVER_URL}/history/sync?{urllib.parse.urlencode({'owner': r['address']})}"
+                body = await asyncio.to_thread(_get_json, url)
+                if (body or {}).get("added"):
+                    log.info("netpnl: %s new transaction(s) for %s..., recomputing", body["added"], r["address"][:4])
+                    refresh_soon(db, r["address"])
+        except asyncio.CancelledError:
+            raise
+        except Exception as err:  # ingestor restarting: try again next round
+            log.debug("transaction watch failed: %s", err)
+
+
 async def refresh_loop(db) -> None:
     """Recompute every registered wallet's net result in the background, so the pages that read the stored numbers
     find them fresh. Without this the first visitor after a restart pays the full ~45s accounting."""

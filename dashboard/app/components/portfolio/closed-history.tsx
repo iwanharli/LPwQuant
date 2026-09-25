@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { useAutoRefresh } from "../../lib/auto-refresh";
 import { ENGINE_URL, TIMEZONE, fmtDateTime, fmtNum, fmtSignedPct, shortAddress, usd } from "../../lib/format";
 import { useUrlState } from "../../lib/url-state";
 import { SkeletonTable, SkeletonTiles } from "../skeleton";
@@ -364,6 +365,23 @@ function useClosedPositions(wallet: string) {
       if (again) clearTimeout(again);
     };
   }, [wallet, cursor, recheck]);
+
+  // New closes: re-read the newest page every 15s while the tab is visible and put it in front of what is loaded.
+  const refreshHead = useCallback(() => {
+    fetch(`${ENGINE_URL}/api/portfolio/positions/recent?wallet=${wallet}&limit=${PAGE_SIZE}`)
+      .then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
+      .then((body: { positions: RecentPosition[] }) => {
+        setPages((old) => {
+          if (!old.length) return old;
+          const fresh = new Set(body.positions.map((p) => p.address));
+          const rest = old.map((pg, i) => ({ ...pg, positions: i === 0 ? [] : pg.positions.filter((p) => !fresh.has(p.address)) }));
+          const firstOld = old[0].positions.filter((p) => !fresh.has(p.address));
+          return [{ positions: [...body.positions, ...firstOld], done: old[0].done }, ...rest.slice(1)];
+        });
+      })
+      .catch(() => {});
+  }, [wallet]);
+  useAutoRefresh(refreshHead, 15_000);
 
   const positions = pages.flatMap((p) => p.positions);
   return {
