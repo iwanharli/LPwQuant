@@ -65,6 +65,8 @@ export const config = {
   // New-pool feed (new-pools.ts): how often to ask Meteora for its newest pools, and the TVL a new pool needs.
   newPoolPollMs: Math.max(num("NEW_POOL_POLL_SEC", 5), 5) * 1000,
   newPoolMinTvl: num("NEW_POOL_MIN_TVL", 500),
+  /** Watch the DLMM program's logs for pool creation (a busy subscription); off falls back to the API feed alone. */
+  onchainNewPools: (process.env.ONCHAIN_NEW_POOLS ?? "true") !== "false",
   // Builds unsigned claim-fee transactions for the dashboard (claim-server.ts); bound to 127.0.0.1.
   claimPort: num("CLAIM_PORT", 8010),
   engineUrl: process.env.ENGINE_URL || "http://127.0.0.1:8000",

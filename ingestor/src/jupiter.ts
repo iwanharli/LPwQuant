@@ -30,6 +30,8 @@ export interface TokenOrganic {
   /** Token liquidity across all DEX pools (USD). A single pool reporting far more TVL than this is suspect. */
   liquidity_usd: number | null;
   verified: boolean;
+  /** When the token got its first pool anywhere (ms), Jupiter's own record of its launch. */
+  token_created_at: number | null;
 }
 
 interface JupiterAsset {
@@ -38,6 +40,8 @@ interface JupiterAsset {
   organicScoreLabel?: string | null;
   isVerified?: boolean | null;
   liquidity?: number | null;
+  createdAt?: string | null;
+  firstPool?: { createdAt?: string | null } | null;
   stats24h?: {
     buyVolume?: number;
     sellVolume?: number;
@@ -68,6 +72,7 @@ export function normalizeAsset(asset: JupiterAsset, fetchedAt: number): TokenOrg
     top_holders_pct: num(asset.audit?.topHoldersPercentage),
     liquidity_usd: num(asset.liquidity),
     verified: !!asset.isVerified,
+    token_created_at: Date.parse(asset.firstPool?.createdAt ?? asset.createdAt ?? "") || null,
   };
 }
 

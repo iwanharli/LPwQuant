@@ -10,6 +10,7 @@ import { startAutoClose } from "./auto-close";
 import { startClaimServer } from "./claim-server";
 import { WalletHistory } from "./wallet-history";
 import { NewPoolFeed } from "./new-pools";
+import { OnchainPoolFeed } from "./onchain-pools";
 import { GmgnFetcher } from "./gmgn";
 import { CandleFetcher, FlowFetcher, withTimeout } from "./market";
 import { SecurityFetcher } from "./security";
@@ -119,6 +120,9 @@ async function main(): Promise<void> {
   // A new pool's alert waits on its safety check: once that lands, publish at once rather than on the next cycle.
   security.onPriorityDone = pollNow;
 
+  let solUsd = 0;
+  const onchain = config.onchainNewPools ? new OnchainPoolFeed((p) => newPools.addOnchain(p), () => solUsd || 150) : null;
+
   const poll = async () => {
     if (polling) return;
     polling = true;
@@ -140,6 +144,7 @@ async function main(): Promise<void> {
       const viewed = await redis.zrangebyscore(VIEWED_POOLS_KEY, Date.now(), "+inf");
       const pinned = [...new Set([...(await redis.smembers(PAPER_OPEN_POOLS_KEY)), ...viewed])];
       const listed = await fetchPools();
+      solUsd = listed.find((p) => p.token_y.symbol === "SOL" && p.token_y.price_usd)?.token_y.price_usd ?? solUsd;
       const known = new Set(listed.map((p) => p.address));
       const fresh = newPools.current().filter((p) => !known.has(p.address));
       const pools = await withPinnedPools([...listed, ...fresh], pinned);
@@ -159,7 +164,7 @@ async function main(): Promise<void> {
       }
       const usageSummary = await flushUsage();
       console.log(
-        `[poller] ${pools.length} pools (${fresh.length} baru), watching ${watcher?.size ?? 0}, security ${security.known} known/${security.pending} queued, organic ${organic.known}, pump ${pump.known}, candles ${candles.tracked} pools/${candles.pending} queued, flow ${flow.lastCount}, gmgn ${gmgn?.known ?? "off"}, bins ${bins?.lastCount ?? "off"}, ${usageSummary}, ${Date.now() - started}ms`,
+        `[poller] ${pools.length} pools (${fresh.length} baru), watching ${watcher?.size ?? 0}, security ${security.known} known/${security.pending} queued, organic ${organic.known}, pump ${pump.known}, candles ${candles.tracked} pools/${candles.pending} queued, flow ${flow.lastCount}, gmgn ${gmgn?.known ?? "off"}, bins ${bins?.lastCount ?? "off"}, onchain ${onchain ? `${onchain.created} dibuat/${onchain.messages} log` : "off"}, ${usageSummary}, ${Date.now() - started}ms`,
       );
   };
 
@@ -176,6 +181,7 @@ async function main(): Promise<void> {
     if (autoClose) clearInterval(autoClose);
     history?.stop();
     newPools.stop();
+    onchain?.stop();
     await flushUsage().catch((err) => console.error("[usage] final flush failed", err));
     await Promise.allSettled([pg.end(), redis.quit()]);
     process.exit(0);
@@ -184,6 +190,7 @@ async function main(): Promise<void> {
   process.on("SIGTERM", shutdown);
 
   newPools.start();
+  onchain?.start();
   await poll();
 }
 

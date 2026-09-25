@@ -29,6 +29,15 @@ export class NewPoolFeed {
     if (this.timer) clearInterval(this.timer);
   }
 
+  /** A pool found on chain before the API lists it: tracked the same way, announced at once. */
+  addOnchain(p: PoolSnapshot): void {
+    if (this.fresh.has(p.address)) return;
+    this.fresh.set(p.address, p);
+    this.found += 1;
+    console.log(`[new-pools] 1 pool baru (on-chain): ${p.name}`);
+    this.onNew([p]);
+  }
+
   /** Pools created within FRESH_HOURS with enough liquidity, freshest data first. */
   current(): PoolSnapshot[] {
     return [...this.fresh.values()];

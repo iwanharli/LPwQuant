@@ -52,9 +52,12 @@ def _clean(value: Any) -> Any:
 NEW_TOKEN_HOURS = 24  # a pool whose token launched within this counts as "new token", else "old token"
 
 
-def token_created_ms(security: dict[str, Any] | None, pump: dict[str, Any] | None) -> int | None:
-    """The token's launch time: pump.fun's own record when it is a pump token, else when RugCheck first saw it."""
+def token_created_ms(security: dict[str, Any] | None, pump: dict[str, Any] | None,
+                     organic: dict[str, Any] | None = None) -> int | None:
+    """The token's launch time, the earliest of: pump.fun's record, Jupiter's first pool, RugCheck's first sighting."""
     times = []
+    if (organic or {}).get("token_created_at"):
+        times.append(int(organic["token_created_at"]))
     raw = (pump or {}).get("created_ts")
     if raw:
         times.append(int(raw if raw > 1e12 else raw * 1000))
@@ -510,7 +513,7 @@ class Engine:
             "insights": _clean(insights),
             "organic": _clean(organic),
             "pump": _clean(pump),
-            "token_age_hours": None if (tc := token_created_ms(security, pump)) is None else max(0.0, (now_ms - tc) / 3_600_000),
+            "token_age_hours": None if (tc := token_created_ms(security, pump, organic)) is None else max(0.0, (now_ms - tc) / 3_600_000),
             "depth_per_bin_y": pool_per_bin_y,
             "depth": None if depth is None else {
                 "age_sec": round((now_ms - depth.ts) / 1000),
