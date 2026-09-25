@@ -1,5 +1,6 @@
 "use client";
 
+import { useUrlState } from "../../lib/url-state";
 import { useEffect, useState, type ReactNode } from "react";
 import { STRATEGY_LABEL, TIER_META } from "../../lib/flags";
 import {
@@ -723,12 +724,22 @@ function PositionsCard({
   );
 }
 
+const LP_VIEWS = ["posisi", "hasil", "equity", "banding"] as const;
+type LpView = (typeof LP_VIEWS)[number];
+const LP_VIEW_LABEL: Record<LpView, string> = {
+  posisi: "Posisi",
+  hasil: "Hasil & statistik",
+  equity: "Kurva equity",
+  banding: "Bandingkan profil",
+};
+
 export default function PaperPage({ embedded = false, initialProfile }: { embedded?: boolean; initialProfile?: string }) {
   // Until the reader picks one, show the profile with the highest total PnL (derived, so it follows the leader).
   const [picked, setProfile] = useState<string | null>(initialProfile ?? null);
   const [leader, setLeader] = useState("moderat");
   const profile = picked ?? leader;
   const { data, error } = usePaperData(profile);
+  const [view, setView] = useUrlState<LpView>("lp", "posisi", LP_VIEWS);
   const top = data?.profiles?.reduce((a, b) =>
     b.equity_usd - b.start_equity_usd > a.equity_usd - a.start_equity_usd ? b : a,
   )?.key;
@@ -767,35 +778,6 @@ export default function PaperPage({ embedded = false, initialProfile }: { embedd
             <StatusDot severity="warning" /> Paper trading nonaktif (PAPER_ENABLED=false).
           </p>
         )}
-
-        <ProfileCompareCard profiles={data?.profiles} selected={profile} onSelect={setProfile} />
-
-        <Card
-          title="Kurva equity per profil"
-          collapsible
-          right={<span className="text-xs text-ink-3">30 hari terakhir</span>}
-          collapsedRight={
-            s ? (
-              <span className="flex items-center gap-3 text-xs tabular-nums">
-                <span className="text-ink">{usd.format(s.equity_usd)}</span>
-                <Delta value={totalPct} digits={2} />
-              </span>
-            ) : undefined
-          }
-        >
-          <div className="px-2 py-3 sm:px-4">
-            <EquityChart
-              series={(data?.profiles ?? []).map((p) => ({
-                key: p.key,
-                label: p.label,
-                color: PROFILE_COLORS[p.key] ?? "var(--color-accent)",
-                points: data?.equityByProfile[p.key] ?? [],
-              }))}
-              start={s?.start_equity_usd ?? 0}
-              selected={profile}
-            />
-          </div>
-        </Card>
 
         <ProfileTabs profiles={data?.profiles} selected={profile} onSelect={setProfile} />
 
@@ -837,10 +819,57 @@ export default function PaperPage({ embedded = false, initialProfile }: { embedd
             />
           </div>
 
-          <ResultsCard summary={s} profileLabel={s?.profile?.label} />
+          <div className="flex gap-1 overflow-x-auto border-b border-line" role="tablist" aria-label="Detail profil">
+            {LP_VIEWS.map((v) => (
+              <button
+                key={v}
+                type="button"
+                role="tab"
+                aria-selected={view === v}
+                onClick={() => setView(v)}
+                className={`-mb-px shrink-0 border-b-2 px-4 py-2 text-sm font-medium transition-colors ${
+                  view === v ? "border-accent text-ink" : "border-transparent text-ink-3 hover:text-ink-2"
+                }`}
+              >
+                {LP_VIEW_LABEL[v]}
+                {v === "posisi" && s ? <span className="ml-1.5 text-xs text-ink-3">{s.open_count}</span> : null}
+              </button>
+            ))}
+          </div>
 
-          <PositionsCard open={data?.open ?? []} closed={data?.closed ?? []} profileLabel={s?.profile?.label} />
+          {view === "posisi" && <PositionsCard open={data?.open ?? []} closed={data?.closed ?? []} profileLabel={s?.profile?.label} />}
+          {view === "hasil" && <ResultsCard summary={s} profileLabel={s?.profile?.label} />}
         </div>
+
+        {view === "banding" && <ProfileCompareCard profiles={data?.profiles} selected={profile} onSelect={setProfile} />}
+
+        {view === "equity" && (
+            <Card
+              title="Kurva equity per profil"
+              right={<span className="text-xs text-ink-3">30 hari terakhir</span>}
+              collapsedRight={
+                s ? (
+                  <span className="flex items-center gap-3 text-xs tabular-nums">
+                    <span className="text-ink">{usd.format(s.equity_usd)}</span>
+                    <Delta value={totalPct} digits={2} />
+                  </span>
+                ) : undefined
+              }
+            >
+              <div className="px-2 py-3 sm:px-4">
+                <EquityChart
+                  series={(data?.profiles ?? []).map((p) => ({
+                    key: p.key,
+                    label: p.label,
+                    color: PROFILE_COLORS[p.key] ?? "var(--color-accent)",
+                    points: data?.equityByProfile[p.key] ?? [],
+                  }))}
+                  start={s?.start_equity_usd ?? 0}
+                  selected={profile}
+                />
+              </div>
+            </Card>
+        )}
 
         <p className="pb-2 text-center text-xs leading-5 text-ink-3">
           Simulasi: likuiditas rata di semua bin, fee dari fee/TVL 1 jam pool.
