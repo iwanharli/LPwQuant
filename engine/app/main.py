@@ -268,9 +268,42 @@ async def get_ledger(wallet: str) -> dict:
     """Capital, net worth and where the difference came from (LP, gacha, trading), in dollars and rupiah."""
     _wallet_or_400(wallet)
     try:
-        return await ledger.summary(engine.db, wallet)
+        out = await ledger.summary(engine.db, wallet)
     except Exception as err:
         raise HTTPException(status_code=502, detail=f"gagal menghitung: {err}") from err
+    out["today_explain"] = await _today_explain(wallet, (out.get("days") or [None])[-1])
+    return out
+
+
+async def _today_explain(wallet: str, today: dict | None) -> dict | None:
+    """Why today's net-worth change differs from the sum of today's closed positions: positions opened on earlier
+    days carry results the day chart already booked then, open positions move, and the rest is tokens and SOL."""
+    if today is None or engine.db is None:
+        return None
+    midnight = datetime.now(_tz).replace(hour=0, minute=0, second=0, microsecond=0)
+    r = await engine.db.fetchrow(
+        """select coalesce(sum(net_usd), 0) as net, count(*) as n,
+                  count(*) filter (where opened_at < $2) as carried,
+                  coalesce(sum(net_usd) filter (where opened_at < $2), 0) as carried_net,
+                  count(*) filter (where net_usd is null) as pending
+           from portfolio_positions_index where wallet = $1 and status = 'closed' and closed_at >= $2""",
+        wallet, midnight,
+    )
+    o = await engine.db.fetchrow(
+        """select coalesce(sum(meteora_pnl_usd), 0) as pnl, count(*) as n
+           from portfolio_positions_index where wallet = $1 and status = 'open'""",
+        wallet,
+    )
+    change = float(today["change"]) - float(today.get("new_money") or 0)
+    closed = float(r["net"])
+    open_pnl = float(o["pnl"])
+    return {
+        "change_usd": change,
+        "closed_usd": closed, "closed_count": r["n"], "pending": r["pending"],
+        "carried_count": r["carried"], "carried_usd": float(r["carried_net"]),
+        "open_usd": open_pnl, "open_count": o["n"],
+        "rest_usd": change - closed - open_pnl,
+    }
 
 
 @app.post("/api/portfolio/capital")

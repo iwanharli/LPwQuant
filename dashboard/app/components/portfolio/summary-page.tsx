@@ -18,6 +18,18 @@ type Ledger = {
   breakdown: { lp: number; gacha: number; trading: number };
   fx_idr: number;
   days: Day[];
+  today_explain?: TodayExplain | null;
+};
+type TodayExplain = {
+  change_usd: number;
+  closed_usd: number;
+  closed_count: number;
+  pending: number;
+  carried_count: number;
+  carried_usd: number;
+  open_usd: number;
+  open_count: number;
+  rest_usd: number;
 };
 
 const rp = (v: number) => `Rp${fmtNum(Math.abs(v) / 1e6, 1)} jt`;
@@ -137,6 +149,54 @@ function Breakdown({ l }: { l: Ledger }) {
         </div>
       )}
     </div>
+  );
+}
+
+/** Today's wallet change next to what Riwayat shows for today's closes, with the gap named part by part. */
+function WhyDifferent({ e }: { e: TodayExplain }) {
+  if (e.closed_count === 0 && e.open_count === 0) return null;
+  const rows = [
+    {
+      label: `Posisi ditutup hari ini (${e.closed_count})`,
+      v: e.closed_usd,
+      note: e.carried_count
+        ? `${e.carried_count} di antaranya dibuka sebelum hari ini (${signedUsd(e.carried_usd)}): sebagian hasilnya sudah terhitung di hari sebelumnya`
+        : "angka yang sama dengan tab Riwayat untuk hari ini",
+    },
+    {
+      label: `Posisi masih terbuka (${e.open_count})`,
+      v: e.open_usd,
+      note: "untung-rugi yang belum direalisasi, menurut Meteora",
+    },
+    {
+      label: "Lainnya",
+      v: e.rest_usd,
+      note: "hasil posisi lama yang sudah dicatat kemarin, token yang masih di wallet, perubahan harga SOL, biaya di luar posisi",
+    },
+  ];
+  return (
+    <Card title="Kenapa beda dengan Riwayat?" right={<span className="text-xs text-ink-3">Hari ini · USD</span>}>
+      <div className="px-4 py-3 text-sm">
+        <p className="text-ink-2">
+          Nilai wallet hari ini berubah <span className={`font-semibold tabular-nums ${tone(e.change_usd)}`}>{signedUsd(e.change_usd)}</span>. Riwayat
+          menghitung hasil tiap posisi dari dibuka sampai ditutup, jadi angkanya bisa berbeda. Selisihnya:
+        </p>
+        <ul className="mt-3 divide-y divide-white/[0.05] rounded-xl border border-white/[0.06]">
+          {rows.map((r) => (
+            <li key={r.label} className="grid grid-cols-[1fr_auto] gap-x-4 px-3 py-2.5">
+              <span className="text-ink">{r.label}</span>
+              <span className={`text-right font-semibold tabular-nums ${tone(r.v)}`}>{signedUsd(r.v)}</span>
+              <span className="col-span-2 text-xs text-ink-3">{r.note}</span>
+            </li>
+          ))}
+          <li className="grid grid-cols-[1fr_auto] gap-x-4 bg-white/[0.02] px-3 py-2.5">
+            <span className="font-medium text-ink">Total = perubahan nilai wallet</span>
+            <span className={`text-right font-semibold tabular-nums ${tone(e.change_usd)}`}>{signedUsd(e.change_usd)}</span>
+          </li>
+        </ul>
+        {e.pending > 0 && <p className="mt-2 text-xs text-ink-3">{e.pending} posisi masih dihitung; angkanya menyusul.</p>}
+      </div>
+    </Card>
   );
 }
 
@@ -274,6 +334,8 @@ export default function SummaryPage() {
             </section>
 
             {today && <Today d={today} rate={l.fx.usd_idr} />}
+
+            {l.today_explain && <WhyDifferent e={l.today_explain} />}
 
             <Card title="Dari mana untung-ruginya" right={<span className="text-xs text-ink-3">Sejak modal disetor</span>}>
               <Breakdown l={l} />
