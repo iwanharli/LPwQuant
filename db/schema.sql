@@ -513,5 +513,8 @@ alter table portfolio_positions_index add column if not exists max_price double 
 -- recompute of every transaction (which takes ~45s cold).
 alter table portfolio_positions_index add column if not exists cost_lp double precision;
 alter table portfolio_positions_index add column if not exists cost_swaps double precision;
+-- Shown in the cost breakdown only (already inside net_usd): bin-array rent the position opened, transfer tax paid.
+alter table portfolio_positions_index add column if not exists cost_rent double precision;
+alter table portfolio_positions_index add column if not exists cost_tax double precision;
 alter table portfolio_positions_index add column if not exists net_usd double precision;
 alter table portfolio_positions_index add column if not exists net_at timestamptz;

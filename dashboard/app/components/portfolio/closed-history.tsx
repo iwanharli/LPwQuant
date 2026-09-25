@@ -8,6 +8,7 @@ import { SkeletonTable, SkeletonTiles } from "../skeleton";
 
 type ClosedPosition = {
   address: string;
+  cost_parts?: { network_swap: number; rent: number; tax: number } | null;
   opened_at: number | null;
   closed_at: number | null;
   lower_bin: number;
@@ -208,7 +209,15 @@ function PositionCard({ p, pool, cost, net }: { p: ClosedPosition; pool?: string
           label="Biaya"
           value={cost == null ? <span className="inline-block h-[18px] w-16 animate-pulse rounded bg-white/[0.08] align-middle" /> : usd.format(cost)}
           cls="text-amber-300"
-          hint="jaringan + fee swap Meteora"
+          hint={
+            p.cost_parts && (p.cost_parts.rent > 0.005 || p.cost_parts.tax > 0.005)
+              ? [
+                  `jaringan+swap ${usd.format(p.cost_parts.network_swap)}`,
+                  p.cost_parts.rent > 0.005 ? `rent ${usd.format(p.cost_parts.rent)}` : null,
+                  p.cost_parts.tax > 0.005 ? `pajak ${usd.format(p.cost_parts.tax)}` : null,
+                ].filter(Boolean).join(" · ")
+              : "jaringan + fee swap Meteora"
+          }
         />
         <Tile
           label="Di dalam range"
@@ -284,6 +293,7 @@ type RecentPosition = ClosedPosition & {
   name: string;
   /** Written by the cost accounting when it last ran; null until a position has been through it. */
   cost_usd: number | null;
+  cost_parts?: { network_swap: number; rent: number; tax: number } | null;
   net_usd: number | null;
   net_at: number | null;
 };

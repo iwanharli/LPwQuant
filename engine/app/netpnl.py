@@ -38,6 +38,7 @@ log = logging.getLogger("netpnl")
 SOL = "So11111111111111111111111111111111111111112"
 USDC = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
 QUOTES = {SOL, USDC}
+BIN_ARRAY_RENT_SOL = 0.07143744  # SDK BIN_ARRAY_FEE: paid by whoever first opens a bin array, never refunded
 CACHE_S = 300
 _cache: dict[str, tuple[float, dict[str, Any]]] = {}
 
@@ -257,10 +258,18 @@ async def compute(db, wallet: str, fresh: bool = False) -> dict[str, Any]:
     sol_now = pf["summary"].get("sol_price") or (closes[-1] if closes else config.SOL_USD_FALLBACK)
 
     acts = await db.fetch(
-        """select signature, ts, kind, sol_delta, deltas, network_fee_lamports, pool_fees, other_dex_swap
+        """select signature, ts, kind, sol_delta, deltas, network_fee_lamports, pool_fees, other_dex_swap, instructions
            from portfolio_activity where wallet = $1 and ok order by ts""",
         wallet,
     )
+    # Token-2022 transfer fee per mint (% of every transfer), from the security data the ingestor keeps.
+    tax_pct = {
+        r["mint"]: float(r["pct"])
+        for r in await db.fetch(
+            """select mint, (data->>'transfer_fee_pct')::float8 as pct from token_security
+               where (data->>'transfer_fee_pct')::float8 > 0"""
+        )
+    }
     gacha_times = [a["ts"] for a in acts if a["kind"] == "gacha"]
     coins: dict[str, dict[str, Any]] = {}
     buckets = {"capital": 0.0, "gacha": 0.0, "conversion": 0.0, "unassigned": 0.0}
@@ -341,8 +350,11 @@ async def compute(db, wallet: str, fresh: bool = False) -> dict[str, Any]:
             "claim": "fees", "limit_order_place": "orders", "limit_order_cancel": "orders",
         }.get(k, "other")
         c["by"][cat] += cash
+        # Shown, not subtracted again (both are already inside `cash`): rent for bin arrays this transaction opened,
+        # and the transfer fee withheld on the token it moved (valued once the coin's swap rate is known, below).
+        rent = (a["instructions"] or []).count("InitializeBinArray") * BIN_ARRAY_RENT_SOL * sol_px
         c["txs"].append({"sig": a["signature"], "ts": a["ts"].timestamp(), "cash": cash, "kind": k, "position": pos,
-                         "cost": network + pool_fee,
+                         "cost": network + pool_fee, "rent": rent,
                          "qty": sum(d["amount"] for d in tokens if d["mint"] == mint)})
 
     # Held value today: wallet tokens, open positions, open limit orders.
@@ -368,14 +380,21 @@ async def compute(db, wallet: str, fresh: bool = False) -> dict[str, Any]:
         pass
 
     out_coins = []
-    stored: list[tuple[str, float, float, float]] = []
+    stored: list[tuple[str, float, float, float, float, float]] = []
     for c in coins.values():
+        # The token's dollar rate from its own swaps, to value the transfer fee on every token movement.
+        swaps = [t for t in c["txs"] if t["kind"] == "swap" and t["qty"]]
+        qty = sum(abs(t["qty"]) for t in swaps)
+        rate = sum(abs(t["cash"]) for t in swaps) / qty if qty else 0.0
+        pct = tax_pct.get(c["mint"], 0.0)
+        for t in c["txs"]:
+            t["tax"] = abs(t["qty"]) * rate * pct / 100 if pct and rate else 0.0
         held = c.get("held_wallet", 0.0) + c.get("held_lp", 0.0) + c.get("held_orders", 0.0)
         c["held"] = held
         c["net"] = c["cash"] + held
         c["positions"] = _split_positions(c, [i for i in idx.values() if i["mint_x"] == c["mint"]])
         stored.extend(
-            (p["position"], p["cost_lp"], p["cost_swaps"], p["net"]) for p in c["positions"]
+            (p["position"], p["cost_lp"], p["cost_swaps"], p["net"], p["cost_rent"], p["cost_tax"]) for p in c["positions"]
         )
         c.pop("txs")
         out_coins.append(c)
@@ -385,8 +404,8 @@ async def compute(db, wallet: str, fresh: bool = False) -> dict[str, Any]:
     # instead of triggering this whole accounting.
     if stored:
         await db.executemany(
-            """update portfolio_positions_index set cost_lp = $2, cost_swaps = $3, net_usd = $4, net_at = now()
-               where position = $1""",
+            """update portfolio_positions_index set cost_lp = $2, cost_swaps = $3, net_usd = $4, net_at = now(),
+                 cost_rent = $5, cost_tax = $6 where position = $1""",
             stored,
         )
 
@@ -439,11 +458,15 @@ def _split_positions(c: dict[str, Any], positions: list[dict[str, Any]]) -> list
     count = {p["position"]: 0 for p in ps}
     cost_lp = {p["position"]: 0.0 for p in ps}
     cost_swaps = {p["position"]: 0.0 for p in ps}
+    rent = {p["position"]: 0.0 for p in ps}
+    tax = {p["position"]: 0.0 for p in ps}
     for t in c["txs"]:
+        target = t["position"] if t.get("position") in cost_lp else _nearest(ps, t["ts"])
+        rent[target] += t.get("rent", 0.0)
+        tax[target] += t.get("tax", 0.0)
         if t.get("position") in cost_lp:
             cost_lp[t["position"]] += t.get("cost", 0.0)  # the position's own transactions, by signature
             continue
-        target = _nearest(ps, t["ts"])
         cost_swaps[target] += t.get("cost", 0.0)
         if t["kind"] != "swap":
             continue
@@ -476,6 +499,8 @@ def _split_positions(c: dict[str, Any], positions: list[dict[str, Any]]) -> list
             "outside_share": share,
             "cost_lp": cost_lp[p["position"]],
             "cost_swaps": cost_swaps[p["position"]],
+            "cost_rent": rent[p["position"]],
+            "cost_tax": tax[p["position"]],
             "net": (p["meteora_pnl_usd"] or 0.0) + share,
         })
     return out
