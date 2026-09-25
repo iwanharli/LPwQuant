@@ -29,6 +29,10 @@ export interface TokenSecurity {
   insiders_detected: number;
   total_holders: number | null;
   lp_locked_pct: number | null;
+  /** Token-2022 transfer fee, % of every transfer (null: not a Token-2022 fee token). */
+  transfer_fee_pct: number | null;
+  /** Someone can still change the transfer fee (a fee config authority is set). */
+  transfer_fee_mutable: boolean;
   danger_count: number;
   warn_count: number;
   risks: { name: string; level: string; description?: string }[];
@@ -45,6 +49,25 @@ interface RugcheckReport {
   knownAccounts?: Record<string, { name: string; type: string }> | null;
   topHolders?: { address?: string; owner?: string; pct?: number }[] | null;
   markets?: { lp?: { lpLockedPct?: number } | null }[] | null;
+  token_extensions?: {
+    transferFeeConfig?: {
+      transferFeeConfigAuthority?: string | null;
+      newerTransferFee?: { transferFeeBasisPoints?: number } | null;
+      olderTransferFee?: { transferFeeBasisPoints?: number } | null;
+    } | null;
+  } | string | null;
+}
+
+const NO_AUTHORITY = new Set(["", "11111111111111111111111111111111"]);
+
+/** The fee from the mint's Token-2022 extension. RugCheck's own `transferFee.pct` reads 0 for tokens that do charge
+ * (GP, 3%, on 2026-09-25), so the extension is read directly; the higher of the current and scheduled fee counts. */
+function transferFee(report: RugcheckReport): { pct: number | null; mutable: boolean } {
+  const ext = typeof report.token_extensions === "object" ? report.token_extensions : null;
+  const cfg = ext?.transferFeeConfig;
+  if (!cfg) return { pct: null, mutable: false };
+  const bps = Math.max(cfg.newerTransferFee?.transferFeeBasisPoints ?? 0, cfg.olderTransferFee?.transferFeeBasisPoints ?? 0);
+  return { pct: bps / 100, mutable: !NO_AUTHORITY.has(cfg.transferFeeConfigAuthority ?? "") };
 }
 
 export function baseMint(pool: PoolSnapshot): string {
@@ -62,6 +85,7 @@ export function normalizeReport(mint: string, report: RugcheckReport, fetchedAt:
   const lpLocked = (report.markets ?? [])
     .map((m) => m.lp?.lpLockedPct)
     .filter((v): v is number => typeof v === "number");
+  const fee = transferFee(report);
 
   return {
     mint,
@@ -74,6 +98,8 @@ export function normalizeReport(mint: string, report: RugcheckReport, fetchedAt:
     insiders_detected: report.graphInsidersDetected ?? 0,
     total_holders: report.totalHolders ?? null,
     lp_locked_pct: lpLocked.length ? Math.max(...lpLocked) : null,
+    transfer_fee_pct: fee.pct,
+    transfer_fee_mutable: fee.mutable,
     danger_count: risks.filter((r) => r.level === "danger").length,
     warn_count: risks.filter((r) => r.level === "warn").length,
     risks,

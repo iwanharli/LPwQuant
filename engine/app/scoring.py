@@ -22,7 +22,11 @@ QUOTE_MINTS = {
 }
 
 # Flags severe enough that the dashboard hides them by default and plans say "avoid".
-RISKY_FLAGS = {"rugged", "mint_authority", "freeze_authority", "rugcheck_danger", "dumping", "pumping", "tvl_suspect"}
+RISKY_FLAGS = {"rugged", "mint_authority", "freeze_authority", "rugcheck_danger", "dumping", "pumping", "tvl_suspect",
+               "transfer_fee"}
+# A Token-2022 transfer fee is paid on every move: deposit, withdrawal, fee claim and swap. From this rate on, an LP
+# round trip loses more than a day of fees in most pools.
+TRANSFER_FEE_RISKY_PCT = 1.0
 
 PUMP_PCT_1H = 30.0  # LPs entering a vertical pump end up holding the token at the top
 DUMP_PCT_1H = -15.0
@@ -311,6 +315,13 @@ def score_pool(
             flags.append("rugged")
         if has_mint and not issuer:
             penalize("mint_authority", 15)
+        fee_pct = security.get("transfer_fee_pct") or 0.0
+        if fee_pct >= TRANSFER_FEE_RISKY_PCT:
+            penalize("transfer_fee", 20)
+        elif fee_pct > 0:
+            penalize("transfer_fee_low", 5)
+        elif security.get("transfer_fee_mutable"):
+            penalize("transfer_fee_mutable", 5)
         top10 = security.get("top10_pct")
         if not issuer and top10 is not None and top10 >= 50:
             penalize("top_holders_50", 10)

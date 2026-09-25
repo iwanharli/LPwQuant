@@ -100,6 +100,8 @@ export type Security = {
   insiders_detected: number;
   total_holders: number | null;
   lp_locked_pct: number | null;
+  transfer_fee_pct?: number | null;
+  transfer_fee_mutable?: boolean;
   danger_count: number;
   warn_count: number;
   fetched_at: number;

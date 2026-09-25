@@ -11,6 +11,7 @@ export const RISKY_FLAGS = new Set([
   "dumping",
   "pumping",
   "tvl_suspect",
+  "transfer_fee",
 ]);
 
 type FlagMeta = { label: string; title: string; severity: Severity };
@@ -19,6 +20,17 @@ const FLAG_META: Record<string, FlagMeta> = {
   rugged: { label: "Rugged", title: "RugCheck menandai token ini sudah rug", severity: "critical" },
   mint_authority: { label: "Mint aktif", title: "Mint authority aktif: supply bisa dicetak lagi", severity: "critical" },
   freeze_authority: { label: "Freeze aktif", title: "Freeze authority aktif: token bisa dibekukan", severity: "critical" },
+  transfer_fee: {
+    label: "Pajak transfer",
+    title: "Token memotong ≥1% setiap transfer: masuk/keluar posisi, klaim fee, dan swap semuanya kena",
+    severity: "critical",
+  },
+  transfer_fee_low: { label: "Pajak transfer kecil", title: "Token memotong <1% setiap transfer", severity: "warning" },
+  transfer_fee_mutable: {
+    label: "Pajak bisa dinaikkan",
+    title: "Pajak transfer 0% sekarang, tapi pemilik token masih bisa menaikkannya",
+    severity: "warning",
+  },
   rugcheck_danger: { label: "RugCheck", title: "RugCheck menemukan risiko level danger", severity: "critical" },
   dumping: { label: "Dump", title: "Harga turun ≥15% dalam 1 jam", severity: "critical" },
   pumping: {

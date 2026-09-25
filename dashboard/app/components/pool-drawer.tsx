@@ -530,6 +530,16 @@ function SecuritySection({ row }: { row: PoolRow }) {
             <Check ok={!s.mint_authority || issuer} label={s.mint_authority ? "Mint authority aktif" : "Mint authority nonaktif"} />
             <Check ok={!s.freeze_authority || issuer} label={s.freeze_authority ? "Freeze authority aktif" : "Freeze authority nonaktif"} />
             <Check
+              ok={!s.transfer_fee_pct}
+              label={
+                s.transfer_fee_pct
+                  ? `Pajak transfer ${s.transfer_fee_pct}% tiap transfer`
+                  : s.transfer_fee_mutable
+                    ? "Pajak transfer 0%, tapi bisa dinaikkan"
+                    : "Tanpa pajak transfer"
+              }
+            />
+            <Check
               ok={s.top10_pct == null || s.top10_pct < 30 || issuer}
               label="Top 10 holder (tanpa pool/locker)"
               detail={fmtPct(s.top10_pct)}
