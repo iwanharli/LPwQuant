@@ -532,10 +532,13 @@ class Engine:
         decision = profile_decision(row, trader)
         plan = row.get("plan_single") if trader.cfg.plan_variant == "single" else row.get("plan_base")
         coverage = None
-        if plan and plan.get("round_trip_cost_pct") and plan.get("fee_over_min_hold_pct") is not None:
+        if plan and plan.get("round_trip_cost_pct"):
+            # The profile's gate: fees earned over fee_gate_hours must reach min_fee_cost_ratio x the round trip.
             ratio = trader.cfg.min_fee_cost_ratio or 1.0
+            hours = trader.cfg.fee_gate_hours or 1.0
+            fee_day = plan.get("fee_for_position_pct_day") or row.get("fee_for_position_pct_day") or 0.0
             need = plan["round_trip_cost_pct"] * ratio
-            coverage = plan["fee_over_min_hold_pct"] / need if need > 0 else None
+            coverage = (fee_day * hours / 24) / need if need > 0 else None
         return {**decision, "coverage": coverage, "return_pct": (trader.equity_usd() / trader.cfg.start_equity_usd - 1) * 100}
 
     async def _save_metrics(self, now_ms: int) -> None:
