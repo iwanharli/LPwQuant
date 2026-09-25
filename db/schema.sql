@@ -411,6 +411,10 @@ create table if not exists paper_pool_runs (
   pnl_usd       double precision              -- lp value + fees - size - costs (incl. pool creation)
 );
 create index if not exists paper_pool_runs_status on paper_pool_runs (status);
+-- Version 2 (2026-09-25): fee share against the larger TVL of each interval capped at 50%, one-minute ticks, and an
+-- exit when the pool's liquidity is pulled. Version 1 runs stay for comparison.
+alter table paper_pool_runs add column if not exists version integer not null default 1;
+alter table paper_pool_runs add column if not exists peak_tvl double precision;
 
 -- Auto close + sell per position, for the bot wallet only (BOT_WALLET_SECRET in .env). The ingestor watches armed
 -- positions and, once the net result after the exit swap reaches target_pct, closes and sells without a prompt.

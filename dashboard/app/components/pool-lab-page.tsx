@@ -28,6 +28,15 @@ type Run = {
   opened_at: number;
   closed_at: number | null;
 };
+type Robust = {
+  closed: number;
+  pnl_usd: number;
+  median_usd: number | null;
+  without_best_usd: number | null;
+  without_best3_usd: number | null;
+  best_usd: number | null;
+  win_rate: number | null;
+};
 type Report = {
   started_at: number | null;
   params: {
@@ -44,7 +53,12 @@ type Report = {
     create_cost_sol: number;
     swap_cost_pct: number;
     fees_dried_pct: number;
+    tick_s: number;
+    max_share_pct: number;
+    pulled_tvl_pct: number;
   };
+  robust: Robust;
+  previous: Robust | null;
   counts: Record<string, number>;
   pnl_usd: number;
   pnl_without_create_usd: number;
@@ -60,6 +74,7 @@ const REASON: Record<string, { label: string; cls: string }> = {
   stop: { label: "Cut loss", cls: "bg-rose-400/10 text-rose-300" },
   below_range: { label: "Jatuh keluar range", cls: "bg-rose-400/10 text-rose-300" },
   fees_dried: { label: "Fee mengering", cls: "bg-amber-400/10 text-amber-300" },
+  pulled: { label: "Likuiditas dicabut", cls: "bg-rose-400/10 text-rose-300" },
   time: { label: "24 jam", cls: "bg-white/[0.06] text-ink-2" },
   vanished: { label: "Pool hilang", cls: "bg-rose-400/10 text-rose-300" },
 };
@@ -150,6 +165,35 @@ export default function PoolLabPage() {
                 />
                 <Kpi label="Fee terkumpul" value={closed ? usd.format(r.fees_usd) : "–"} hint={`${r.counts.open ?? 0} uji masih berjalan`} />
               </div>
+              <div className="grid grid-cols-2 gap-px border-t border-line bg-line/40 sm:grid-cols-4">
+                <Kpi
+                  label="Median per uji"
+                  value={r.robust.median_usd == null ? "–" : money(r.robust.median_usd)}
+                  hint="hasil uji yang biasa, bukan rata-rata"
+                  cls={r.robust.median_usd == null ? undefined : tone(r.robust.median_usd)}
+                />
+                <Kpi
+                  label="Tanpa uji terbaik"
+                  value={r.robust.without_best_usd == null ? "–" : money(r.robust.without_best_usd)}
+                  hint={r.robust.best_usd == null ? undefined : `uji terbaik ${money(r.robust.best_usd)}`}
+                  cls={r.robust.without_best_usd == null ? undefined : tone(r.robust.without_best_usd)}
+                />
+                <Kpi
+                  label="Tanpa 3 uji terbaik"
+                  value={r.robust.without_best3_usd == null ? "–" : money(r.robust.without_best3_usd)}
+                  hint="positif di sini = untung tidak bergantung pada keberuntungan"
+                  cls={r.robust.without_best3_usd == null ? undefined : tone(r.robust.without_best3_usd)}
+                />
+                <Kpi
+                  label="Versi 1 (sebelum perbaikan)"
+                  value={r.previous ? money(r.previous.pnl_usd) : "–"}
+                  hint={
+                    r.previous
+                      ? `${r.previous.closed} uji · tanpa terbaik ${r.previous.without_best_usd == null ? "–" : money(r.previous.without_best_usd)} · fee terlalu tinggi`
+                      : undefined
+                  }
+                />
+              </div>
               <p className="border-t border-line px-4 py-3 text-xs leading-5 text-ink-3">
                 {closed < 20
                   ? `Kumpulkan minimal 20 uji selesai (3–5 hari) sebelum menyimpulkan. Satu pool yang meledak bisa menutupi banyak yang rugi, atau sebaliknya.`
@@ -169,17 +213,17 @@ export default function PoolLabPage() {
                   <span className="text-ink-3">Posisi:</span> {p.size_sol} SOL, Spot {p.range_low}× – {p.range_high}× harga masuk, maks {p.max_open} sekaligus.
                 </li>
                 <li>
-                  <span className="text-ink-3">Fee:</span> fee asli pool × bagianmu (nilai posisi ÷ (nilai posisi + TVL pool)), hanya saat harga di dalam range.
+                  <span className="text-ink-3">Fee:</span> fee asli pool × bagianmu (nilai posisi ÷ (nilai posisi + TVL terbesar di awal/akhir interval)), maks {p.max_share_pct}%, hanya saat harga di dalam range.
                 </li>
                 <li>
-                  <span className="text-ink-3">Keluar:</span> rugi {p.stop_pct}%, harga di bawah range, fee &lt; {p.fees_dried_pct}%/jam setelah 2 jam, atau {p.max_hold_h} jam.
+                  <span className="text-ink-3">Keluar:</span> likuiditas dicabut (TVL &lt; {p.pulled_tvl_pct}% dari puncaknya), rugi {p.stop_pct}%, harga di bawah range, fee &lt; {p.fees_dried_pct}%/jam setelah 2 jam, atau {p.max_hold_h} jam.
                 </li>
                 <li>
                   <span className="text-ink-3">Biaya:</span> buat pool {p.create_cost_sol} SOL (sewa yang tidak kembali), swap {p.swap_cost_pct}% masuk dan keluar,
                   biaya jaringan.
                 </li>
                 <li>
-                  <span className="text-ink-3">Diperiksa:</span> tiap 5 menit dengan data Meteora.
+                  <span className="text-ink-3">Diperiksa:</span> tiap {p.tick_s >= 60 ? `${p.tick_s / 60} menit` : `${p.tick_s} detik`} dengan data Meteora.
                 </li>
               </ul>
             </section>
@@ -204,7 +248,7 @@ export default function PoolLabPage() {
                     {r.runs.length === 0 && (
                       <tr>
                         <td colSpan={9} className="px-4 py-8 text-center text-ink-3">
-                          Belum ada pool baru yang memenuhi syarat. Engine memeriksa tiap 5 menit.
+                          Belum ada pool baru yang memenuhi syarat. Engine memeriksa tiap menit.
                         </td>
                       </tr>
                     )}

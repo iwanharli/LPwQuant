@@ -5,8 +5,15 @@ Nothing is sent on chain. Every TICK_S the engine:
     old, base fee FEE_MIN_PCT or more, SOL or USDC quote, already trading. It joins as their first LP, as if it had
     created them, with SIZE_SOL in a spot range RANGE_LOW..RANGE_HIGH times the price,
   * credits the position its share of the fees the pool actually earned since the last tick (share = its value over
-    its value + the pool's TVL, only while the price is inside its range),
-  * closes on the first exit rule: loss past STOP_PCT, price below the range, fees dried up, or MAX_HOLD_H.
+    its value + the larger of the pool's TVL at the start and end of the tick, at most MAX_SHARE, only while the
+    price is inside its range),
+  * closes on the first exit rule: liquidity pulled (TVL under PULLED_TVL_FRAC of its peak), loss past STOP_PCT,
+    price below the range, fees dried up, or MAX_HOLD_H.
+
+Version 1 (to 2026-09-25) used the end-of-tick TVL alone: when other LPs pulled out, TVL fell to ~0 and the whole
+tick's fees -- earned while the pool was still deep -- were credited to the paper position. That, and five-minute
+ticks that let stops fire at -70%, made its result unreliable. Runs are tagged with VERSION; the report shows the
+current one.
 
 Honest by construction: the pool's real fees and prices, a share that shrinks as other LPs arrive, the rent a
 creator cannot get back (CREATE_COST_SOL, bin arrays and pool accounts), the swap into the token for the position's
@@ -23,7 +30,10 @@ from . import portfolio
 
 log = logging.getLogger("paper_pool")
 
-TICK_S = 300
+VERSION = 2
+TICK_S = 60
+MAX_SHARE = 0.5  # never more than half the pool's fees: other LPs and the creator are in it too
+PULLED_TVL_FRAC = 0.3
 SIZE_SOL = 1.0
 MAX_OPEN = 6
 MAX_POOL_AGE_MIN = 60
@@ -110,7 +120,7 @@ class PaperPoolCreator:
     async def step(self) -> None:
         now = datetime.now(timezone.utc)
         sol = self.sol_usd()
-        for r in await self.db.fetch("select * from paper_pool_runs where status = 'open'"):
+        for r in await self.db.fetch("select * from paper_pool_runs where status = 'open' and version = $1", VERSION):
             await self._tick(dict(r), now, sol)
         await self._open_new(now, sol)
 
@@ -132,19 +142,24 @@ class PaperPoolCreator:
         earned = 0.0
         if in_range and cum > r["last_cum_fees"]:
             # Our liquidity would have been part of the pool: share of what the pool earned since the last tick.
-            earned = (cum - r["last_cum_fees"]) * value / (value + max(tvl, 0.0))
+            # Fees earned during the tick came from a pool at least as deep as its deeper end.
+            depth = max(tvl, r["last_tvl"] or 0.0, 0.0)
+            earned = (cum - r["last_cum_fees"]) * min(MAX_SHARE, value / (value + depth))
+        peak_tvl = max(r.get("peak_tvl") or 0.0, r["last_tvl"] or 0.0, tvl)
         hours = max(TICK_S / 3600, ((now - r["checked_at"]).total_seconds() / 3600) if r["checked_at"] else TICK_S / 3600)
         fee_hour_pct = earned / hours / r["size_usd"] * 100
         await self.db.execute(
             """update paper_pool_runs set last_cum_fees = $2, fees_usd = fees_usd + $3, ticks = ticks + 1,
                  in_range_ticks = in_range_ticks + $4, last_price = $5, last_tvl = $6, checked_at = $7,
-                 peak_fee_hour = greatest(peak_fee_hour, $8) where id = $1""",
-            r["id"], cum, earned, int(in_range), price, tvl, now, fee_hour_pct,
+                 peak_fee_hour = greatest(peak_fee_hour, $8), peak_tvl = $9 where id = $1""",
+            r["id"], cum, earned, int(in_range), price, tvl, now, fee_hour_pct, peak_tvl,
         )
         r.update(fees_usd=r["fees_usd"] + earned, last_price=price, last_tvl=tvl)
         held_h = (now - r["opened_at"]).total_seconds() / 3600
         pnl_pct = (value + r["fees_usd"] - r["size_usd"]) / r["size_usd"] * 100
-        if pnl_pct <= STOP_PCT:
+        if peak_tvl > 0 and tvl < peak_tvl * PULLED_TVL_FRAC:
+            await self._close(r, now, price, "pulled", sol)
+        elif pnl_pct <= STOP_PCT:
             await self._close(r, now, price, "stop", sol)
         elif ratio < RANGE_LOW:
             await self._close(r, now, price, "below_range", sol)
@@ -172,11 +187,11 @@ class PaperPoolCreator:
         log.info("paper pool %s closed (%s): %+.2f USD, fees %.2f", r["name"], reason, pnl, r["fees_usd"])
 
     async def _open_new(self, now: datetime, sol: float) -> None:
-        open_rows = await self.db.fetch("select pool, mint from paper_pool_runs where status = 'open'")
+        open_rows = await self.db.fetch("select pool, mint from paper_pool_runs where status = 'open' and version = $1", VERSION)
         slots = MAX_OPEN - len(open_rows)
         if slots <= 0:
             return
-        seen_pools = {r["pool"] for r in await self.db.fetch("select pool from paper_pool_runs")}
+        seen_pools = {r["pool"] for r in await self.db.fetch("select pool from paper_pool_runs where version = $1", VERSION)}
         open_mints = {r["mint"] for r in open_rows}
         try:
             body = await asyncio.to_thread(
@@ -207,18 +222,35 @@ class PaperPoolCreator:
             await self.db.execute(
                 """insert into paper_pool_runs (pool, name, mint, quote, base_fee_pct, opened_at, pool_age_min, status,
                      size_usd, sol_usd, entry_price, range_low, range_high, last_cum_fees, last_price, last_tvl,
-                     checked_at)
-                   values ($1,$2,$3,$4,$5,$6,$7,'open',$8,$9,$10,$11,$12,$13,$10,$14,$6)""",
+                     checked_at, version, peak_tvl)
+                   values ($1,$2,$3,$4,$5,$6,$7,'open',$8,$9,$10,$11,$12,$13,$10,$14,$6,$15,$14)""",
                 p["address"], p.get("name") or "?", x["address"], quote, fee, now, age_min, SIZE_SOL * sol, sol,
                 _f(p["current_price"]), RANGE_LOW, RANGE_HIGH, _f((p.get("cumulative_metrics") or {}).get("fees")),
-                _f(p.get("tvl")),
+                _f(p.get("tvl")), VERSION,
             )
             open_mints.add(x["address"])
             log.info("paper pool joined %s (fee %.1f%%, age %.0f min)", p.get("name"), fee, age_min)
 
 
+def _summary(closed: list[dict[str, Any]]) -> dict[str, Any]:
+    """Totals that a single lucky pool cannot hide: median, and the result without the best one and best three."""
+    pnls = sorted(r["pnl_usd"] for r in closed)
+    n = len(pnls)
+    return {
+        "closed": n,
+        "pnl_usd": sum(pnls),
+        "median_usd": (pnls[n // 2] if n % 2 else (pnls[n // 2 - 1] + pnls[n // 2]) / 2) if n else None,
+        "without_best_usd": sum(pnls[:-1]) if n > 1 else None,
+        "without_best3_usd": sum(pnls[:-3]) if n > 3 else None,
+        "best_usd": pnls[-1] if n else None,
+        "win_rate": sum(p > 0 for p in pnls) / n if n else None,
+    }
+
+
 async def report(db) -> dict[str, Any]:
-    rows = [dict(r) for r in await db.fetch("select * from paper_pool_runs order by opened_at desc limit 300")]
+    old = [dict(r) for r in await db.fetch("select pnl_usd from paper_pool_runs where status = 'closed' and version < $1", VERSION)]
+    rows = [dict(r) for r in await db.fetch(
+        "select * from paper_pool_runs where version = $1 order by opened_at desc limit 300", VERSION)]
     closed = [r for r in rows if r["status"] == "closed"]
     ms = lambda t: int(t.timestamp() * 1000) if t else None  # noqa: E731
     reasons: dict[str, int] = {}
@@ -245,7 +277,8 @@ async def report(db) -> dict[str, Any]:
             "size_sol": SIZE_SOL, "max_open": MAX_OPEN, "max_pool_age_min": MAX_POOL_AGE_MIN, "fee_min_pct": FEE_MIN_PCT,
             "min_tvl_usd": MIN_TVL_USD, "min_volume_30m_usd": MIN_VOLUME_30M_USD, "range_low": RANGE_LOW,
             "range_high": RANGE_HIGH, "stop_pct": STOP_PCT, "max_hold_h": MAX_HOLD_H, "create_cost_sol": CREATE_COST_SOL,
-            "swap_cost_pct": SWAP_COST_PCT, "fees_dried_pct": FEES_DRIED_PCT,
+            "swap_cost_pct": SWAP_COST_PCT, "fees_dried_pct": FEES_DRIED_PCT, "tick_s": TICK_S,
+            "max_share_pct": MAX_SHARE * 100, "pulled_tvl_pct": PULLED_TVL_FRAC * 100,
         },
         "counts": {"open": len(rows) - len(closed), "closed": len(closed), **reasons},
         "pnl_usd": pnl,
@@ -254,5 +287,8 @@ async def report(db) -> dict[str, Any]:
         "capital_usd": sum(r["size_usd"] for r in closed),
         "win_rate": sum(r["pnl_usd"] > 0 for r in closed) / len(closed) if closed else None,
         "win_rate_without_create": sum(r["pnl_usd"] + (r["create_cost_usd"] or 0) > 0 for r in closed) / len(closed) if closed else None,
+        "robust": _summary(closed),
+        "version": VERSION,
+        "previous": _summary(old) if old else None,
         "runs": orders,
     }
