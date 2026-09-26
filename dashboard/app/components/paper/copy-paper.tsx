@@ -290,10 +290,11 @@ function Table({ runs, empty }: { runs: Run[]; empty: string }) {
   );
 }
 
-/** Finished copies, one collapsible group per wallet, best total first: which wallets are worth copying at a glance. */
-function GroupedDone({ runs }: { runs: Run[] }) {
+/** Copies, one collapsible group per wallet, best total first: which wallets are worth copying at a glance. Used for
+ * both the running copies (marked to the wallet's current PnL) and the finished ones. */
+function Grouped({ runs, empty, noun }: { runs: Run[]; empty: string; noun: string }) {
   const [openWallet, setOpenWallet] = useState<string | null>(null);
-  if (runs.length === 0) return <p className="rounded-2xl border border-white/[0.06] bg-panel px-4 py-10 text-center text-sm text-ink-3">Belum ada tiruan yang selesai.</p>;
+  if (runs.length === 0) return <p className="rounded-2xl border border-white/[0.06] bg-panel px-4 py-10 text-center text-sm text-ink-3">{empty}</p>;
   const groups = Object.values(
     runs.reduce<Record<string, Run[]>>((acc, r) => {
       (acc[r.wallet] ??= []).push(r);
@@ -330,14 +331,16 @@ function GroupedDone({ runs }: { runs: Run[] }) {
               </span>
               <span>
                 <span className="font-mono font-semibold text-ink">{short(g.wallet)}</span>
-                <span className="block text-[11px] text-ink-3">{g.list.length} tiruan selesai</span>
+                <span className="block text-[11px] text-ink-3">
+                  {g.list.length} {noun}
+                </span>
               </span>
               <span>
                 <span className="block text-[11px] uppercase tracking-[0.08em] text-ink-3">Hasil</span>
                 <span className={`font-semibold tabular-nums ${tone(g.pnl)}`}>{money(g.pnl)}</span>
               </span>
               <span>
-                <span className="block text-[11px] uppercase tracking-[0.08em] text-ink-3">Win rate</span>
+                <span className="block text-[11px] uppercase tracking-[0.08em] text-ink-3">{noun.includes("berjalan") ? "Sedang untung" : "Win rate"}</span>
                 <span className={`font-semibold tabular-nums ${wr >= 50 ? "text-emerald-300" : "text-rose-300"}`}>
                   {fmtNum(wr, 0)}% <span className="text-[11px] font-normal text-ink-3">({g.wins}/{g.list.length})</span>
                 </span>
@@ -434,9 +437,13 @@ export default function CopyPaper() {
       </div>
 
       {view === "berjalan" && (
-        <Table runs={running} empty={`Belum ada tiruan berjalan. Dicek tiap ${p.tick_s / 60} menit: menunggu wallet yang diikuti membuka posisi baru.`} />
+        <Grouped
+          runs={running}
+          noun="tiruan berjalan"
+          empty={`Belum ada tiruan berjalan. Dicek tiap ${p.tick_s / 60} menit: menunggu wallet yang diikuti membuka posisi baru.`}
+        />
       )}
-      {view === "selesai" && <GroupedDone runs={done} />}
+      {view === "selesai" && <Grouped runs={done} noun="tiruan selesai" empty="Belum ada tiruan yang selesai." />}
       {view === "wallet" &&
         (r.wallets.length === 0 ? (
           <p className="rounded-2xl border border-white/[0.06] bg-panel px-4 py-10 text-center text-sm text-ink-3">
