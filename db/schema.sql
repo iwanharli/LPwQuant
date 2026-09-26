@@ -586,3 +586,31 @@ create table if not exists paper_copy_runs (
   closed_at         timestamptz
 );
 create index if not exists paper_copy_runs_status on paper_copy_runs (status);
+
+-- Paper test "Brontosaurus" (engine/app/brontosaurus.py): wide spot ranges on high-fee memecoin/SOL pools, ~12h holds.
+create table if not exists paper_bronto_runs (
+  id              bigserial primary key,
+  pool            text not null,
+  name            text not null,
+  mint            text not null,
+  opened_at       timestamptz not null,
+  status          text not null,               -- open | closed
+  size_usd        double precision not null,
+  entry_price     double precision not null,
+  bin_step        integer not null,
+  base_fee_pct    double precision,
+  last_cum_fees   double precision not null,
+  fees_usd        double precision not null default 0,
+  last_price      double precision,
+  last_tvl        double precision,
+  peak_tvl        double precision,
+  new_arrays      integer not null default 0,
+  entry_cost_usd  double precision,
+  exit_cost_usd   double precision,
+  lp_value_usd    double precision,
+  pnl_usd         double precision,
+  exit_reason     text,                        -- target | time | pulled | vanished
+  checked_at      timestamptz,
+  closed_at       timestamptz
+);
+create index if not exists paper_bronto_runs_status on paper_bronto_runs (status);

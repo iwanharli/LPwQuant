@@ -62,6 +62,25 @@ export const STRATEGY_NOTES: Record<string, StrategyNote> = {
       "Setelah itu uji rencana perbaikan di bawah ini berdampingan dengan versi sekarang.",
     ],
   },
+  bronto: {
+    written: "26 Sep 2026",
+    basis: "meniru gaya wallet 8ryc… (win rate 94–96%, +$371 ribu seumur hidup)",
+    pros: [
+      "Wallet aslinya terbukti dalam skala besar: 25.979 posisi, fee +$93,6 ribu vs kerugian harga −$36,1 ribu di 1.013 posisi yang dibedah.",
+      "Dipegang lama (±12 jam), jadi fee sempat menumpuk dan tidak bergantung pada keluar tepat waktu.",
+      "Range lebar di pool ber-fee tinggi: pergerakan harga biasa tetap di dalam range.",
+    ],
+    cons: [
+      "Kerugian jarang tapi dalam (wallet aslinya pernah −34% sampai −53% per posisi).",
+      "Tanpa stop-loss: posisi rugi ditahan lama, modal tertahan.",
+      "Win rate wallet aslinya hanya dari posisi yang ditutup; banyak posisi terbukanya sedang minus.",
+      "Butuh banyak posisi sekaligus supaya satu kerugian besar tertutup; dengan 10 posisi hasilnya lebih naik-turun.",
+    ],
+    next: [
+      "Jalankan 1–2 minggu dan bandingkan dengan Copy LP (yang meniru wallet yang sama secara langsung).",
+      "Perhatikan rugi terbesar per posisi; bila sering di bawah −30%, pertimbangkan batas keluar struktural.",
+    ],
+  },
   copy: {
     written: "26 Sep 2026",
     basis: "baru dimulai",

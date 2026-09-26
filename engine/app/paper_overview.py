@@ -103,6 +103,20 @@ async def overview(db, papers: dict[str, Any], sol_usd: float, pools: dict[str, 
              and (r["fees_usd"] or 0) / r["size_usd"] * 100 / max(float(r["hold_h"] or 0), 1.0) >= ODD_FEE_PCT_PER_HOUR],
     ))
 
+    bronto = await db.fetch(
+        """select status, size_usd, pnl_usd, fees_usd, opened_at, extract(epoch from closed_at - opened_at) / 3600 as hold_h,
+                  closed_at > now() - interval '7 days' as recent
+           from paper_bronto_runs""")
+    from . import brontosaurus as bronto_mod
+    rows.append(_row(
+        "bronto", "Brontosaurus", "bronto",
+        [(r["pnl_usd"] or 0, r["size_usd"]) for r in bronto if r["status"] == "closed"],
+        sum(r["status"] == "open" for r in bronto), min((r["opened_at"] for r in bronto), default=None),
+        "Gaya pemanen fee: range lebar di memecoin ber-fee tinggi, dipegang ±12 jam",
+        holds=[float(r["hold_h"]) for r in bronto if r["status"] == "closed" and r["hold_h"] is not None],
+        recent_7d=sum(r["pnl_usd"] or 0 for r in bronto if r["status"] == "closed" and r["recent"]), opened=len(bronto),
+        passing=sum(1 for row in pools.values() if bronto_mod.screen(row)[0]) if pools else None,
+    ))
     copies = await db.fetch(
         """select status, size_usd, pnl_usd, opened_at, extract(epoch from closed_at - opened_at) / 3600 as hold_h,
                   closed_at > now() - interval '7 days' as recent

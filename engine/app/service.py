@@ -20,6 +20,7 @@ from .portfolio import snapshot_loop as portfolio_snapshot_loop
 from .position_alerts import PositionAlerts
 from . import lp_leaders
 from .sol_grid import SolGrid
+from .brontosaurus import Brontosaurus
 from .copy_paper import CopyPaper
 from .indicators import Candle, compute_indicators, flow_features, merge_market
 from .metrics import PriceHistory
@@ -161,6 +162,9 @@ class Engine:
         if config.PAPER_ENABLED:
             # Pool-creator paper test stopped 2026-09-26: creation rent (~$20 a pool) left v2 at -$580 over 33 pools.
             self._tasks.append(asyncio.create_task(SolGrid(self.db).run(), name="sol_grid"))
+            self._tasks.append(asyncio.create_task(
+                Brontosaurus(self.db, lambda: self.rows, lambda: self.sol_usd or config.SOL_USD_FALLBACK).run(),
+                name="brontosaurus"))
             self._tasks.append(asyncio.create_task(
                 CopyPaper(self.db, lambda: self.sol_usd or config.SOL_USD_FALLBACK).run(), name="copy_paper"))
             panda = PandaPaper(self.db, lambda: self.rows, lambda: self.sol_usd or config.SOL_USD_FALLBACK)
