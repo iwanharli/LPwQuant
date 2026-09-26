@@ -127,6 +127,34 @@ function Rules({ p, approximations }: { p: Report["params"]; approximations: str
           </div>
         ))}
       </section>
+      <section className="rounded-2xl border border-accent/25 bg-accent/[0.05] p-4">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <h3 className="text-base font-semibold text-ink">Rencana perbaikan setelah 20 posisi selesai</h3>
+          <span className="text-xs text-ink-3">dicatat 26/09 · belum dijalankan</span>
+        </div>
+        <p className="mt-1 text-sm leading-6 text-ink-3">
+          Uji berjalan tanpa diubah sampai 20 posisi selesai. Yang diperhatikan: seberapa dalam rugi posisi yang tidak memantul. Kalau hasil tetap di
+          sekitar nol atau minus, Panda dihentikan; kalau ingin idenya dipakai, versi berikut diuji berdampingan.
+        </p>
+        <ol className="mt-3 space-y-2 text-sm leading-6 text-ink-2">
+          {[
+            ["Range lebih sempit (−20% s/d −40%)", "likuiditas lebih pekat di dekat harga, bagian fee 3–5× lebih besar, rugi maksimum terbatas."],
+            ["Batas keluar struktural", "keluar bila harga menembus bawah range atau tidak memantul dalam 24 jam; rugi dipotong di −20% s/d −30%, bukan −74%."],
+            ["Masuk setelah dump pertama, bukan di puncak", "pump memecoin memuncak ±menit ke-10 lalu turun; masuk setelah turun 30–50% sesuai logika beli-saat-jatuh."],
+          ].map(([t, d], i) => (
+            <li key={t} className="flex gap-3">
+              <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-accent/15 text-xs font-bold text-accent">{i + 1}</span>
+              <span>
+                <span className="font-medium text-ink">{t}</span> — {d}
+              </span>
+            </li>
+          ))}
+        </ol>
+        <p className="mt-3 text-xs leading-5 text-ink-3">
+          Alasan: fee Panda hanya ±$0,1–2 per posisi $100 (likuiditas tersebar di ±233 bin), sehingga hasil bergantung pada pantulan harga. Tanpa
+          stop, titik impasnya butuh ±97% posisi menang.
+        </p>
+      </section>
       <div className="rounded-2xl border border-white/[0.06] bg-panel px-4 py-3 text-sm leading-6 text-ink-3">
         <div className="font-medium text-ink-2">Yang tidak bisa ditiru persis</div>
         <ul className="mt-1 space-y-1">
