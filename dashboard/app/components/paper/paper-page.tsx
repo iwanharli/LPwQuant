@@ -2,7 +2,7 @@
 
 import { useUrlState } from "../../lib/url-state";
 import { useAutoRefresh } from "../../lib/auto-refresh";
-import { Candidates, Funnel, Kpi, type Candidate } from "../panda-page";
+import { Kpi, SelectionView, type Candidate } from "../panda-page";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { STRATEGY_LABEL, TIER_META } from "../../lib/flags";
 import {
@@ -474,7 +474,7 @@ const LP_VIEW_LABEL: Record<LpView, string> = {
   aturan: "Aturan",
 };
 
-type ScreenData = { updated_at: number | null; funnel: Record<string, number>; pools: Candidate[] };
+type ScreenData = { updated_at: number | null; funnel: Record<string, number>; pools: Candidate[]; rejected?: Record<string, Candidate[]> };
 
 /** The profile's view of the live pools: the ones that pass its screen with their entry checklist, then why the
  * rest fail. Same layout as Panda's. */
@@ -490,10 +490,7 @@ function ProfileScreen({ profile }: { profile: string }) {
   useEffect(load, [load]);
   if (!data) return <SkeletonTable rows={5} columns={4} title={false} />;
   return (
-    <div className="grid items-start gap-5 lg:grid-cols-[7fr_3fr]">
-      <Candidates data={{ checked_at: data.updated_at, pools: data.pools }} />
-      <Funnel funnel={data.funnel} />
-    </div>
+    <SelectionView candidates={{ checked_at: data.updated_at, pools: data.pools }} funnel={data.funnel} rejected={data.rejected} />
   );
 }
 

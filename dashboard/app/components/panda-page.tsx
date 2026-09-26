@@ -63,6 +63,7 @@ type Report = {
   rent_locked_usd: number;
   screening_funnel: Record<string, number>;
   candidates?: { checked_at: number | null; slots?: number; pools: Candidate[] };
+  rejected?: Record<string, Candidate[]>;
   runs: Run[];
 };
 
@@ -161,26 +162,37 @@ export type Candidate = {
   checks: Check[];
   entry_ok: boolean;
   held: boolean;
+  rejected?: boolean;
 };
 
 /** Pools that cleared every screening gate, each with the entry trigger broken into its parts. */
-export function Candidates({ data }: { data: { checked_at: number | null; slots?: number; pools: Candidate[] } }) {
+export function Candidates({
+  data,
+  title = "Lolos seleksi · checklist entry",
+  empty = "Belum ada pool yang lolos semua filter seleksi.",
+}: {
+  data: { checked_at: number | null; slots?: number; pools: Candidate[] };
+  title?: string;
+  empty?: string;
+}) {
   const pools = data.pools ?? [];
   return (
     <section className="rounded-2xl border border-white/[0.06] bg-panel">
       <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-line px-4 py-3">
-        <h2 className="text-base font-semibold text-ink">Lolos seleksi · checklist entry</h2>
+        <h2 className="text-base font-semibold text-ink">{title}</h2>
         <span className="text-xs text-ink-3">
           {data.checked_at ? `dicek ${fmtDateTime(data.checked_at)} WIB` : "menunggu pengecekan pertama"}
           {data.slots != null && data.slots <= 0 ? " · slot posisi penuh" : ""}
         </span>
       </div>
       {pools.length === 0 ? (
-        <p className="px-4 py-8 text-center text-sm text-ink-3">Belum ada pool yang lolos semua filter seleksi.</p>
+        <p className="px-4 py-8 text-center text-sm text-ink-3">{empty}</p>
       ) : (
         <ul className="divide-y divide-white/[0.05]">
           {pools.map((p) => {
-            const status = p.held
+            const status = p.rejected
+              ? { label: "Gugur", cls: "bg-rose-400/10 text-rose-300" }
+              : p.held
               ? { label: "Sedang dipegang", cls: "bg-sky-400/10 text-sky-300" }
               : p.entry_ok
                 ? { label: "Siap masuk", cls: "bg-emerald-400/10 text-emerald-300" }
@@ -238,28 +250,78 @@ export function Candidates({ data }: { data: { checked_at: number | null; slots?
   );
 }
 
-export function Funnel({ funnel }: { funnel: Record<string, number> }) {
+/** Candidates on the left, funnel on the right; picking a funnel row shows that row's pools on the left. */
+export function SelectionView({
+  candidates,
+  funnel,
+  rejected,
+}: {
+  candidates: { checked_at: number | null; slots?: number; pools: Candidate[] };
+  funnel: Record<string, number>;
+  rejected?: Record<string, Candidate[]>;
+}) {
+  const [selected, setSelected] = useState("lolos");
+  const pick = selected !== "lolos" && funnel[selected] ? selected : "lolos";
+  const list = pick === "lolos" ? candidates : { ...candidates, pools: rejected?.[pick] ?? [] };
+  const shown = list.pools.length;
+  return (
+    <div className="grid items-start gap-5 lg:grid-cols-[7fr_3fr]">
+      <Candidates
+        data={list}
+        title={pick === "lolos" ? "Lolos seleksi · checklist entry" : `Gugur: ${pick} · ${funnel[pick]} pool${shown < funnel[pick] ? `, ${shown} teramai ditampilkan` : ""}`}
+        empty={pick === "lolos" ? undefined : "Tidak ada pool untuk alasan ini."}
+      />
+      <Funnel funnel={funnel} selected={pick} onSelect={setSelected} />
+    </div>
+  );
+}
+
+export function Funnel({
+  funnel,
+  selected = "lolos",
+  onSelect,
+}: {
+  funnel: Record<string, number>;
+  selected?: string;
+  onSelect?: (key: string) => void;
+}) {
   const rows = Object.entries(funnel);
   const total = rows.reduce((n, [, v]) => n + v, 0);
   const passed = funnel.lolos ?? 0;
   return (
     <section className="rounded-2xl border border-white/[0.06] bg-panel p-4">
       <h2 className="text-base font-semibold text-ink">Seleksi Pool · {total} pool dicek sekarang</h2>
-      <p className="mt-0.5 text-sm text-ink-3">Panda menyebut seleksi sebagai 70% pekerjaannya. Ini alasan tiap pool gugur.</p>
-      <div className="mt-3 flex items-center justify-between gap-3 rounded-xl border border-emerald-400/25 bg-emerald-400/[0.07] px-3 py-2.5">
+      <p className="mt-0.5 text-sm text-ink-3">Klik salah satu untuk melihat pool-nya di sebelah kiri.</p>
+      <button
+        type="button"
+        onClick={() => onSelect?.("lolos")}
+        aria-pressed={selected === "lolos"}
+        className={`mt-3 flex w-full items-center justify-between gap-3 rounded-xl border px-3 py-2.5 text-left transition-colors ${
+          selected === "lolos" ? "border-emerald-400/60 bg-emerald-400/[0.14]" : "border-emerald-400/25 bg-emerald-400/[0.07] hover:bg-emerald-400/[0.11]"
+        }`}
+      >
         <span className="text-sm font-medium text-emerald-300">Lolos semua filter</span>
         <span className="text-lg font-semibold tabular-nums text-emerald-300">{passed}</span>
-      </div>
+      </button>
       <ul className="mt-2 space-y-1">
         {rows
           .filter(([k]) => k !== "lolos")
           .map(([why, n]) => (
-            <li key={why} className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm hover:bg-white/[0.02]">
-              <span className="min-w-0 flex-1 truncate text-ink-3">{why}</span>
+            <li key={why}>
+              <button
+                type="button"
+                onClick={() => onSelect?.(why)}
+                aria-pressed={selected === why}
+                className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm transition-colors ${
+                  selected === why ? "bg-white/[0.07]" : "hover:bg-white/[0.03]"
+                }`}
+              >
+              <span className={`min-w-0 flex-1 truncate ${selected === why ? "text-ink" : "text-ink-3"}`}>{why}</span>
               <span className="h-1.5 w-24 overflow-hidden rounded-full bg-white/[0.06]">
                 <span className="block h-full rounded-full bg-ink-3/50" style={{ width: `${total ? (n / total) * 100 : 0}%` }} />
               </span>
               <span className="w-8 text-right tabular-nums text-ink-2">{n}</span>
+              </button>
             </li>
           ))}
       </ul>
@@ -497,10 +559,11 @@ export default function PandaPage({ embedded = false }: { embedded?: boolean }) 
             )}
             {view === "done" && <RunTable runs={finished} empty="Belum ada posisi yang ditutup." />}
             {view === "funnel" && (
-              <div className="grid items-start gap-5 lg:grid-cols-[7fr_3fr]">
-                {r.candidates && <Candidates data={r.candidates} />}
-                <Funnel funnel={r.screening_funnel} />
-              </div>
+              <SelectionView
+                candidates={r.candidates ?? { checked_at: null, pools: [] }}
+                funnel={r.screening_funnel}
+                rejected={r.rejected}
+              />
             )}
             {view === "rules" && <Rules p={p} approximations={r.approximations} />}
           </>

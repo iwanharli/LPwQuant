@@ -18,6 +18,7 @@ def screen(rows: dict[str, dict[str, Any]], trader) -> dict[str, Any]:
     cfg = trader.cfg
     funnel: dict[str, int] = {}
     pools = []
+    rejected: dict[str, list[dict[str, Any]]] = {}
     for row in rows.values():
         d = profile_decision(row, trader)
         plan = row.get("plan_single") if cfg.plan_variant == "single" else (row.get("plan_base") or row.get("plan"))
@@ -28,7 +29,15 @@ def screen(rows: dict[str, dict[str, Any]], trader) -> dict[str, Any]:
         else:
             key = _norm(d.get("reason") or (plan or {}).get("reason") or "tidak ada rencana masuk")
         funnel[key] = funnel.get(key, 0) + 1
-        if not planned or plan.get("tier") not in cfg.tiers:
+        if key != "lolos":
+            rejected.setdefault(key, []).append({
+                "address": row["address"], "name": row.get("name"), "price": row.get("price"),
+                "market_cap": row.get("market_cap"), "volume_24h": row.get("volume_24h"), "tvl": row.get("tvl"),
+                "fee_tvl_pct_24h": row.get("fee_tvl_pct_24h"), "holders": row.get("holders"),
+                "top10_pct": (row.get("security") or {}).get("top10_pct"), "change_pct_1h": row.get("change_pct_1h"),
+                "checks": [{"key": "gate", "label": key, "ok": False, "detail": d.get("reason") or "gugur di seleksi"}],
+                "entry_ok": False, "held": False, "rejected": True,
+            })
             continue
         # Passed the safety and plan screen: the entry checklist.
         atr = (row.get("market") or {}).get("atr_pct")
@@ -53,4 +62,6 @@ def screen(rows: dict[str, dict[str, Any]], trader) -> dict[str, Any]:
             "entry_ok": bool(d["enter"]), "held": bool(d.get("holding")), "coverage": coverage,
         })
     pools.sort(key=lambda p: (not p["held"], not p["entry_ok"], -(p["coverage"] or 0)))
-    return {"funnel": dict(sorted(funnel.items(), key=lambda kv: -kv[1])), "pools": pools[:25]}
+    for k in rejected:
+        rejected[k] = sorted(rejected[k], key=lambda p: -(p["volume_24h"] or 0))[:30]
+    return {"funnel": dict(sorted(funnel.items(), key=lambda kv: -kv[1])), "pools": pools[:25], "rejected": rejected}

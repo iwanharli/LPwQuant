@@ -184,6 +184,19 @@ def entry_checklist(c15: list[Candle]) -> list[dict[str, Any]]:
     ]
 
 
+def pool_card(row: dict[str, Any], why: str) -> dict[str, Any]:
+    """A pool that failed the screen, in the same shape as a candidate, with the failed gate as its only check."""
+    flags = [f for f in (row.get("flags") or []) if f in RISKY_FLAGS]
+    return {
+        "address": row["address"], "name": row.get("name"), "price": _f(row.get("price")),
+        "market_cap": _f(row.get("market_cap")), "volume_24h": _f(row.get("volume_24h")), "tvl": _f(row.get("tvl")),
+        "fee_tvl_pct_24h": _f(row.get("fee_tvl_pct_24h")), "holders": _f(row.get("holders")),
+        "top10_pct": top10_pct(row), "change_pct_1h": _f(row.get("change_pct_1h")),
+        "checks": [{"key": "gate", "label": why, "ok": False, "detail": ", ".join(flags) if flags else "gugur di seleksi"}],
+        "entry_ok": False, "held": False, "rejected": True,
+    }
+
+
 # The last screening pass: pools that cleared every gate, with the entry checklist, for the funnel page.
 LAST_CANDIDATES: dict[str, Any] = {"checked_at": None, "pools": []}
 
@@ -411,9 +424,14 @@ async def report(db, rows: dict[str, dict[str, Any]] | None = None) -> dict[str,
     rent = sum(r["rent_usd"] or 0 for r in closed)
     # How many live pools clear each gate right now: the screening funnel the strategy calls 70% of the work.
     funnel: dict[str, int] = {}
+    rejected: dict[str, list[dict[str, Any]]] = {}
     for row in (rows or {}).values():
         ok, why = screen(row)
         funnel["lolos" if ok else why] = funnel.get("lolos" if ok else why, 0) + 1
+        if not ok:
+            rejected.setdefault(why, []).append(pool_card(row, why))
+    for why in rejected:  # the busiest first, and not every one of hundreds
+        rejected[why] = sorted(rejected[why], key=lambda p: -(p["volume_24h"] or 0))[:30]
     out = []
     for r in runs:
         ratio = (r["last_price"] or r["entry_price"]) / r["entry_price"] if r["entry_price"] else 1.0
@@ -450,6 +468,7 @@ async def report(db, rows: dict[str, dict[str, Any]] | None = None) -> dict[str,
         "win_rate": (sum((r["pnl_usd"] or 0) > 0 for r in closed) / len(closed)) if closed else None,
         "screening_funnel": dict(sorted(funnel.items(), key=lambda kv: -kv[1])),
         "candidates": LAST_CANDIDATES,
+        "rejected": rejected,
         "runs": out,
         "sol_usd": config.SOL_USD_FALLBACK,
     }
