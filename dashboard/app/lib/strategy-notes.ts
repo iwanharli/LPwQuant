@@ -14,7 +14,7 @@ export const STRATEGY_NOTES: Record<string, StrategyNote> = {
       "Tersebar di 20 pool berbeda, tidak bergantung pada satu token.",
     ],
     cons: [
-      "Separuh untung dari satu posisi (AAVE-USDC, +$16,22) dengan fee tak wajar yang tidak bisa diverifikasi; tanpa itu +$19,63.",
+      "Separuh untung dari satu posisi: AAVE-USDC (18/09) +$16,22. Fee-nya nyata, dari lonjakan volume ±$3 juta dalam satu jam (biasanya puluhan ribu), tapi kejadian langka seperti ini tidak bisa diandalkan; tanpa itu +$19,63.",
       "Untung per posisi kecil (±$1,28 dari modal $100).",
       "Jarang masuk: ratusan pool lolos seleksi tetapi hampir tidak ada yang lolos ATR ≤ 2% dan gerbang fee 2×.",
       "Yang dimasuki kebanyakan token besar (AAVE, xBTC, DOGE, MON, xHYPE), bukan memecoin.",
