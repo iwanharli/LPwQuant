@@ -11,10 +11,11 @@ import TopBar from "../top-bar";
 import PaperPage from "./paper-page";
 import { PROFILE_COLORS } from "../../lib/paper-types";
 import SolGrid from "./sol-grid";
+import CopyPaper from "./copy-paper";
 
 type Verdict = "viable" | "luck" | "loss" | "data";
-type Tab = "ringkasan" | "lp" | "panda" | "sol";
-const TABS = ["ringkasan", "lp", "panda", "sol"] as const;
+type Tab = "ringkasan" | "lp" | "panda" | "copy" | "sol";
+const TABS = ["ringkasan", "lp", "panda", "copy", "sol"] as const;
 
 type Strategy = {
   key: string;
@@ -51,12 +52,14 @@ const TAB_LABEL: Record<Tab, string> = {
   ringkasan: "Ringkasan",
   lp: "Profil LP",
   panda: "Panda",
+  copy: "Copy LP",
   sol: "Grid SOL-USDC",
 };
 const TAB_SUBTITLE: Record<Tab, string> = {
   ringkasan: "Semua uji paper dengan ukuran yang sama: hasil, median, dan hasil tanpa trade terbaik.",
   lp: "LP virtual otomatis dari rencana screener, satu portofolio per profil risiko.",
   panda: "Seleksi ketat, range lebar satu sisi, keluar di pantulan pertama.",
+  copy: "Meniru posisi wallet LP teratas dengan modal $100 per posisi, dengan jeda deteksi yang sebenarnya.",
   sol: "Limit order beli-jual berulang di SOL-USDC: tanpa risiko rug, untung kecil tapi sering.",
 };
 
@@ -296,6 +299,7 @@ export default function PaperHub() {
     { key: "ringkasan", label: TAB_LABEL.ringkasan },
     ...profiles.map((p) => ({ ...p, kind: "lp" as const })),
     { key: "panda", label: TAB_LABEL.panda, kind: "lp" },
+    { key: "copy", label: TAB_LABEL.copy, kind: "lp" },
     { key: "sol", label: TAB_LABEL.sol, kind: "order" },
   ];
   const isProfile = PROFILE_TABS.includes(tab);
@@ -347,6 +351,7 @@ export default function PaperHub() {
         {isProfile && <PaperPage key={tab} embedded fixedProfile={tab} />}
         {tab === "lp" && <PaperPage embedded /> /* old links to the single "Profil LP" tab */}
         {tab === "panda" && <PandaPage embedded />}
+        {tab === "copy" && <CopyPaper />}
         {tab === "sol" && <SolGrid />}
       </main>
     </div>

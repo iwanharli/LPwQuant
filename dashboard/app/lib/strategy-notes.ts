@@ -62,6 +62,24 @@ export const STRATEGY_NOTES: Record<string, StrategyNote> = {
       "Setelah itu uji rencana perbaikan di bawah ini berdampingan dengan versi sekarang.",
     ],
   },
+  copy: {
+    written: "26 Sep 2026",
+    basis: "baru dimulai",
+    pros: [
+      "Posisi LP terlihat utuh di blockchain (pool, range, ukuran), jadi bisa ditiru persis, bukan menebak.",
+      "Wallet yang diikuti sudah lolos kriteria yang sama dengan uji paper: median dan hasil tanpa 3 terbaik positif.",
+      "Jeda deteksi dihitung sungguhan, jadi hasilnya adalah yang benar-benar tersisa untuk peniru.",
+    ],
+    cons: [
+      "Masa lalu tidak menjamin masa depan: wallet yang bagus minggu lalu bisa berhenti bagus.",
+      "Wallet bot dengan posisi sangat singkat sulit ditiru; hasilnya banyak hilang di jeda.",
+      "Untung per posisi wallet besar tipis dalam persen; dengan modal $100, biaya tetap terasa lebih berat.",
+    ],
+    next: [
+      "Biarkan 1–2 minggu, lalu bandingkan hasil tiruan dengan hasil wallet aslinya.",
+      "Bila jeda memakan sebagian besar hasil, pilih wallet dengan lama pegang lebih panjang.",
+    ],
+  },
   sol_grid: {
     written: "26 Sep 2026",
     basis: "belum ada order terisi",

@@ -13,7 +13,7 @@ from . import config
 from .backtest import default_params, run_backtest
 from .charts import MAX_HOURS, load_candles, pool_paper_positions, profile_decision
 from .freshness import check_freshness
-from . import busy_hours, holders_map, lp_leaders, profile_screen, sol_grid, ledger, limit_recs, netpnl, panda, paper_lo, paper_overview, paper_pool, portfolio
+from . import busy_hours, copy_paper, holders_map, lp_leaders, profile_screen, sol_grid, ledger, limit_recs, netpnl, panda, paper_lo, paper_overview, paper_pool, portfolio
 
 log = logging.getLogger("api")
 from .service import Engine
@@ -357,6 +357,14 @@ async def token_holders(mint: str) -> dict:
         return await asyncio.to_thread(holders_map.holders_map, mint)
     except Exception as err:  # RugCheck down, rate limited, or the token not analysed yet
         raise HTTPException(status_code=502, detail=f"holders unavailable: {str(err)[:120]}") from err
+
+
+@app.get("/api/paper/copy")
+async def get_copy_paper() -> dict:
+    """Paper copies of the followed LP wallets' positions, $100 each."""
+    if engine.db is None:
+        raise HTTPException(status_code=503, detail="engine not ready")
+    return await copy_paper.report(engine.db)
 
 
 @app.get("/api/lp-leaders")

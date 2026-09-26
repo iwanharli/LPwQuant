@@ -103,6 +103,19 @@ async def overview(db, papers: dict[str, Any], sol_usd: float, pools: dict[str, 
              and (r["fees_usd"] or 0) / r["size_usd"] * 100 / max(float(r["hold_h"] or 0), 1.0) >= ODD_FEE_PCT_PER_HOUR],
     ))
 
+    copies = await db.fetch(
+        """select status, size_usd, pnl_usd, opened_at, extract(epoch from closed_at - opened_at) / 3600 as hold_h,
+                  closed_at > now() - interval '7 days' as recent
+           from paper_copy_runs""")
+    rows.append(_row(
+        "copy", "Copy LP", "copy",
+        [(r["pnl_usd"] or 0, r["size_usd"]) for r in copies if r["status"] == "closed"],
+        sum(r["status"] == "open" for r in copies), min((r["opened_at"] for r in copies), default=None),
+        "Meniru posisi 5 wallet LP teratas, $100 per posisi",
+        holds=[float(r["hold_h"]) for r in copies if r["status"] == "closed" and r["hold_h"] is not None],
+        recent_7d=sum(r["pnl_usd"] or 0 for r in copies if r["status"] == "closed" and r["recent"]), opened=len(copies),
+        passing=5,
+    ))
     grid = await db.fetch("select profit_usd, ts > now() - interval '7 days' as recent from paper_sol_grid_fills where side = 'sell'")
     grid_buys = await db.fetchval("select count(*) from paper_sol_grid_fills where side = 'buy'")
     # A round trip lasts from a level's buy to the sell that follows it.

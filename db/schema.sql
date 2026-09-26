@@ -555,3 +555,34 @@ create table if not exists lp_leaders (
   stats       jsonb not null,
   updated_at  timestamptz not null
 );
+
+-- Copy-trading paper test (engine/app/copy_paper.py): positions of followed LP wallets, copied at $100.
+create table if not exists paper_copy_seen (
+  position    text primary key,
+  wallet      text not null,
+  first_seen  timestamptz not null
+);
+create index if not exists paper_copy_seen_wallet on paper_copy_seen (wallet);
+create table if not exists paper_copy_runs (
+  id                bigserial primary key,
+  wallet            text not null,
+  position          text not null unique,
+  pool              text not null,
+  pair              text not null,
+  their_created_at  timestamptz,
+  opened_at         timestamptz not null,   -- when we saw it: the copy starts here
+  status            text not null,          -- open | closed
+  size_usd          double precision not null,
+  entry_pnl_pct     double precision,       -- the wallet's PnL % when we saw it
+  last_pnl_pct      double precision,
+  exit_pnl_pct      double precision,
+  result_pct        double precision,
+  their_deposit_usd double precision,
+  min_price         double precision,
+  max_price         double precision,
+  costs_usd         double precision,
+  pnl_usd           double precision,
+  checked_at        timestamptz,
+  closed_at         timestamptz
+);
+create index if not exists paper_copy_runs_status on paper_copy_runs (status);
