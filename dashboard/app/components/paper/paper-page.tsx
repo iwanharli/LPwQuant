@@ -1,22 +1,22 @@
 "use client";
 
+import Link from "next/link";
 import { useUrlState } from "../../lib/url-state";
 import { useAutoRefresh } from "../../lib/auto-refresh";
 import { Kpi, SelectionView, type Candidate } from "../panda-page";
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { Fragment, useCallback, useEffect, useState, type ReactNode } from "react";
 import { STRATEGY_LABEL, TIER_META } from "../../lib/flags";
 import {
   ENGINE_URL,
   fmtDateTime,
   fmtHours,
   fmtPct,
-  fmtPriceExact,
   fmtSignedPct,
   integer,
+  fmtNum,
   usd,
 } from "../../lib/format";
 import {
-  EXIT_REASON_LABELS,
   type EquityPoint,
   type PaperPosition,
   type PaperSummary,
@@ -134,19 +134,6 @@ function PnlCell({ net, gross }: { net: number; gross: number | null }) {
   );
 }
 
-/** Realized PnL of a closed position: USD amount with the percentage of capital underneath. */
-function PnlUsdCell({ usd: amount, pct }: { usd: number; pct: number }) {
-  const tone = amount > 0 ? "text-up" : amount < 0 ? "text-down" : "text-ink-2";
-  return (
-    <div className={`flex flex-col items-end tabular-nums ${tone}`}>
-      <span className="font-semibold">
-        {amount > 0 ? "+" : amount < 0 ? "−" : ""}
-        {usd.format(Math.abs(amount))}
-      </span>
-      <span className="text-[11px]">{fmtSignedPct(pct, 2)}</span>
-    </div>
-  );
-}
 
 function ciText(s: TradeStats): string {
   if (s.ci_low == null || s.ci_high == null) return "–";
@@ -194,151 +181,6 @@ function StatsTable({ rows }: { rows: { key: string; label: ReactNode; stats: Tr
               <td className="px-3 py-2.5 text-right text-ink-2">{s.trades ? fmtSignedPct(s.mean_il_vs_hodl_pct, 2) : "–"}</td>
               <td className="px-3 py-2.5 text-right text-ink-2">{s.trades ? fmtCost(s.mean_cost_pct) : "–"}</td>
               <td className="px-4 py-2.5 text-right text-ink-2">{s.trades ? fmtHours(s.mean_hold_hours ?? 0) : "–"}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-function PoolCell({ p }: { p: PaperPosition }) {
-  return (
-    <div className="min-w-0">
-      <a
-        href={`https://meteora.ag/dlmm/${p.address}`}
-        target="_blank"
-        rel="noreferrer"
-        className="font-medium text-ink hover:underline"
-      >
-        {p.name}
-      </a>
-      <div className="text-[11px] text-ink-3">
-        Bin {p.bin_step} · {STRATEGY_LABEL[p.strategy]} · {usd.format(p.capital_usd)}
-        {p.positions > 1 && ` · ${p.positions} posisi`}
-      </div>
-    </div>
-  );
-}
-
-function OpenTable({ positions }: { positions: PaperPosition[] }) {
-  if (positions.length === 0) {
-    return (
-      <p className="px-4 py-10 text-center text-sm text-ink-3">
-        Belum ada posisi terbuka. Paper trader membuka posisi di siklus engine berikutnya jika ada pool yang lolos.
-      </p>
-    );
-  }
-  return (
-    <div className="overflow-x-auto">
-      <table className="w-full min-w-[1160px] text-sm tabular-nums">
-        <thead className="text-[11px] font-medium uppercase tracking-[0.08em] text-ink-3">
-          <tr>
-            <th className="px-4 py-2.5 text-left font-medium">Pool</th>
-            <th className="px-3 py-2.5 text-left font-medium">Tier</th>
-            <th className="px-3 py-2.5 text-left font-medium">Masuk</th>
-            <th className="px-3 py-2.5 text-right font-medium">Harga masuk → sekarang</th>
-            <th className="px-3 py-2.5 text-right font-medium">Min – max price</th>
-            <th className="px-3 py-2.5 text-right font-medium">Fee</th>
-            <th className="px-3 py-2.5 text-right font-medium">IL</th>
-            <th
-              className="px-3 py-2.5 text-right font-medium"
-              title="Biaya masuk + perkiraan biaya keluar sekarang (transaksi, swap, price impact)"
-            >
-              Biaya
-            </th>
-            <th className="px-4 py-2.5 text-right font-medium">PnL bersih</th>
-          </tr>
-        </thead>
-        <tbody>
-          {positions.map((p) => (
-            <tr key={p.id} className="border-t border-line/80 transition-colors hover:bg-hover/50">
-              <td className="px-4 py-2.5 text-left">
-                <PoolCell p={p} />
-              </td>
-              <td className="px-3 py-2.5 text-left">
-                <TierBadge tier={p.tier} />
-              </td>
-              <td className="whitespace-nowrap px-3 py-2.5 text-left text-ink-2">
-                {fmtDateTime(p.entry_ts)}
-                <div className="text-[11px] text-ink-3">{fmtHours(p.hold_hours)} lalu</div>
-              </td>
-              <td className="whitespace-nowrap px-3 py-2.5 text-right font-mono text-[13px] text-ink-2">
-                {fmtPriceExact(p.entry_price)} → <span className="text-ink">{fmtPriceExact(p.last_price)}</span>
-              </td>
-              <td className="whitespace-nowrap px-3 py-2.5 text-right">
-                <div className="flex items-center justify-end gap-2 font-mono text-[13px] text-ink-2">
-                  <span
-                    className="flex items-center gap-1.5 font-sans text-[11px] text-ink-3"
-                    title={p.in_range ? "Harga di dalam range" : "Harga di luar range"}
-                  >
-                    <StatusDot severity={p.in_range ? "good" : "warning"} />
-                    {p.in_range ? "in range" : "out"}
-                  </span>
-                  {fmtPriceExact(p.min_price)} – {fmtPriceExact(p.max_price)}
-                </div>
-              </td>
-              <td className="px-3 py-2.5 text-right text-ink-2">{fmtPct(p.fee_pct, 2)}</td>
-              <td className="px-3 py-2.5 text-right text-ink-2">{fmtSignedPct(p.il_pct, 2)}</td>
-              <td className="px-3 py-2.5 text-right text-ink-2" title={`Rent terkunci ${p.rent_sol.toFixed(4)} SOL (kembali saat tutup)`}>
-                {fmtCost(p.cost_pct)}
-              </td>
-              <td className="px-4 py-2.5 text-right font-semibold">
-                <PnlCell net={p.pnl_pct} gross={p.gross_pnl_pct} />
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-function ClosedTable({ positions }: { positions: PaperPosition[] }) {
-  if (positions.length === 0) {
-    return <p className="px-4 py-10 text-center text-sm text-ink-3">Belum ada posisi yang ditutup.</p>;
-  }
-  return (
-    <div className="overflow-x-auto">
-      <table className="w-full min-w-[1060px] text-sm tabular-nums">
-        <thead className="text-[11px] font-medium uppercase tracking-[0.08em] text-ink-3">
-          <tr>
-            <th className="px-4 py-2.5 text-left font-medium">Pool</th>
-            <th className="px-3 py-2.5 text-left font-medium">Tier</th>
-            <th className="px-3 py-2.5 text-left font-medium">Masuk</th>
-            <th className="px-3 py-2.5 text-left font-medium">Keluar</th>
-            <th className="px-3 py-2.5 text-right font-medium">Durasi</th>
-            <th className="px-3 py-2.5 text-right font-medium">Fee</th>
-            <th className="px-3 py-2.5 text-right font-medium">IL</th>
-            <th className="px-3 py-2.5 text-right font-medium" title="Transaksi, swap, dan price impact">
-              Biaya
-            </th>
-            <th className="px-4 py-2.5 text-right font-medium" title="Setelah biaya, dalam USD dan persen modal">
-              PnL
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {positions.map((p) => (
-            <tr key={p.id} className="border-t border-line/80 transition-colors hover:bg-hover/50">
-              <td className="px-4 py-2.5 text-left">
-                <PoolCell p={p} />
-              </td>
-              <td className="px-3 py-2.5 text-left">
-                <TierBadge tier={p.tier} />
-              </td>
-              <td className="whitespace-nowrap px-3 py-2.5 text-left text-ink-2">{fmtDateTime(p.entry_ts)}</td>
-              <td className="whitespace-nowrap px-3 py-2.5 text-left text-ink-2">
-                {p.exit_ts ? fmtDateTime(p.exit_ts) : "–"}
-                <div className="text-[11px] text-ink-3">{EXIT_REASON_LABELS[p.exit_reason ?? ""] ?? p.exit_reason}</div>
-              </td>
-              <td className="px-3 py-2.5 text-right text-ink-2">{fmtHours(p.hold_hours)}</td>
-              <td className="px-3 py-2.5 text-right text-ink-2">{fmtPct(p.fee_pct, 2)}</td>
-              <td className="px-3 py-2.5 text-right text-ink-2">{fmtSignedPct(p.il_pct, 2)}</td>
-              <td className="px-3 py-2.5 text-right text-ink-2">{fmtCost(p.cost_pct)}</td>
-              <td className="px-4 py-2.5 text-right">
-                <PnlUsdCell usd={(p.capital_usd * p.pnl_pct) / 100} pct={p.pnl_pct} />
-              </td>
             </tr>
           ))}
         </tbody>
@@ -457,10 +299,126 @@ function ProfileTabs({
   );
 }
 
-function PositionsCard({ open, closed, tab }: { open: PaperPosition[]; closed: PaperPosition[]; tab: "open" | "closed" }) {
+const LP_REASON: Record<string, { label: string; cls: string }> = {
+  open: { label: "Berjalan", cls: "bg-sky-400/10 text-sky-300" },
+  out_of_range: { label: "Keluar range", cls: "bg-white/[0.06] text-ink-2" },
+  max_hold: { label: "Batas waktu", cls: "bg-white/[0.06] text-ink-2" },
+  fee_decay: { label: "Fee melemah", cls: "bg-amber-400/10 text-amber-300" },
+  breakout: { label: "Breakout", cls: "bg-amber-400/10 text-amber-300" },
+  stop_loss: { label: "Stop loss", cls: "bg-rose-400/10 text-rose-300" },
+  delisted: { label: "Pool tidak dipantau", cls: "bg-rose-400/10 text-rose-300" },
+  profile_retired: { label: "Profil dihentikan", cls: "bg-white/[0.06] text-ink-3" },
+};
+const lpMoney = (v: number) => `${v >= 0 ? "+" : "−"}${usd.format(Math.abs(v))}`;
+const lpTone = (v: number) => (v > 0.005 ? "text-emerald-300" : v < -0.005 ? "text-rose-300" : "text-ink-2");
+const lpPrice = (n: number | null) => (n == null || !Number.isFinite(n) ? "–" : n.toPrecision(n >= 1 ? 6 : 4));
+
+/** One LP paper position in the same columns and row detail as Panda's table. */
+function LpTable({ positions, empty }: { positions: PaperPosition[]; empty: string }) {
+  const [openId, setOpenId] = useState<number | null>(null);
+  if (positions.length === 0) return <p className="rounded-2xl border border-white/[0.06] bg-panel px-4 py-10 text-center text-sm text-ink-3">{empty}</p>;
   return (
     <section className="overflow-hidden rounded-2xl border border-white/[0.06] bg-panel">
-      {tab === "open" ? <OpenTable positions={open} /> : <ClosedTable positions={closed} />}
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[860px] text-sm tabular-nums">
+          <thead className="text-[11px] font-medium uppercase tracking-[0.08em] text-ink-3">
+            <tr className="border-b border-line">
+              <th className="px-4 py-2.5 text-left font-medium">Pool</th>
+              <th className="px-3 py-2.5 text-left font-medium">Status</th>
+              <th className="px-3 py-2.5 text-right font-medium">Harga</th>
+              <th className="px-3 py-2.5 text-right font-medium" title="Kerugian karena harga bergerak, dibanding memegang saja">IL</th>
+              <th className="px-3 py-2.5 text-right font-medium">Fee</th>
+              <th className="px-3 py-2.5 text-right font-medium">Nilai posisi</th>
+              <th className="px-3 py-2.5 text-right font-medium">Biaya</th>
+              <th className="px-3 py-2.5 text-right font-medium">Hasil</th>
+              <th className="px-3 py-2.5 text-right font-medium" title="Dari dibuka sampai ditutup (atau sampai sekarang bila masih berjalan)">Lama</th>
+              <th className="px-4 py-2.5 text-right font-medium">Waktu</th>
+            </tr>
+          </thead>
+          <tbody>
+            {positions.map((x) => {
+              const st = LP_REASON[x.status === "open" ? "open" : x.exit_reason ?? "max_hold"] ?? { label: x.exit_reason ?? "–", cls: "bg-white/[0.06] text-ink-2" };
+              const px = x.status === "open" ? x.last_price : x.exit_price ?? x.last_price;
+              const change = x.entry_price ? (px / x.entry_price - 1) * 100 : 0;
+              const fee = (x.capital_usd * x.fee_pct) / 100;
+              const cost = (x.capital_usd * x.cost_pct) / 100;
+              const pnl = (x.capital_usd * x.pnl_pct) / 100;
+              const value = x.capital_usd + pnl - fee + cost;
+              const open = openId === x.id;
+              return (
+                <Fragment key={x.id}>
+                  <tr
+                    onClick={() => setOpenId(open ? null : x.id)}
+                    className={`cursor-pointer border-b border-line/60 hover:bg-white/[0.02] ${open ? "bg-white/[0.02]" : ""}`}
+                  >
+                    <td className="px-4 py-2.5">
+                      <span className="font-medium text-ink">
+                        <span className="mr-1.5 inline-block w-3 text-ink-3">{open ? "▾" : "▸"}</span>
+                        {x.name.replace("-", "/")}
+                      </span>
+                      <div className="text-[11px] text-ink-3">
+                        modal {usd.format(x.capital_usd)} · tier {x.tier}
+                      </div>
+                    </td>
+                    <td className="px-3 py-2.5">
+                      <span className={`whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium ${st.cls}`}>{st.label}</span>
+                    </td>
+                    <td className={`px-3 py-2.5 text-right ${lpTone(change)}`}>
+                      {change >= 0 ? "+" : ""}
+                      {fmtNum(change, 1)}%
+                    </td>
+                    <td className="px-3 py-2.5 text-right text-ink-3">{fmtNum(x.il_pct, 2)}%</td>
+                    <td className="px-3 py-2.5 text-right text-emerald-300">+{usd.format(fee)}</td>
+                    <td className="px-3 py-2.5 text-right text-ink-2">{usd.format(value)}</td>
+                    <td className="px-3 py-2.5 text-right text-amber-300/90">{usd.format(cost)}</td>
+                    <td className={`px-3 py-2.5 text-right font-semibold ${lpTone(pnl)}`}>
+                      {lpMoney(pnl)}
+                      <div className="text-[11px] font-normal text-ink-3">{fmtSignedPct(x.pnl_pct, 2)}</div>
+                    </td>
+                    <td className="px-3 py-2.5 text-right text-ink-2">{fmtHours(x.hold_hours)}</td>
+                    <td className="px-4 py-2.5 text-right text-[11px] text-ink-3">{fmtDateTime(x.exit_ts ?? x.entry_ts)}</td>
+                  </tr>
+                  {open && (
+                    <tr className="border-b border-line/60">
+                      <td colSpan={10} className="p-0">
+                        <div className="grid gap-4 bg-white/[0.015] px-4 py-4 md:grid-cols-[1fr_auto]">
+                          <dl className="grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-3 lg:grid-cols-4">
+                            {(
+                              [
+                                ["Harga masuk", lpPrice(x.entry_price)],
+                                [x.status === "open" ? "Harga terakhir" : "Harga keluar", lpPrice(px)],
+                                ["Range", `${lpPrice(x.min_price)} – ${lpPrice(x.max_price)}`],
+                                ["Lebar range", `${fmtNum(x.range_low_pct, 1)}% / +${fmtNum(x.range_high_pct, 1)}%`],
+                                ["Strategi", `${x.strategy} · bin step ${x.bin_step}`],
+                                ["Dibuka", fmtDateTime(x.entry_ts)],
+                                [x.status === "open" ? "Masih berjalan" : "Ditutup", x.exit_ts ? fmtDateTime(x.exit_ts) : "–"],
+                                ["Lama dipegang", fmtHours(x.hold_hours)],
+                                ["Fee", `+${usd.format(fee)} (${fmtNum(x.fee_pct, 2)}%)`],
+                                ["IL", `${fmtNum(x.il_pct, 2)}%`],
+                                ["Biaya", `${usd.format(cost)} (${fmtNum(x.cost_pct, 2)}%)`],
+                                ["Hasil", `${lpMoney(pnl)} (${fmtSignedPct(x.pnl_pct, 2)})`],
+                              ] as [string, string][]
+                            ).map(([k, v]) => (
+                              <div key={k}>
+                                <dt className="text-[11px] uppercase tracking-[0.08em] text-ink-3">{k}</dt>
+                                <dd className="mt-0.5 font-medium text-ink">{v}</dd>
+                              </div>
+                            ))}
+                          </dl>
+                          <div className="flex flex-col gap-2 text-xs md:items-end">
+                            <Link href={`/pool/${x.address}`} className="btn-accent rounded-full px-3 py-1.5 font-medium">Buka grafik pool</Link>
+                            <a href={`https://app.meteora.ag/dlmm/${x.address}`} target="_blank" rel="noreferrer" className="text-ink-3 hover:text-accent">Meteora ↗</a>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
     </section>
   );
 }
@@ -665,13 +623,8 @@ export default function PaperPage({
             ))}
           </div>
 
-          {(view === "berjalan" || view === "selesai") && (
-            <PositionsCard
-              open={data?.open ?? []}
-              closed={data?.closed ?? []}
-              tab={view === "berjalan" ? "open" : "closed"}
-            />
-          )}
+          {view === "berjalan" && <LpTable positions={data?.open ?? []} empty="Belum ada posisi berjalan. Engine memeriksa tiap siklus." />}
+          {view === "selesai" && <LpTable positions={data?.closed ?? []} empty="Belum ada posisi yang ditutup." />}
           {view === "selesai" && <ResultsCard summary={s} profileLabel={s?.profile?.label} />}
           {view === "seleksi" && <ProfileScreen data={screen} />}
           {view === "aturan" && s && (
