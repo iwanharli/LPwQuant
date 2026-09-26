@@ -37,6 +37,10 @@ def _row(key: str, label: str, tab: str, trades: list[tuple[float, float]], open
         "without_best_usd": sum(pnls[:-1]) if n > 1 else None,
         "without_best3_usd": without3,
         "win_rate": sum(p > 0 for p in pnls) / n if n else None,
+        "wins": sum(p > 0 for p in pnls),
+        # The worst single trade, and what it was as a share of that trade's own capital.
+        "worst_usd": min(trades)[0] if trades else None,
+        "worst_pct": (min(trades)[0] / min(trades)[1] * 100) if trades and min(trades)[1] else None,
         "verdict": verdict,
     }
 

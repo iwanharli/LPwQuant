@@ -33,6 +33,9 @@ type Strategy = {
   without_best_usd: number | null;
   without_best3_usd: number | null;
   win_rate: number | null;
+  wins?: number;
+  worst_usd?: number | null;
+  worst_pct?: number | null;
   verdict: Verdict;
 };
 type Overview = { min_closed: number; strategies: Strategy[] };
@@ -97,24 +100,6 @@ function Tile({ label, value, hint, cls }: { label: string; value: string; hint?
   );
 }
 
-/** Return on capital as a bar around zero, so strategies of different size compare at a glance. */
-function ReturnBar({ value, scale }: { value: number | null; scale: number }) {
-  if (value == null) return <span className="text-ink-3">–</span>;
-  const w = Math.min(50, (Math.abs(value) / scale) * 50);
-  return (
-    <div className="flex items-center gap-2">
-      <div className="relative h-1.5 w-24 rounded-full bg-white/[0.06]" aria-hidden>
-        <span className="absolute left-1/2 top-[-2px] h-2.5 w-px bg-white/25" />
-        <span
-          className={`absolute top-0 h-1.5 rounded-full ${value >= 0 ? "bg-emerald-400/80" : "bg-rose-400/80"}`}
-          style={value >= 0 ? { left: "50%", width: `${w}%` } : { right: "50%", width: `${w}%` }}
-        />
-      </div>
-      <span className={`w-14 text-right ${tone(value)}`}>{pct(value)}</span>
-    </div>
-  );
-}
-
 function Summary({ data, error, onOpen }: { data: Overview | null; error: boolean; onOpen: (s: Strategy) => void }) {
   if (!data && error) return <p className="rounded-2xl border border-white/[0.06] bg-panel px-4 py-8 text-sm text-ink-3">Engine tidak bisa dihubungi.</p>;
   if (!data)
@@ -138,7 +123,6 @@ function Summary({ data, error, onOpen }: { data: Overview | null; error: boolea
   const viable = rows.filter((s) => s.verdict === "viable");
   const ranked = rows.filter((s) => s.verdict !== "data");
   const best = ranked.length ? ranked.reduce((a, b) => ((b.return_pct ?? -1e9) > (a.return_pct ?? -1e9) ? b : a)) : null;
-  const scale = Math.max(1, ...rows.map((s) => Math.abs(s.return_pct ?? 0)));
 
   return (
     <>
@@ -167,22 +151,24 @@ function Summary({ data, error, onOpen }: { data: Overview | null; error: boolea
           <p className="text-xs text-ink-3">Klik baris untuk membuka detailnya</p>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[980px] text-sm tabular-nums">
+          <table className="w-full min-w-[900px] text-sm tabular-nums">
             <thead className="text-[11px] font-medium uppercase tracking-[0.08em] text-ink-3">
               <tr className="border-b border-line">
                 <th className="px-4 py-2.5 text-left font-medium">Strategi</th>
-                <th className="px-3 py-2.5 text-right font-medium">Trade</th>
+                <th className="px-3 py-2.5 text-left font-medium">Kesimpulan</th>
                 <th className="px-3 py-2.5 text-right font-medium">Hasil</th>
-                <th className="px-3 py-2.5 text-left font-medium">Per modal</th>
-                <th className="px-3 py-2.5 text-right font-medium">Median</th>
-                <th className="px-3 py-2.5 text-right font-medium">Tanpa 3 terbaik</th>
-                <th className="px-3 py-2.5 text-right font-medium">Win rate</th>
-                <th className="px-4 py-2.5 text-left font-medium">Status</th>
+                <th className="px-3 py-2.5 text-right font-medium">Trade</th>
+                <th className="px-3 py-2.5 text-right font-medium">Untung</th>
+                <th className="px-3 py-2.5 text-right font-medium" title="Total hasil setelah 3 trade terbaik dibuang: minus berarti untungnya dari 1-3 trade yang meledak">
+                  Tanpa 3 terbaik
+                </th>
+                <th className="px-4 py-2.5 text-right font-medium">Rugi terbesar</th>
               </tr>
             </thead>
             <tbody>
               {rows.map((s) => {
                 const v = VERDICT[s.verdict];
+                const kind = s.tab === "sol" ? "Order" : "LP";
                 return (
                   <tr
                     key={s.key}
@@ -190,31 +176,46 @@ function Summary({ data, error, onOpen }: { data: Overview | null; error: boolea
                     className="cursor-pointer border-b border-line/60 transition-colors last:border-b-0 hover:bg-white/[0.025]"
                   >
                     <td className="px-4 py-3">
-                      <div className="font-medium text-ink">{s.label}</div>
-                      <div className="text-[11px] text-ink-3">
-                        {s.note}
-                        {s.avg_size_usd != null && ` · ±${usd.format(s.avg_size_usd)}/trade`}
+                      <div className="flex items-center gap-2 font-medium text-ink">
+                        {s.label}
+                        <span
+                          className={`rounded px-1.5 py-px text-[10px] font-semibold uppercase tracking-wider ${
+                            kind === "LP" ? "bg-accent/15 text-accent" : "bg-sky-400/15 text-sky-300"
+                          }`}
+                        >
+                          {kind}
+                        </span>
                       </div>
+                      <div className="text-[11px] text-ink-3">{s.started_at ? `sejak ${fmtDateTime(s.started_at)}` : "belum mulai"}</div>
                     </td>
-                    <td className="px-3 py-3 text-right text-ink-2">
-                      {s.closed}
-                      {s.open > 0 && <div className="text-[11px] text-ink-3">+{s.open} jalan</div>}
-                    </td>
-                    <td className={`px-3 py-3 text-right font-semibold ${tone(s.closed ? s.pnl_usd : null)}`}>{s.closed ? money(s.pnl_usd) : "–"}</td>
                     <td className="px-3 py-3">
-                      <ReturnBar value={s.return_pct} scale={scale} />
-                    </td>
-                    <td className={`px-3 py-3 text-right ${tone(s.median_usd)}`}>{money(s.median_usd)}</td>
-                    <td className={`px-3 py-3 text-right ${tone(s.without_best3_usd)}`}>{money(s.without_best3_usd)}</td>
-                    <td className="px-3 py-3 text-right text-ink-2">{s.win_rate == null ? "–" : `${fmtNum(s.win_rate * 100, 0)}%`}</td>
-                    <td className="px-4 py-3">
                       <span
-                        title={s.verdict === "data" ? `${s.closed} dari ${data.min_closed} trade selesai` : v.hint}
+                        title={s.verdict === "data" ? `Butuh ${data.min_closed} trade selesai untuk dinilai` : v.hint}
                         className={`inline-flex whitespace-nowrap rounded-full border px-2.5 py-0.5 text-xs font-medium ${v.cls}`}
                       >
-                        {s.verdict === "data" ? `${v.label} · ${s.closed}/${data.min_closed}` : v.label}
+                        {s.verdict === "data" ? `${v.label} (${s.closed}/${data.min_closed})` : v.label}
                       </span>
-                      {s.started_at && <div className="mt-1 text-[11px] text-ink-3">sejak {fmtDateTime(s.started_at)}</div>}
+                    </td>
+                    <td className="px-3 py-3 text-right">
+                      <div className={`font-semibold ${tone(s.closed ? s.pnl_usd : null)}`}>{s.closed ? money(s.pnl_usd) : "–"}</div>
+                      <div className="text-[11px] text-ink-3">{s.return_pct == null ? "" : `${pct(s.return_pct)} dari modal`}</div>
+                    </td>
+                    <td className="px-3 py-3 text-right">
+                      <div className="text-ink-2">{s.closed} selesai</div>
+                      <div className="text-[11px] text-ink-3">{s.open} berjalan</div>
+                    </td>
+                    <td className="px-3 py-3 text-right">
+                      <div className="text-ink-2">{s.closed ? `${s.wins ?? Math.round((s.win_rate ?? 0) * s.closed)} dari ${s.closed}` : "–"}</div>
+                      <div className="text-[11px] text-ink-3">{s.win_rate == null ? "" : `${fmtNum(s.win_rate * 100, 0)}%`}</div>
+                    </td>
+                    <td className={`px-3 py-3 text-right ${tone(s.without_best3_usd)}`}>{money(s.without_best3_usd)}</td>
+                    <td className="px-4 py-3 text-right">
+                      <div className={tone(s.worst_usd != null && s.worst_usd < 0 ? s.worst_usd : null)}>
+                        {s.worst_usd != null && s.worst_usd < 0 ? money(s.worst_usd) : "–"}
+                      </div>
+                      <div className="text-[11px] text-ink-3">
+                        {s.worst_pct != null && s.worst_usd != null && s.worst_usd < 0 ? `${pct(s.worst_pct)} dari modalnya` : ""}
+                      </div>
                     </td>
                   </tr>
                 );
