@@ -23,7 +23,9 @@ from . import config, portfolio
 
 log = logging.getLogger("lp_leaders")
 
-RUN_EVERY_S = 6 * 3600
+RUN_EVERY_S = 6 * 3600  # discovery: new wallets from the busy pools (heavy on-chain scan)
+QUICK_EVERY_S = 3600  # the wallets already on the board: their numbers again, from Meteora only
+QUICK_TOP = 60
 POOLS = 40  # busiest screener pools to collect LP wallets from
 MAX_CANDIDATES = 2000
 MAX_DEEP = 200  # wallets whose positions are read one by one
@@ -161,6 +163,47 @@ async def refresh(db, rows: dict[str, dict[str, Any]]) -> int:
     return saved
 
 
+async def refresh_known(db) -> int:
+    """Recompute the statistics of the wallets already on the board, best first. Meteora only: no on-chain scan,
+    so it can run every hour without touching the RPC limits the discovery scan runs into."""
+    rows = await db.fetch(
+        """select wallet from lp_leaders
+           order by (stats->>'meets')::boolean desc, (stats->>'pnl_7d_usd')::float8 desc nulls last limit $1""",
+        QUICK_TOP,
+    )
+    now_ms = int(time.time() * 1000)
+    done = 0
+    for r in rows:
+        w = r["wallet"]
+        try:
+            t = await asyncio.to_thread(portfolio._get, "/portfolio/total", {"user": w})
+            pools, positions = await asyncio.to_thread(_positions, w)
+        except Exception as err:
+            log.info("lp leaders quick %s: %s", w[:4], err)
+            continue
+        if not positions:
+            continue
+        await db.execute(
+            "update lp_leaders set stats = $2::jsonb, updated_at = now() where wallet = $1",
+            w, json.dumps(stats(w, t, pools, positions, now_ms)),
+        )
+        done += 1
+    log.info("lp leaders: quick refresh of %d wallets", done)
+    return done
+
+
+async def quick_loop(db) -> None:
+    await asyncio.sleep(300)
+    while True:
+        try:
+            await refresh_known(db)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            log.exception("lp leaders quick refresh failed")
+        await asyncio.sleep(QUICK_EVERY_S)
+
+
 async def loop(db, rows) -> None:
     await asyncio.sleep(120)  # let the screener fill first
     # A restart must not start a fresh scan when the last one is recent: each scan is 40 heavy RPC calls and a
@@ -185,6 +228,8 @@ async def report(db) -> dict[str, Any]:
     updated = max((r["updated_at"] for r in rows), default=None)
     return {
         "updated_at": int(updated.timestamp() * 1000) if updated else None,
+        "quick_every_s": QUICK_EVERY_S,
+        "discovery_every_s": RUN_EVERY_S,
         "criteria": {"min_closed": MIN_CLOSED, "min_hold_h": MIN_HOLD_H, "min_deposit": MIN_DEPOSIT,
                      "max_deposit": MAX_DEPOSIT, "active_days": ACTIVE_DAYS},
         "leaders": leaders,

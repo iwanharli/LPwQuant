@@ -120,7 +120,11 @@ export default function LeadersPage() {
                   cls={tone(good[0]?.pnl_7d_usd)}
                   hint={good[0] ? short(good[0].wallet) : undefined}
                 />
-                <Kpi label="Diperbarui" value={r.updated_at ? fmtDateTime(r.updated_at) : "belum"} hint="dihitung ulang tiap 6 jam" />
+                <Kpi
+                  label="Diperbarui"
+                  value={r.updated_at ? fmtDateTime(r.updated_at) : "belum"}
+                  hint="angka wallet tiap 1 jam · wallet baru dicari tiap 6 jam"
+                />
               </div>
             </section>
 
