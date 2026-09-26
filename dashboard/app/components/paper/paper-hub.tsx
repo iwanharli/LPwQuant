@@ -9,6 +9,7 @@ import PandaPage from "../panda-page";
 import { SkeletonTable, SkeletonTiles } from "../skeleton";
 import TopBar from "../top-bar";
 import PaperPage from "./paper-page";
+import { PROFILE_COLORS } from "../../lib/paper-types";
 import SolGrid from "./sol-grid";
 
 type Verdict = "viable" | "luck" | "loss" | "data";
@@ -114,8 +115,7 @@ function ReturnBar({ value, scale }: { value: number | null; scale: number }) {
   );
 }
 
-function Summary({ onOpen }: { onOpen: (s: Strategy) => void }) {
-  const { data, error } = useOverview();
+function Summary({ data, error, onOpen }: { data: Overview | null; error: boolean; onOpen: (s: Strategy) => void }) {
   if (!data && error) return <p className="rounded-2xl border border-white/[0.06] bg-panel px-4 py-8 text-sm text-ink-3">Engine tidak bisa dihubungi.</p>;
   if (!data)
     return (
@@ -237,43 +237,60 @@ function Summary({ onOpen }: { onOpen: (s: Strategy) => void }) {
   );
 }
 
+// Every profile the engine may run, so a profile tab in the URL survives the first render before the list loads.
+const PROFILE_TABS = Object.keys(PROFILE_COLORS);
+const ALL_TABS = [...TABS, ...PROFILE_TABS];
+
 export default function PaperHub() {
-  const [tab, setTab] = useUrlState<Tab>("tab", "ringkasan", TABS);
-  const [profile, setProfile] = useState<string | undefined>(undefined);
+  const [tab, setTab] = useUrlState<string>("tab", "ringkasan", ALL_TABS);
+  const { data, error } = useOverview();
+  // One tab per running profile, between the overview and Panda, in the engine's order.
+  const profiles = (data?.strategies ?? []).filter((s) => s.tab === "lp" && s.profile);
+  const tabs: { key: string; label: string }[] = [
+    { key: "ringkasan", label: TAB_LABEL.ringkasan },
+    ...profiles.map((p) => ({ key: p.profile as string, label: p.label })),
+    { key: "panda", label: TAB_LABEL.panda },
+    { key: "sol", label: TAB_LABEL.sol },
+  ];
+  const isProfile = PROFILE_TABS.includes(tab);
+  const subtitle = isProfile ? TAB_SUBTITLE.lp : TAB_SUBTITLE[(TABS as readonly string[]).includes(tab) ? (tab as Tab) : "ringkasan"];
 
   return (
     <div className="flex min-h-screen min-w-0 flex-col overflow-x-hidden">
       <TopBar />
       <main className="mx-auto w-full min-w-0 max-w-full flex-1 space-y-5 overflow-x-hidden px-4 py-6 sm:px-6 lg:py-7 2xl:px-8">
-        <PageHeader title="Paper" accent="trading" subtitle={TAB_SUBTITLE[tab]} />
+        <PageHeader title="Paper" accent="trading" subtitle={subtitle} />
 
         <nav className="flex gap-1 overflow-x-auto border-b border-line" role="tablist" aria-label="Uji paper">
-          {TABS.map((t) => (
+          {tabs.map((t) => (
             <button
-              key={t}
+              key={t.key}
               type="button"
               role="tab"
-              aria-selected={tab === t}
-              onClick={() => setTab(t)}
-              className={`-mb-px shrink-0 border-b-2 px-4 py-2.5 text-sm font-medium transition-colors ${
-                tab === t ? "border-accent text-ink" : "border-transparent text-ink-3 hover:text-ink-2"
+              aria-selected={tab === t.key}
+              onClick={() => setTab(t.key)}
+              className={`-mb-px inline-flex shrink-0 items-center gap-2 border-b-2 px-4 py-2.5 text-sm font-medium transition-colors ${
+                tab === t.key ? "border-accent text-ink" : "border-transparent text-ink-3 hover:text-ink-2"
               }`}
             >
-              {TAB_LABEL[t]}
+              {PROFILE_COLORS[t.key] && <span className="h-2 w-2 rounded-full" style={{ background: PROFILE_COLORS[t.key] }} aria-hidden />}
+              {t.label}
             </button>
           ))}
         </nav>
 
         {tab === "ringkasan" && (
           <Summary
+            data={data}
+            error={error}
             onOpen={(s) => {
-              setProfile(s.profile ?? undefined);
-              setTab(s.tab);
+              setTab(s.tab === "lp" && s.profile ? s.profile : s.tab);
               window.scrollTo({ top: 0 });
             }}
           />
         )}
-        {tab === "lp" && <PaperPage key={profile ?? "auto"} embedded initialProfile={profile} />}
+        {isProfile && <PaperPage key={tab} embedded fixedProfile={tab} />}
+        {tab === "lp" && <PaperPage embedded /> /* old links to the single "Profil LP" tab */}
         {tab === "panda" && <PandaPage embedded />}
         {tab === "sol" && <SolGrid />}
       </main>

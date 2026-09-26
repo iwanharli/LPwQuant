@@ -716,11 +716,20 @@ const LP_VIEW_LABEL: Record<LpView, string> = {
   banding: "Bandingkan profil",
 };
 
-export default function PaperPage({ embedded = false, initialProfile }: { embedded?: boolean; initialProfile?: string }) {
+export default function PaperPage({
+  embedded = false,
+  initialProfile,
+  fixedProfile,
+}: {
+  embedded?: boolean;
+  initialProfile?: string;
+  /** Shown as its own tab: no profile picker, always this profile. */
+  fixedProfile?: string;
+}) {
   // Until the reader picks one, show the profile with the highest total PnL (derived, so it follows the leader).
   const [picked, setProfile] = useState<string | null>(initialProfile ?? null);
   const [leader, setLeader] = useState("satu_sisi");
-  const profile = picked ?? leader;
+  const profile = fixedProfile ?? picked ?? leader;
   const { data, error } = usePaperData(profile);
   const [view, setView] = useUrlState<LpView>("lp", "berjalan", LP_VIEWS);
   const top = data?.profiles?.reduce((a, b) =>
@@ -764,7 +773,7 @@ export default function PaperPage({ embedded = false, initialProfile }: { embedd
           </p>
         )}
 
-        <ProfileTabs profiles={data?.profiles} selected={profile} onSelect={setProfile} />
+        {!fixedProfile && <ProfileTabs profiles={data?.profiles} selected={profile} onSelect={setProfile} />}
 
         <div
           className={`space-y-5 transition-opacity ${loadingProfile ? "pointer-events-none opacity-50" : ""}`}
