@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import NewPoolNotifier from "./new-pool-notifier";
 import { usePathname } from "next/navigation";
 import type { ConnectionStatus } from "../lib/types";
 import DataHealth from "./data-health";
@@ -84,6 +85,7 @@ export default function TopBar({
             2xl screens, and a wall clock says nothing about this system -- it now rides along as a tooltip. */}
         <div className="ml-auto flex items-center gap-2 text-xs">
           <DataHealth status={status} lastMessageAt={lastMessageAt} />
+          <NewPoolNotifier />
           {/* API usage is a check-up page, not a daily destination: an icon rather than a menu item. */}
           <Link
             href="/rpc"
