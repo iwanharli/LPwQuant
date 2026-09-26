@@ -260,11 +260,11 @@ export default function PaperHub() {
     .filter((s) => s.tab === "lp" && s.profile)
     .map((p) => ({ key: p.profile as string, label: p.label }));
   const profiles = loaded.length ? loaded : DEFAULT_PROFILES;
-  const tabs: { key: string; label: string }[] = [
+  const tabs: { key: string; label: string; kind?: "lp" | "order" }[] = [
     { key: "ringkasan", label: TAB_LABEL.ringkasan },
-    ...profiles,
-    { key: "panda", label: TAB_LABEL.panda },
-    { key: "sol", label: TAB_LABEL.sol },
+    ...profiles.map((p) => ({ ...p, kind: "lp" as const })),
+    { key: "panda", label: TAB_LABEL.panda, kind: "lp" },
+    { key: "sol", label: TAB_LABEL.sol, kind: "order" },
   ];
   const isProfile = PROFILE_TABS.includes(tab);
   const subtitle = isProfile ? TAB_SUBTITLE.lp : TAB_SUBTITLE[(TABS as readonly string[]).includes(tab) ? (tab as Tab) : "ringkasan"];
@@ -289,6 +289,16 @@ export default function PaperHub() {
             >
               {PROFILE_COLORS[t.key] && <span className="h-2 w-2 rounded-full" style={{ background: PROFILE_COLORS[t.key] }} aria-hidden />}
               {t.label}
+              {t.kind && (
+                <span
+                  title={t.kind === "lp" ? "Strategi LP: posisi likuiditas DLMM" : "Strategi limit order, bukan posisi LP"}
+                  className={`rounded px-1.5 py-px text-[10px] font-semibold uppercase tracking-wider ${
+                    t.kind === "lp" ? "bg-accent/15 text-accent" : "bg-sky-400/15 text-sky-300"
+                  }`}
+                >
+                  {t.kind === "lp" ? "LP" : "Order"}
+                </span>
+              )}
             </button>
           ))}
         </nav>
