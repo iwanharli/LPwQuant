@@ -533,9 +533,9 @@ export default function PandaPage({ embedded = false }: { embedded?: boolean }) 
             <div className="flex flex-wrap gap-1 border-b border-line" role="tablist" aria-label="Tampilan uji Panda">
               {(
                 [
-                  { value: "running", label: `Berjalan${open ? ` (${open})` : ""}` },
-                  { value: "done", label: `Selesai${closed ? ` (${closed})` : ""}` },
-                  { value: "funnel", label: "Seleksi Pool" },
+                  { value: "running", label: `Berjalan (${open})` },
+                  { value: "done", label: `Selesai (${closed})` },
+                  { value: "funnel", label: `Seleksi Pool (${r.screening_funnel.lolos ?? 0} lolos)` },
                   { value: "rules", label: "Aturan" },
                 ] as const
               ).map((o) => (

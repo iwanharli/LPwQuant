@@ -478,7 +478,7 @@ type ScreenData = { updated_at: number | null; funnel: Record<string, number>; p
 
 /** The profile's view of the live pools: the ones that pass its screen with their entry checklist, then why the
  * rest fail. Same layout as Panda's. */
-function ProfileScreen({ profile }: { profile: string }) {
+function useScreen(profile: string) {
   const [data, setData] = useState<ScreenData | null>(null);
   const load = useCallback(() => {
     fetch(`${ENGINE_URL}/api/paper/screen?profile=${profile}`)
@@ -488,6 +488,10 @@ function ProfileScreen({ profile }: { profile: string }) {
   }, [profile]);
   useAutoRefresh(load, 30_000);
   useEffect(load, [load]);
+  return data;
+}
+
+function ProfileScreen({ data }: { data: ScreenData | null }) {
   if (!data) return <SkeletonTable rows={5} columns={4} title={false} />;
   return (
     <SelectionView candidates={{ checked_at: data.updated_at, pools: data.pools }} funnel={data.funnel} rejected={data.rejected} />
@@ -554,6 +558,7 @@ export default function PaperPage({
   const profile = fixedProfile ?? picked ?? leader;
   const { data, error } = usePaperData(profile);
   const [view, setView] = useUrlState<LpView>("lp", "berjalan", LP_VIEWS);
+  const screen = useScreen(profile);
   const top = data?.profiles?.reduce((a, b) =>
     b.equity_usd - b.start_equity_usd > a.equity_usd - a.start_equity_usd ? b : a,
   )?.key;
@@ -640,8 +645,9 @@ export default function PaperPage({
                 }`}
               >
                 {LP_VIEW_LABEL[v]}
-                {v === "berjalan" && s?.open_count ? ` (${s.open_count})` : null}
-                {v === "selesai" && s?.closed_count ? ` (${s.closed_count})` : null}
+                {v === "berjalan" && s ? ` (${s.open_count})` : null}
+                {v === "selesai" && s ? ` (${s.closed_count})` : null}
+                {v === "seleksi" && screen ? ` (${screen.funnel.lolos ?? 0} lolos)` : null}
               </button>
             ))}
           </div>
@@ -654,7 +660,7 @@ export default function PaperPage({
             />
           )}
           {view === "selesai" && <ResultsCard summary={s} profileLabel={s?.profile?.label} />}
-          {view === "seleksi" && <ProfileScreen profile={profile} />}
+          {view === "seleksi" && <ProfileScreen data={screen} />}
           {view === "aturan" && s && (
             <div className="space-y-5">
               <ProfileRules summary={s} />
