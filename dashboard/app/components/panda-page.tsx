@@ -141,6 +141,7 @@ function Rules({ p, approximations }: { p: Report["params"]; approximations: str
             ["Range lebih sempit (−20% s/d −40%)", "likuiditas lebih pekat di dekat harga, bagian fee 3–5× lebih besar, rugi maksimum terbatas."],
             ["Batas keluar struktural", "keluar bila harga menembus bawah range atau tidak memantul dalam 24 jam; rugi dipotong di −20% s/d −30%, bukan −74%."],
             ["Masuk setelah dump pertama, bukan di puncak", "pump memecoin memuncak ±menit ke-10 lalu turun; masuk setelah turun 30–50% sesuai logika beli-saat-jatuh."],
+            ["Keluar di pantulan hanya bila sudah untung bersih", "sinyal RSI(2) + Bollinger/MACD sekarang menutup posisi meski masih rugi (GO-SOL keluar di −45,5% dengan −$12,36 saat pantulan kecil). Bila belum untung, tahan sampai sinyal berikutnya, pool mati, atau batas waktu; perlu dipasangkan dengan batas keluar struktural (no. 2) agar posisi yang tak kembali tidak ditahan terlalu lama."],
           ].map(([t, d], i) => (
             <li key={t} className="flex gap-3">
               <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-accent/15 text-xs font-bold text-accent">{i + 1}</span>
