@@ -6,14 +6,17 @@ MIN_CLOSED trades and a positive median and "without best three" -- a result car
 to trade with real money.
 """
 
+from datetime import datetime, timezone
 from typing import Any
 
 MIN_CLOSED = 20
 
 
 def _row(key: str, label: str, tab: str, trades: list[tuple[float, float]], open_n: int, started, note: str,
-         profile: str | None = None, holds: list[float] | None = None) -> dict[str, Any]:
+         profile: str | None = None, holds: list[float] | None = None, recent_7d: float | None = None,
+         opened: int | None = None) -> dict[str, Any]:
     holds = [h for h in (holds or []) if h is not None and h >= 0]
+    days = max(1.0, (datetime.now(timezone.utc) - started).total_seconds() / 86400) if started else None
     pnls = sorted(p for p, _ in trades)
     n = len(pnls)
     capital = sum(c for _, c in trades)
@@ -40,6 +43,9 @@ def _row(key: str, label: str, tab: str, trades: list[tuple[float, float]], open
         "win_rate": sum(p > 0 for p in pnls) / n if n else None,
         "wins": sum(p > 0 for p in pnls),
         # How long closed positions were held, in hours: the average and all of them together.
+        # Result of the positions closed in the last seven days, and how often the strategy opens a position.
+        "pnl_7d_usd": recent_7d,
+        "positions_per_day": (opened / days) if opened is not None and days else None,
         "avg_hold_hours": sum(holds) / len(holds) if holds else None,
         "total_hold_hours": sum(holds) if holds else None,
         # The worst single trade, and what it was as a share of that trade's own capital.
@@ -53,20 +59,23 @@ async def overview(db, papers: dict[str, Any], sol_usd: float) -> dict[str, Any]
     rows: list[dict[str, Any]] = []
     for key, trader in papers.items():
         closed = await db.fetch(
-            """select capital_usd, pnl_pct, extract(epoch from exit_ts - entry_ts) / 3600 as hold_h
+            """select capital_usd, pnl_pct, extract(epoch from exit_ts - entry_ts) / 3600 as hold_h,
+                      exit_ts > now() - interval '7 days' as recent
                from paper_positions where profile = $1 and status = 'closed'""", key)
         agg = await db.fetchrow(
-            "select count(*) filter (where status = 'open') as open, min(entry_ts) as started from paper_positions where profile = $1",
+            "select count(*) filter (where status = 'open') as open, count(*) as n, min(entry_ts) as started from paper_positions where profile = $1",
             key)
         rows.append(_row(
             f"lp:{key}", trader.cfg.label, "lp",
             [(r["capital_usd"] * r["pnl_pct"] / 100, r["capital_usd"]) for r in closed],
             agg["open"], agg["started"], "Profil LP dari rencana screener", profile=key,
             holds=[float(r["hold_h"]) for r in closed if r["hold_h"] is not None],
+            recent_7d=sum(r["capital_usd"] * r["pnl_pct"] / 100 for r in closed if r["recent"]), opened=agg["n"],
         ))
 
     panda = await db.fetch(
-        """select status, size_usd, pnl_usd, opened_at, extract(epoch from closed_at - opened_at) / 3600 as hold_h
+        """select status, size_usd, pnl_usd, opened_at, extract(epoch from closed_at - opened_at) / 3600 as hold_h,
+                  closed_at > now() - interval '7 days' as recent
            from paper_panda_runs""")
     rows.append(_row(
         "panda", "Panda Strat", "panda",
@@ -74,9 +83,11 @@ async def overview(db, papers: dict[str, Any], sol_usd: float) -> dict[str, Any]
         sum(r["status"] == "open" for r in panda), min((r["opened_at"] for r in panda), default=None),
         "Range lebar satu sisi, keluar di pantulan pertama",
         holds=[float(r["hold_h"]) for r in panda if r["status"] == "closed" and r["hold_h"] is not None],
+        recent_7d=sum(r["pnl_usd"] or 0 for r in panda if r["status"] == "closed" and r["recent"]), opened=len(panda),
     ))
 
-    grid = await db.fetch("select profit_usd from paper_sol_grid_fills where side = 'sell'")
+    grid = await db.fetch("select profit_usd, ts > now() - interval '7 days' as recent from paper_sol_grid_fills where side = 'sell'")
+    grid_buys = await db.fetchval("select count(*) from paper_sol_grid_fills where side = 'buy'")
     # A round trip lasts from a level's buy to the sell that follows it.
     grid_holds = [float(r["h"]) for r in await db.fetch(
         """select extract(epoch from s.ts - (select max(b.ts) from paper_sol_grid_fills b
@@ -91,5 +102,6 @@ async def overview(db, papers: dict[str, Any], sol_usd: float) -> dict[str, Any]
         "sol_grid", "Grid SOL-USDC", "sol",
         [(r["profit_usd"] or 0, 200.0) for r in grid] + floating, len(held), first,
         "5 limit order 1% di bawah harga, jual 1% di atasnya", holds=grid_holds,
+        recent_7d=sum(r["profit_usd"] or 0 for r in grid if r["recent"]), opened=grid_buys,
     ))
     return {"min_closed": MIN_CLOSED, "strategies": rows}

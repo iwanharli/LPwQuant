@@ -36,6 +36,8 @@ type Strategy = {
   wins?: number;
   worst_usd?: number | null;
   worst_pct?: number | null;
+  pnl_7d_usd?: number | null;
+  positions_per_day?: number | null;
   avg_hold_hours?: number | null;
   total_hold_hours?: number | null;
   verdict: Verdict;
@@ -162,10 +164,8 @@ function Summary({ data, error, onOpen }: { data: Overview | null; error: boolea
                 <th className="px-3 py-2.5 text-right font-medium">Hasil</th>
                 <th className="px-3 py-2.5 text-right font-medium">Trade</th>
                 <th className="px-3 py-2.5 text-right font-medium">Untung</th>
-                <th className="px-3 py-2.5 text-right font-medium" title="Total hasil setelah 3 trade terbaik dibuang: minus berarti untungnya dari 1-3 trade yang meledak">
-                  Tanpa 3 terbaik
-                </th>
-                <th className="px-3 py-2.5 text-right font-medium">Rugi terbesar</th>
+                <th className="px-3 py-2.5 text-right font-medium" title="Hasil posisi yang ditutup dalam 7 hari terakhir">Hasil 7 hari</th>
+                <th className="px-3 py-2.5 text-right font-medium" title="Rata-rata posisi yang dibuka per hari sejak strategi mulai">Posisi / hari</th>
                 <th className="px-4 py-2.5 text-right font-medium" title="Rata-rata lama satu posisi dibuka sampai ditutup, dan total semua posisi">
                   Lama posisi
                 </th>
@@ -196,7 +196,9 @@ function Summary({ data, error, onOpen }: { data: Overview | null; error: boolea
                     </td>
                     <td className="px-3 py-3">
                       <span
-                        title={s.verdict === "data" ? `Butuh ${data.min_closed} trade selesai untuk dinilai` : v.hint}
+                        title={`${s.verdict === "data" ? `Butuh ${data.min_closed} trade selesai untuk dinilai` : v.hint}${
+                          s.without_best3_usd != null ? ` · tanpa 3 trade terbaik: ${money(s.without_best3_usd)}` : ""
+                        }${s.worst_usd != null && s.worst_usd < 0 ? ` · rugi terbesar: ${money(s.worst_usd)}` : ""}`}
                         className={`inline-flex whitespace-nowrap rounded-full border px-2.5 py-0.5 text-xs font-medium ${v.cls}`}
                       >
                         {s.verdict === "data" ? `${v.label} (${s.closed}/${data.min_closed})` : v.label}
@@ -218,15 +220,10 @@ function Summary({ data, error, onOpen }: { data: Overview | null; error: boolea
                         {s.win_rate == null ? "" : `${fmtNum(s.win_rate * 100, 0)}%`}
                       </div>
                     </td>
-                    <td className={`px-3 py-3 text-right ${tone(s.without_best3_usd)}`}>{money(s.without_best3_usd)}</td>
-                    <td className="px-3 py-3 text-right">
-                      <div className={tone(s.worst_usd != null && s.worst_usd < 0 ? s.worst_usd : null)}>
-                        {s.worst_usd != null && s.worst_usd < 0 ? money(s.worst_usd) : "–"}
-                      </div>
-                      <div className="text-[11px] text-rose-300/80">
-                        {s.worst_pct != null && s.worst_usd != null && s.worst_usd < 0 ? `${pct(s.worst_pct)} dari modalnya` : ""}
-                      </div>
+                    <td className={`px-3 py-3 text-right font-medium ${tone(s.pnl_7d_usd ?? null)}`}>
+                      {s.pnl_7d_usd == null || (s.pnl_7d_usd === 0 && !s.closed) ? "–" : money(s.pnl_7d_usd)}
                     </td>
+                    <td className="px-3 py-3 text-right text-ink-2">{s.positions_per_day == null ? "–" : fmtNum(s.positions_per_day, 1)}</td>
                     <td className="px-4 py-3 text-right">
                       <div className="text-ink-2">{s.avg_hold_hours == null ? "–" : `${span(s.avg_hold_hours)} / posisi`}</div>
                       <div className="text-[11px] text-ink-3">{s.total_hold_hours == null ? "" : `total ${span(s.total_hold_hours)}`}</div>
