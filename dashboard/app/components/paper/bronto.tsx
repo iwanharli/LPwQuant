@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useState } from "react";
 import { useAutoRefresh } from "../../lib/auto-refresh";
 import { EXIT_TONE } from "../../lib/exit-status";
 import { ENGINE_URL, fmtDateTime, fmtNum, usd } from "../../lib/format";
@@ -72,6 +72,7 @@ const VIEWS = ["berjalan", "selesai", "seleksi", "aturan", "catatan"] as const;
 type View = (typeof VIEWS)[number];
 
 function Table({ runs, empty }: { runs: Run[]; empty: string }) {
+  const [openId, setOpenId] = useState<number | null>(null);
   if (runs.length === 0) return <p className="rounded-2xl border border-white/[0.06] bg-panel px-4 py-10 text-center text-sm text-ink-3">{empty}</p>;
   return (
     <section className="overflow-hidden rounded-2xl border border-white/[0.06] bg-panel">
@@ -93,12 +94,18 @@ function Table({ runs, empty }: { runs: Run[]; empty: string }) {
           <tbody>
             {runs.map((x) => {
               const st = REASON[x.status === "open" ? "open" : x.exit_reason ?? "time"] ?? REASON.time;
+              const open = openId === x.id;
               return (
-                <tr key={x.id} className="border-b border-line/60 last:border-b-0">
+                <Fragment key={x.id}>
+                <tr
+                  onClick={() => setOpenId(open ? null : x.id)}
+                  className={`cursor-pointer border-b border-line/60 hover:bg-white/[0.02] ${open ? "bg-white/[0.02]" : ""}`}
+                >
                   <td className="px-4 py-2.5">
-                    <Link href={`/pool/${x.pool}`} className="font-medium text-ink hover:text-accent">
+                    <span className="font-medium text-ink">
+                      <span className="mr-1.5 inline-block w-3 text-ink-3">{open ? "▾" : "▸"}</span>
                       {x.name.replace("-", "/")}
-                    </Link>
+                    </span>
                     <div className="text-[11px] text-ink-3">
                       fee {fmtNum(x.base_fee_pct ?? 0, 1)}% · range {fmtNum(x.range_low_pct, 0)}% / +{fmtNum(x.range_high_pct, 0)}%
                     </div>
@@ -118,6 +125,44 @@ function Table({ runs, empty }: { runs: Run[]; empty: string }) {
                   <td className="px-3 py-2.5 text-right text-ink-2">{span((x.closed_at ?? x.checked_at ?? x.opened_at) - x.opened_at)}</td>
                   <td className="px-4 py-2.5 text-right text-[11px] text-ink-3">{fmtDateTime(x.closed_at ?? x.opened_at)}</td>
                 </tr>
+                {open && (
+                  <tr className="border-b border-line/60">
+                    <td colSpan={9} className="p-0">
+                      <div className="grid gap-4 bg-white/[0.015] px-4 py-4 md:grid-cols-[1fr_auto]">
+                          <dl className="grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-3 lg:grid-cols-4">
+                            {(
+                              [
+                                ["Fee dasar pool", `${fmtNum(x.base_fee_pct ?? 0, 2)}%`],
+                                ["Bin step", `${x.bin_step} · 70 bin`],
+                                ["Range", `${fmtNum(x.range_low_pct, 1)}% / +${fmtNum(x.range_high_pct, 1)}%`],
+                                ["Posisi harga", x.in_range ? "di dalam range" : "di luar range"],
+                                ["Perubahan harga", `${x.price_change_pct >= 0 ? "+" : ""}${fmtNum(x.price_change_pct, 1)}%`],
+                                ["Dibuka", fmtDateTime(x.opened_at)],
+                                [x.status === "open" ? "Dicek terakhir" : "Ditutup", fmtDateTime(x.closed_at ?? x.checked_at ?? x.opened_at)],
+                                ["Lama dipegang", span((x.closed_at ?? x.checked_at ?? x.opened_at) - x.opened_at)],
+                                ["Fee didapat", `+${usd.format(x.fees_usd)}`],
+                                ["Nilai posisi", usd.format(x.value_usd)],
+                                ["Biaya (masuk + keluar)", usd.format(x.costs_usd)],
+                                ["Sewa bin array baru", x.new_arrays ? `${x.new_arrays} array` : "tidak ada"],
+                                ["Hasil", money(x.pnl_usd)],
+                              ] as [string, string][]
+                            ).map(([k, v]) => (
+                              <div key={k}>
+                                <dt className="text-[11px] uppercase tracking-[0.08em] text-ink-3">{k}</dt>
+                                <dd className="mt-0.5 font-medium text-ink">{v}</dd>
+                              </div>
+                            ))}
+                          </dl>
+                          <div className="flex flex-col gap-2 text-xs md:items-end">
+                            <Link href={`/pool/${x.pool}`} className="btn-accent rounded-full px-3 py-1.5 font-medium">Buka grafik pool</Link>
+                            <a href={`https://app.meteora.ag/dlmm/${x.pool}`} target="_blank" rel="noreferrer" className="text-ink-3 hover:text-accent">Meteora ↗</a>
+                            <span className="font-mono text-[11px] text-ink-3">{x.pool.slice(0, 6)}…{x.pool.slice(-4)}</span>
+                          </div>
+                      </div>
+                    </td>
+                  </tr>
+                )}
+                </Fragment>
               );
             })}
           </tbody>

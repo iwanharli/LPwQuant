@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useState } from "react";
 import { useAutoRefresh } from "../../lib/auto-refresh";
 import { EXIT_TONE } from "../../lib/exit-status";
 import { ENGINE_URL, fmtDateTime, fmtNum, usd } from "../../lib/format";
@@ -26,6 +26,8 @@ type Run = {
   pnl_usd: number;
   costs_usd: number | null;
   their_deposit_usd: number | null;
+  min_price: number | null;
+  max_price: number | null;
   opened_at: number;
   closed_at: number | null;
   checked_at: number | null;
@@ -51,6 +53,7 @@ const VIEWS = ["berjalan", "selesai", "wallet", "aturan", "catatan"] as const;
 type View = (typeof VIEWS)[number];
 
 function Table({ runs, empty }: { runs: Run[]; empty: string }) {
+  const [openId, setOpenId] = useState<number | null>(null);
   if (runs.length === 0) return <p className="rounded-2xl border border-white/[0.06] bg-panel px-4 py-10 text-center text-sm text-ink-3">{empty}</p>;
   return (
     <section className="overflow-hidden rounded-2xl border border-white/[0.06] bg-panel">
@@ -69,12 +72,19 @@ function Table({ runs, empty }: { runs: Run[]; empty: string }) {
             </tr>
           </thead>
           <tbody>
-            {runs.map((r) => (
-              <tr key={r.id} className="border-b border-line/60 last:border-b-0">
+            {runs.map((r) => {
+              const open = openId === r.id;
+              return (
+              <Fragment key={r.id}>
+              <tr
+                onClick={() => setOpenId(open ? null : r.id)}
+                className={`cursor-pointer border-b border-line/60 hover:bg-white/[0.02] ${open ? "bg-white/[0.02]" : ""}`}
+              >
                 <td className="px-4 py-2.5">
-                  <Link href={`/pool/${r.pool}`} className="font-medium text-ink hover:text-accent">
+                  <span className="font-medium text-ink">
+                    <span className="mr-1.5 inline-block w-3 text-ink-3">{open ? "▾" : "▸"}</span>
                     {r.pair}
-                  </Link>
+                  </span>
                   <div className="text-[11px] text-ink-3">
                     modal {usd.format(r.size_usd)}
                     {r.their_deposit_usd ? ` · wallet ${usd.format(r.their_deposit_usd)}` : ""}
@@ -86,7 +96,13 @@ function Table({ runs, empty }: { runs: Run[]; empty: string }) {
                   </span>
                 </td>
                 <td className="px-3 py-2.5">
-                  <a href={`https://solscan.io/account/${r.wallet}`} target="_blank" rel="noreferrer" className="font-mono text-ink-2 hover:text-accent">
+                  <a
+                    href={`https://solscan.io/account/${r.wallet}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    onClick={(e) => e.stopPropagation()}
+                    className="font-mono text-ink-2 hover:text-accent"
+                  >
                     {short(r.wallet)}
                   </a>
                 </td>
@@ -104,7 +120,44 @@ function Table({ runs, empty }: { runs: Run[]; empty: string }) {
                 <td className="px-3 py-2.5 text-right text-ink-2">{span((r.closed_at ?? r.checked_at ?? r.opened_at) - r.opened_at)}</td>
                 <td className="px-4 py-2.5 text-right text-[11px] text-ink-3">{fmtDateTime(r.closed_at ?? r.opened_at)}</td>
               </tr>
-            ))}
+              {open && (
+                <tr className="border-b border-line/60">
+                  <td colSpan={8} className="p-0">
+                    <div className="grid gap-4 bg-white/[0.015] px-4 py-4 md:grid-cols-[1fr_auto]">
+                          <dl className="grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-3 lg:grid-cols-4">
+                            {(
+                              [
+                                ["Wallet", short(r.wallet)],
+                                ["Modal wallet", r.their_deposit_usd ? usd.format(r.their_deposit_usd) : "–"],
+                                ["Modal tiruan", usd.format(r.size_usd)],
+                                ["Range", r.min_price && r.max_price ? `${r.min_price.toPrecision(4)} – ${r.max_price.toPrecision(4)}` : "–"],
+                                ["Jeda deteksi", r.delay_s == null ? "–" : span(r.delay_s * 1000)],
+                                ["PnL wallet saat ditiru", `${fmtNum(r.entry_pnl_pct ?? 0, 2)}%`],
+                                [r.status === "open" ? "PnL wallet sekarang" : "PnL wallet akhir", `${fmtNum((r.status === "open" ? r.last_pnl_pct : r.exit_pnl_pct) ?? 0, 2)}%`],
+                                ["Hasil tiruan", `${money(r.pnl_usd)} (${r.result_pct >= 0 ? "+" : ""}${fmtNum(r.result_pct, 2)}%)`],
+                                ["Biaya tiruan", r.costs_usd == null ? "saat ditutup" : usd.format(r.costs_usd)],
+                                ["Ditiru sejak", fmtDateTime(r.opened_at)],
+                                [r.status === "open" ? "Dicek terakhir" : "Ditutup", fmtDateTime(r.closed_at ?? r.checked_at ?? r.opened_at)],
+                              ] as [string, string][]
+                            ).map(([k, v]) => (
+                              <div key={k}>
+                                <dt className="text-[11px] uppercase tracking-[0.08em] text-ink-3">{k}</dt>
+                                <dd className="mt-0.5 font-medium text-ink">{v}</dd>
+                              </div>
+                            ))}
+                          </dl>
+                          <div className="flex flex-col gap-2 text-xs md:items-end">
+                            <Link href={`/pool/${r.pool}`} className="btn-accent rounded-full px-3 py-1.5 font-medium">Buka grafik pool</Link>
+                            <a href={`https://app.meteora.ag/dlmm/${r.pool}`} target="_blank" rel="noreferrer" className="text-ink-3 hover:text-accent">Meteora ↗</a>
+                            <span className="font-mono text-[11px] text-ink-3">{r.pool.slice(0, 6)}…{r.pool.slice(-4)}</span>
+                          </div>
+                    </div>
+                  </td>
+                </tr>
+              )}
+              </Fragment>
+              );
+            })}
           </tbody>
         </table>
       </div>
