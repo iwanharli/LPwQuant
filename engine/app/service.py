@@ -18,6 +18,7 @@ from .charts import profile_decision
 from .panda import PandaPaper
 from .portfolio import snapshot_loop as portfolio_snapshot_loop
 from .position_alerts import PositionAlerts
+from .sol_grid import SolGrid
 from .indicators import Candle, compute_indicators, flow_features, merge_market
 from .metrics import PriceHistory
 from .paper import PaperTrader, sol_usd_from_pools, close_retired_positions
@@ -156,6 +157,7 @@ class Engine:
         self._tasks.append(asyncio.create_task(netpnl.watch_new_transactions(self.db), name="netpnl_watch"))
         if config.PAPER_ENABLED:
             # Pool-creator paper test stopped 2026-09-26: creation rent (~$20 a pool) left v2 at -$580 over 33 pools.
+            self._tasks.append(asyncio.create_task(SolGrid(self.db).run(), name="sol_grid"))
             panda = PandaPaper(self.db, lambda: self.rows, lambda: self.sol_usd or config.SOL_USD_FALLBACK)
             self._tasks.append(asyncio.create_task(panda.run(), name="panda_paper"))
         if self.alerter.enabled:

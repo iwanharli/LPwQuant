@@ -63,4 +63,15 @@ async def overview(db, papers: dict[str, Any], sol_usd: float) -> dict[str, Any]
         "Range lebar satu sisi, keluar di pantulan pertama",
     ))
 
+    grid = await db.fetch("select profit_usd from paper_sol_grid_fills where side = 'sell'")
+    first = await db.fetchval("select min(ts) from paper_sol_grid_fills")
+    held = await db.fetch("select sol, buy_price from paper_sol_grid where state = 'sell'")
+    price = await db.fetchval("select price from paper_sol_grid_equity order by ts desc limit 1")
+    # SOL still held counts at today's price, so a falling market shows as a loss here and not only on the grid tab.
+    floating = [((price - h["buy_price"]) * h["sol"], 200.0) for h in held] if price else []
+    rows.append(_row(
+        "sol_grid", "Grid SOL-USDC", "sol",
+        [(r["profit_usd"] or 0, 200.0) for r in grid] + floating, len(held), first,
+        "5 limit order 1% di bawah harga, jual 1% di atasnya",
+    ))
     return {"min_closed": MIN_CLOSED, "strategies": rows}

@@ -13,7 +13,7 @@ from . import config
 from .backtest import default_params, run_backtest
 from .charts import MAX_HOURS, load_candles, pool_paper_positions, profile_decision
 from .freshness import check_freshness
-from . import busy_hours, holders_map, ledger, limit_recs, netpnl, panda, paper_lo, paper_overview, paper_pool, portfolio
+from . import busy_hours, holders_map, sol_grid, ledger, limit_recs, netpnl, panda, paper_lo, paper_overview, paper_pool, portfolio
 
 log = logging.getLogger("api")
 from .service import Engine
@@ -365,6 +365,14 @@ async def get_paper_overview() -> dict:
     if engine.db is None:
         raise HTTPException(status_code=503, detail="engine not ready")
     return await paper_overview.overview(engine.db, engine.papers, engine.sol_usd or config.SOL_USD_FALLBACK)
+
+
+@app.get("/api/paper/sol-grid")
+async def get_sol_grid() -> dict:
+    """Paper grid of limit orders on SOL-USDC: levels, fills, equity against simply holding SOL."""
+    if engine.db is None:
+        raise HTTPException(status_code=503, detail="engine not ready")
+    return await sol_grid.report(engine.db)
 
 
 @app.get("/api/panda/paper")

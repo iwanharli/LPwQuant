@@ -9,10 +9,11 @@ import PandaPage from "../panda-page";
 import { SkeletonTable, SkeletonTiles } from "../skeleton";
 import TopBar from "../top-bar";
 import PaperPage from "./paper-page";
+import SolGrid from "./sol-grid";
 
 type Verdict = "viable" | "luck" | "loss" | "data";
-type Tab = "ringkasan" | "lp" | "panda";
-const TABS = ["ringkasan", "lp", "panda"] as const;
+type Tab = "ringkasan" | "lp" | "panda" | "sol";
+const TABS = ["ringkasan", "lp", "panda", "sol"] as const;
 
 type Strategy = {
   key: string;
@@ -39,11 +40,13 @@ const TAB_LABEL: Record<Tab, string> = {
   ringkasan: "Ringkasan",
   lp: "Profil LP",
   panda: "Panda",
+  sol: "Grid SOL-USDC",
 };
 const TAB_SUBTITLE: Record<Tab, string> = {
   ringkasan: "Semua uji paper dengan ukuran yang sama: hasil, median, dan hasil tanpa trade terbaik.",
   lp: "LP virtual otomatis dari rencana screener, satu portofolio per profil risiko.",
   panda: "Seleksi ketat, range lebar satu sisi, keluar di pantulan pertama.",
+  sol: "Limit order beli-jual berulang di SOL-USDC: tanpa risiko rug, untung kecil tapi sering.",
 };
 
 const VERDICT: Record<Verdict, { label: string; cls: string; hint: string }> = {
@@ -272,6 +275,7 @@ export default function PaperHub() {
         )}
         {tab === "lp" && <PaperPage key={profile ?? "auto"} embedded initialProfile={profile} />}
         {tab === "panda" && <PandaPage embedded />}
+        {tab === "sol" && <SolGrid />}
       </main>
     </div>
   );

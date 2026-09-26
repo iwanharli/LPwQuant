@@ -520,3 +520,29 @@ alter table portfolio_positions_index add column if not exists cost_rent double 
 alter table portfolio_positions_index add column if not exists cost_tax double precision;
 alter table portfolio_positions_index add column if not exists net_usd double precision;
 alter table portfolio_positions_index add column if not exists net_at timestamptz;
+
+-- Paper grid of limit orders on SOL-USDC (engine/app/sol_grid.py), started 2026-09-26. One row per level.
+create table if not exists paper_sol_grid (
+  level       integer primary key,
+  state       text not null,              -- buy (USDC waiting to buy) | sell (SOL waiting to sell)
+  buy_price   double precision not null,
+  sell_price  double precision not null,
+  usd         double precision not null,  -- USDC held by the level while it waits to buy
+  sol         double precision not null,  -- SOL held by the level while it waits to sell
+  updated_at  timestamptz not null
+);
+create table if not exists paper_sol_grid_fills (
+  id          bigserial primary key,
+  ts          timestamptz not null,
+  level       integer not null,
+  side        text not null,              -- buy | sell | recenter
+  price       double precision not null,
+  sol         double precision not null,
+  usd         double precision not null,
+  profit_usd  double precision            -- on a sell: what the round trip made
+);
+create table if not exists paper_sol_grid_equity (
+  ts          timestamptz primary key,
+  price       double precision not null,
+  equity_usd  double precision not null
+);
