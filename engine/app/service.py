@@ -13,11 +13,9 @@ import redis.asyncio as aioredis
 
 from . import config
 from .alerts import Alerter, serve_commands
-from .paper_lo import PaperLimitOrders
 from . import netpnl
 from .charts import profile_decision
 from .panda import PandaPaper
-from .paper_pool import PaperPoolCreator
 from .portfolio import snapshot_loop as portfolio_snapshot_loop
 from .position_alerts import PositionAlerts
 from .indicators import Candle, compute_indicators, flow_features, merge_market
@@ -94,7 +92,7 @@ class Engine:
         self.pump: dict[str, dict[str, Any]] = {}  # pump.fun data per base mint
         self.paper: PaperTrader | None = None  # default profile: its cost model prices live plans
         self.papers: dict[str, PaperTrader] = {}  # one virtual account per risk profile (app.profiles)
-        self.paper_lo: PaperLimitOrders | None = None  # paper run of the limit-order recommendations
+        self.paper_lo = None  # paper run of the limit-order recommendations
         self._paper_lock = asyncio.Lock()  # paper updates and resets never interleave
         self.depth: dict[str, Depth] = {}  # on-chain bin liquidity around the active bin (bins:latest)
         self.rows: dict[str, dict[str, Any]] = {}
@@ -133,7 +131,8 @@ class Engine:
         async with self.db.acquire() as conn:
             await conn.execute(config.SCHEMA_PATH.read_text())
         self.alerter = Alerter(self.db)
-        self.paper_lo = PaperLimitOrders(self.db) if config.PAPER_ENABLED else None
+        # Limit-order paper test stopped 2026-09-26: stops lost 1.11 SOL against 0.62 SOL of targets over 64 orders.
+        self.paper_lo = None
         if self.alerter.enabled:
             log.info("telegram alerts on for: %s", ", ".join(self.alerter.kinds))
         if config.PAPER_ENABLED:
@@ -156,8 +155,7 @@ class Engine:
         self._tasks.append(asyncio.create_task(netpnl.refresh_loop(self.db), name="netpnl_refresh"))
         self._tasks.append(asyncio.create_task(netpnl.watch_new_transactions(self.db), name="netpnl_watch"))
         if config.PAPER_ENABLED:
-            creator = PaperPoolCreator(self.db, lambda: self.sol_usd or config.SOL_USD_FALLBACK)
-            self._tasks.append(asyncio.create_task(creator.run(), name="paper_pool_creator"))
+            # Pool-creator paper test stopped 2026-09-26: creation rent (~$20 a pool) left v2 at -$580 over 33 pools.
             panda = PandaPaper(self.db, lambda: self.rows, lambda: self.sol_usd or config.SOL_USD_FALLBACK)
             self._tasks.append(asyncio.create_task(panda.run(), name="panda_paper"))
         if self.alerter.enabled:

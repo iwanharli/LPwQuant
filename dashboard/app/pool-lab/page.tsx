@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 
-// Moved into the Paper trading page; old links and bookmarks land on the right tab.
+// The pool-creator paper test was stopped on 2026-09-26; old links land on the paper overview.
 export default function Page() {
-  redirect("/paper?tab=pool");
+  redirect("/paper");
 }

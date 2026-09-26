@@ -8,8 +8,6 @@ to trade with real money.
 
 from typing import Any
 
-from . import paper_pool
-
 MIN_CLOSED = 20
 
 
@@ -65,21 +63,4 @@ async def overview(db, papers: dict[str, Any], sol_usd: float) -> dict[str, Any]
         "Range lebar satu sisi, keluar di pantulan pertama",
     ))
 
-    pools = await db.fetch("select status, size_usd, pnl_usd, opened_at from paper_pool_runs where version = $1",
-                           paper_pool.VERSION)
-    rows.append(_row(
-        "pool", f"Pembuat pool v{paper_pool.VERSION}", "pool",
-        [(r["pnl_usd"] or 0, r["size_usd"]) for r in pools if r["status"] == "closed"],
-        sum(r["status"] == "open" for r in pools), min((r["opened_at"] for r in pools), default=None),
-        "LP pertama di pool baru ber-fee tinggi, termasuk sewa buat pool",
-    ))
-
-    lo = await db.fetch("select status, size_quote, pnl_quote, pnl_sol, quote, opened_at from paper_lo_orders")
-    to_usd = lambda r, v: v * (sol_usd if (r["quote"] or "SOL").upper() in {"SOL", "WSOL"} else 1.0)  # noqa: E731
-    rows.append(_row(
-        "lo", "Limit order", "limit",
-        [(to_usd(r, r["pnl_quote"] or 0), to_usd(r, r["size_quote"])) for r in lo if r["status"] in {"closed", "expired"}],
-        sum(r["status"] in {"waiting", "holding"} for r in lo), min((r["opened_at"] for r in lo), default=None),
-        "Beli di bawah, jual di atas, dari saran limit order",
-    ))
     return {"min_closed": MIN_CLOSED, "strategies": rows}

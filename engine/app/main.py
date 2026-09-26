@@ -428,7 +428,7 @@ async def freshness() -> dict:
     return await check_freshness(engine.db, int(time.time() * 1000))
 
 
-def _paper(profile: str = "moderat"):
+def _paper(profile: str = "satu_sisi"):
     if not engine.papers:
         raise HTTPException(status_code=503, detail="paper trading not ready")
     trader = engine.papers.get(profile)
@@ -454,7 +454,7 @@ async def paper_reset() -> dict:
 
 
 @app.get("/api/paper/summary")
-async def paper_summary(profile: str = Query("moderat")) -> dict:
+async def paper_summary(profile: str = Query("satu_sisi")) -> dict:
     return await _paper(profile).summary()
 
 
@@ -462,13 +462,13 @@ async def paper_summary(profile: str = Query("moderat")) -> dict:
 async def paper_positions(
     status: str = Query("open", pattern="^(open|closed)$"),
     limit: int = Query(100, ge=1, le=500),
-    profile: str = Query("moderat"),
+    profile: str = Query("satu_sisi"),
 ) -> dict:
     return {"positions": await _paper(profile).positions(status, limit, int(time.time() * 1000))}
 
 
 @app.get("/api/paper/equity")
-async def paper_equity(hours: float = Query(168, gt=0, le=24 * 60), profile: str = Query("moderat")) -> dict:
+async def paper_equity(hours: float = Query(168, gt=0, le=24 * 60), profile: str = Query("satu_sisi")) -> dict:
     return await _paper(profile).equity(hours)
 
 

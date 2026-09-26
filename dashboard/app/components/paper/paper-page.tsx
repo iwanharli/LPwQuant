@@ -736,7 +736,7 @@ const LP_VIEW_LABEL: Record<LpView, string> = {
 export default function PaperPage({ embedded = false, initialProfile }: { embedded?: boolean; initialProfile?: string }) {
   // Until the reader picks one, show the profile with the highest total PnL (derived, so it follows the leader).
   const [picked, setProfile] = useState<string | null>(initialProfile ?? null);
-  const [leader, setLeader] = useState("moderat");
+  const [leader, setLeader] = useState("satu_sisi");
   const profile = picked ?? leader;
   const { data, error } = usePaperData(profile);
   const [view, setView] = useUrlState<LpView>("lp", "posisi", LP_VIEWS);

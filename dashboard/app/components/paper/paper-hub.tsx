@@ -6,15 +6,13 @@ import { ENGINE_URL, fmtDateTime, fmtNum, usd } from "../../lib/format";
 import { useUrlState } from "../../lib/url-state";
 import PageHeader from "../page-header";
 import PandaPage from "../panda-page";
-import PoolLabPage from "../pool-lab-page";
-import PaperLimitOrders from "../portfolio/paper-lo";
 import { SkeletonTable, SkeletonTiles } from "../skeleton";
 import TopBar from "../top-bar";
 import PaperPage from "./paper-page";
 
 type Verdict = "viable" | "luck" | "loss" | "data";
-type Tab = "ringkasan" | "lp" | "panda" | "pool" | "limit";
-const TABS = ["ringkasan", "lp", "panda", "pool", "limit"] as const;
+type Tab = "ringkasan" | "lp" | "panda";
+const TABS = ["ringkasan", "lp", "panda"] as const;
 
 type Strategy = {
   key: string;
@@ -41,15 +39,11 @@ const TAB_LABEL: Record<Tab, string> = {
   ringkasan: "Ringkasan",
   lp: "Profil LP",
   panda: "Panda",
-  pool: "Pembuat pool",
-  limit: "Limit order",
 };
 const TAB_SUBTITLE: Record<Tab, string> = {
   ringkasan: "Semua uji paper dengan ukuran yang sama: hasil, median, dan hasil tanpa trade terbaik.",
   lp: "LP virtual otomatis dari rencana screener, satu portofolio per profil risiko.",
   panda: "Seleksi ketat, range lebar satu sisi, keluar di pantulan pertama.",
-  pool: "Jadi LP pertama di pool baru ber-fee tinggi, termasuk sewa membuat pool.",
-  limit: "Order beli di bawah dan jual di atas dari saran limit order, dijalankan engine.",
 };
 
 const VERDICT: Record<Verdict, { label: string; cls: string; hint: string }> = {
@@ -278,8 +272,6 @@ export default function PaperHub() {
         )}
         {tab === "lp" && <PaperPage key={profile ?? "auto"} embedded initialProfile={profile} />}
         {tab === "panda" && <PandaPage embedded />}
-        {tab === "pool" && <PoolLabPage embedded />}
-        {tab === "limit" && <PaperLimitOrders />}
       </main>
     </div>
   );
