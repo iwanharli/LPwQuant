@@ -204,22 +204,26 @@ function Summary({ data, error, onOpen }: { data: Overview | null; error: boolea
                     </td>
                     <td className="px-3 py-3 text-right">
                       <div className={`font-semibold ${tone(s.closed ? s.pnl_usd : null)}`}>{s.closed ? money(s.pnl_usd) : "–"}</div>
-                      <div className="text-[11px] text-ink-3">{s.return_pct == null ? "" : `${pct(s.return_pct)} dari modal`}</div>
+                      <div className={`text-[11px] ${tone(s.return_pct)}`}>{s.return_pct == null ? "" : `${pct(s.return_pct)} dari modal`}</div>
                     </td>
                     <td className="px-3 py-3 text-right">
                       <div className="text-ink-2">{s.closed} selesai</div>
                       <div className="text-[11px] text-ink-3">{s.open} berjalan</div>
                     </td>
                     <td className="px-3 py-3 text-right">
-                      <div className="text-ink-2">{s.closed ? `${s.wins ?? Math.round((s.win_rate ?? 0) * s.closed)} dari ${s.closed}` : "–"}</div>
-                      <div className="text-[11px] text-ink-3">{s.win_rate == null ? "" : `${fmtNum(s.win_rate * 100, 0)}%`}</div>
+                      <div className={s.win_rate == null ? "text-ink-2" : s.win_rate >= 0.5 ? "text-emerald-300" : "text-rose-300"}>
+                        {s.closed ? `${s.wins ?? Math.round((s.win_rate ?? 0) * s.closed)} dari ${s.closed}` : "–"}
+                      </div>
+                      <div className={`text-[11px] ${s.win_rate == null ? "text-ink-3" : s.win_rate >= 0.5 ? "text-emerald-300/80" : "text-rose-300/80"}`}>
+                        {s.win_rate == null ? "" : `${fmtNum(s.win_rate * 100, 0)}%`}
+                      </div>
                     </td>
                     <td className={`px-3 py-3 text-right ${tone(s.without_best3_usd)}`}>{money(s.without_best3_usd)}</td>
                     <td className="px-3 py-3 text-right">
                       <div className={tone(s.worst_usd != null && s.worst_usd < 0 ? s.worst_usd : null)}>
                         {s.worst_usd != null && s.worst_usd < 0 ? money(s.worst_usd) : "–"}
                       </div>
-                      <div className="text-[11px] text-ink-3">
+                      <div className="text-[11px] text-rose-300/80">
                         {s.worst_pct != null && s.worst_usd != null && s.worst_usd < 0 ? `${pct(s.worst_pct)} dari modalnya` : ""}
                       </div>
                     </td>
