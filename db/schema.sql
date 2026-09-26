@@ -648,3 +648,12 @@ create table if not exists danger_events (
   primary key (pool, kind)
 );
 create index if not exists danger_events_creator on danger_events (creator);
+
+-- Danger-wallet network: each traced wallet's funders and SOL counterparties (ingestor /wallet-trace).
+create table if not exists danger_traces (
+  wallet      text primary key,
+  role        text not null,            -- creator | funder | manual
+  data        jsonb,
+  error       text,
+  traced_at   timestamptz not null
+);

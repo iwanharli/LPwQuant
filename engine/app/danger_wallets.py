@@ -8,6 +8,11 @@ Every EVERY_S:
   * a screener row with 2+ danger signs is a "suspicious" event.
 Each event is kept once per pool, with its evidence, and the creator appears on the list. Pools from a listed
 creator get a danger sign of their own (service.danger_signs).
+
+Network (trace_loop): every listed creator, and then the wallet that first funded it, is traced through the ingestor
+(/wallet-trace): its funders and the wallets it sent SOL to or got SOL from. Busy counterparties (exchanges, bots)
+are kept as evidence but never link two wallets. Creators that share a funder or a counterparty, or paid each other,
+form one group; a non-busy wallet tied to a listed creator is "linked", and its own new pools get a danger sign too.
 """
 
 import asyncio
@@ -31,6 +36,10 @@ DRAIN_FRAC = 0.1
 # The creators on the list, kept in memory for the screener's danger signs (refreshed every round).
 KNOWN: dict[str, int] = {}
 CREATOR_OF: dict[str, str] = {}  # pool -> creator, for the pools being watched
+LINKED: dict[str, str] = {}  # wallet tied by SOL to a listed creator -> how, for the screener's danger sign
+
+TRACE_EVERY_S = 90
+RETRACE_HOURS = 24
 
 
 async def _creators(pools: list[str]) -> dict[str, str | None]:
@@ -119,6 +128,8 @@ async def step(db, rows: dict[str, dict[str, Any]]) -> None:
     KNOWN.clear()
     for row in await db.fetch("select creator, count(*) as n from danger_events group by creator"):
         KNOWN[row["creator"]] = row["n"]
+    if not LINKED:
+        await _refresh_linked(db)
 
 
 async def loop(db, rows: Callable[[], dict[str, dict[str, Any]]]) -> None:
@@ -131,6 +142,207 @@ async def loop(db, rows: Callable[[], dict[str, dict[str, Any]]]) -> None:
         except Exception:
             log.exception("danger wallets round failed")
         await asyncio.sleep(EVERY_S)
+
+
+async def trace(wallet: str) -> dict[str, Any]:
+    url = f"{config.CLAIM_SERVER_URL}/wallet-trace?{urllib.parse.urlencode({'wallet': wallet})}"
+    return await asyncio.to_thread(_get_json, url, 900)
+
+
+async def _save_trace(db, wallet: str, role: str) -> dict[str, Any] | None:
+    try:
+        data = await trace(wallet)
+        await db.execute(
+            """insert into danger_traces (wallet, role, data, error, traced_at) values ($1,$2,$3::jsonb,null,now())
+               on conflict (wallet) do update set data = excluded.data, error = null, traced_at = now(),
+               role = case when danger_traces.role = 'creator' then 'creator' else excluded.role end""",
+            wallet, role, json.dumps(data))
+        return data
+    except Exception as err:
+        log.info("trace %s: %s", wallet[:6], err)
+        await db.execute(
+            """insert into danger_traces (wallet, role, error, traced_at) values ($1,$2,$3,now())
+               on conflict (wallet) do update set error = excluded.error, traced_at = now()""",
+            wallet, role, str(err)[:300])
+        return None
+
+
+def _jl(v: Any) -> Any:
+    return json.loads(v) if isinstance(v, str) else v
+
+
+async def _next_to_trace(db) -> tuple[str, str] | None:
+    """Creators never traced (or stale) first, then the first funder of each traced creator (one hop back)."""
+    row = await db.fetchrow(
+        """select e.creator from (select creator, max(seen_at) as last from danger_events group by creator) e
+           left join danger_traces t on t.wallet = e.creator
+           where t.wallet is null or t.traced_at < now() - make_interval(hours => $1)
+           order by t.traced_at nulls first, e.last desc limit 1""", RETRACE_HOURS)
+    if row:
+        return row["creator"], "creator"
+    traced = {r["wallet"] for r in await db.fetch("select wallet from danger_traces")}
+    for r in await db.fetch("select data from danger_traces where role = 'creator' and data is not null"):
+        for f in (_jl(r["data"]).get("funders") or [])[:1]:
+            if not f.get("busy") and f["wallet"] not in traced:
+                return f["wallet"], "funder"
+    return None
+
+
+async def trace_loop(db) -> None:
+    await asyncio.sleep(120)
+    while True:
+        try:
+            nxt = await _next_to_trace(db)
+            if nxt:
+                await _save_trace(db, *nxt)
+                await _refresh_linked(db)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            log.exception("danger trace round failed")
+        await asyncio.sleep(TRACE_EVERY_S)
+
+
+def _network(creators: set[str], traces: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    """Nodes, links and groups from the stored traces."""
+    links: dict[tuple[str, str, str], dict[str, Any]] = {}
+    busy: set[str] = set()
+
+    def edge(a: str, b: str, kind: str, sol: float, at: int | None) -> None:
+        k = (a, b, kind)
+        e = links.setdefault(k, {"source": a, "target": b, "kind": kind, "sol": 0.0, "at": at})
+        e["sol"] += sol
+        if at and (e["at"] is None or at < e["at"]):
+            e["at"] = at
+
+    for w, t in traces.items():
+        for f in t.get("funders") or []:
+            (busy.add(f["wallet"]) if f.get("busy") else None)
+            edge(f["wallet"], w, "fund", f["sol"], f.get("at"))
+        for f in t.get("sent_to") or []:
+            (busy.add(f["wallet"]) if f.get("busy") else None)
+            edge(w, f["wallet"], "send", f["sol"], f.get("first_at"))
+        for f in t.get("received_from") or []:
+            (busy.add(f["wallet"]) if f.get("busy") else None)
+            edge(f["wallet"], w, "send", f["sol"], f.get("first_at"))
+
+    # Groups: union-find over every non-busy wallet, then kept only where 2+ listed creators meet.
+    parent: dict[str, str] = {}
+
+    def find(x: str) -> str:
+        parent.setdefault(x, x)
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    for e in links.values():
+        if e["source"] in busy or e["target"] in busy:
+            continue
+        parent[find(e["source"])] = find(e["target"])
+    members: dict[str, list[str]] = {}
+    for c in creators:
+        members.setdefault(find(c), []).append(c)
+    groups = [sorted(m) for m in members.values() if len(m) >= 2]
+    groups.sort(key=len, reverse=True)
+    group_of = {c: i + 1 for i, g in enumerate(groups) for c in g}
+
+    degree: dict[str, set[str]] = {}
+    for e in links.values():
+        for a, b in ((e["source"], e["target"]), (e["target"], e["source"])):
+            if a in creators and b not in busy:
+                degree.setdefault(b, set()).add(a)
+    linked = []
+    for w, cs in degree.items():
+        if w in creators:
+            continue
+        roles = set()
+        for e in links.values():
+            if e["source"] == w and e["target"] in cs:
+                roles.add("pendana" if e["kind"] == "fund" else "mengirim ke pembuat")
+            if e["target"] == w and e["source"] in cs:
+                roles.add("menerima dari pembuat")
+        linked.append({"wallet": w, "creators": sorted(cs), "roles": sorted(roles),
+                       "traced": w in traces, "group": next((group_of[c] for c in cs if c in group_of), None)})
+    linked.sort(key=lambda x: (-len(x["creators"]), x["wallet"]))
+
+    # Graph: listed creators, every non-busy wallet next to one, and busy ones only as single labelled nodes.
+    keep = set(creators) | {l["wallet"] for l in linked} | busy
+    nodes = []
+    for w in keep:
+        kind = "creator" if w in creators else "busy" if w in busy else "linked"
+        nodes.append({"id": w, "kind": kind, "group": group_of.get(w) or next(
+            (l["group"] for l in linked if l["wallet"] == w), None)})
+    graph_links = [e for e in links.values() if e["source"] in keep and e["target"] in keep
+                   and (e["source"] in creators or e["target"] in creators or e["source"] in traces or e["target"] in traces)]
+    used = {x for e in graph_links for x in (e["source"], e["target"])} | set(creators)
+    nodes = [n for n in nodes if n["id"] in used]
+    return {"nodes": nodes, "links": graph_links, "groups": [{"id": i + 1, "wallets": g} for i, g in enumerate(groups)],
+            "linked": linked, "group_of": group_of, "busy": sorted(busy)}
+
+
+async def _load(db) -> tuple[set[str], dict[str, dict[str, Any]], dict[str, dict[str, Any]]]:
+    creators = {r["creator"] for r in await db.fetch("select distinct creator from danger_events")}
+    rows = {r["wallet"]: dict(r) for r in await db.fetch("select * from danger_traces")}
+    traces = {w: _jl(r["data"]) for w, r in rows.items() if r["data"] is not None}
+    return creators, traces, rows
+
+
+async def _refresh_linked(db) -> None:
+    creators, traces, _ = await _load(db)
+    net = _network(creators, traces)
+    LINKED.clear()
+    for l in net["linked"]:
+        LINKED[l["wallet"]] = ", ".join(l["roles"]) or "berbagi aliran dana"
+
+
+async def wallet_detail(db, wallet: str) -> dict[str, Any]:
+    """One wallet: its events, its full trace, its group and the linked wallets around it."""
+    creators, traces, rows = await _load(db)
+    net = _network(creators, traces)
+    events = [dict(r) | {"evidence": _jl(r["evidence"]), "at": int(r["seen_at"].timestamp() * 1000)}
+              for r in await db.fetch("select pool, name, kind, evidence, seen_at from danger_events where creator = $1 order by seen_at desc", wallet)]
+    for e in events:
+        e.pop("seen_at", None)
+    pools = [dict(r) | {"first_seen": int(r["first_seen"].timestamp() * 1000)} for r in await db.fetch(
+        "select pool, name, peak_tvl, last_tvl, first_seen from danger_pool_watch where creator = $1 order by first_seen desc limit 50", wallet)]
+    row = rows.get(wallet)
+    gid = net["group_of"].get(wallet)
+    return {
+        "wallet": wallet,
+        "tracing": wallet in TRACING,
+        "listed": wallet in creators,
+        "events": events,
+        "pools": pools,
+        "trace": traces.get(wallet),
+        "trace_error": row["error"] if row else None,
+        "traced_at": int(row["traced_at"].timestamp() * 1000) if row else None,
+        "group": gid,
+        "group_wallets": next((g["wallets"] for g in net["groups"] if g["id"] == gid), []),
+        "linked": [l for l in net["linked"] if wallet in l["creators"]],
+        "linked_to": next((l for l in net["linked"] if l["wallet"] == wallet), None),
+        "busy": net["busy"],
+    }
+
+
+TRACING: set[str] = set()
+
+
+async def trace_now(db, wallet: str) -> dict[str, Any]:
+    """Start a trace in the background (it takes minutes, longer than a proxied request may wait)."""
+    if wallet not in TRACING:
+        TRACING.add(wallet)
+        role = "creator" if await db.fetchval("select 1 from danger_events where creator = $1 limit 1", wallet) else "manual"
+
+        async def run() -> None:
+            try:
+                await _save_trace(db, wallet, role)
+                await _refresh_linked(db)
+            finally:
+                TRACING.discard(wallet)
+
+        asyncio.create_task(run(), name=f"trace {wallet[:6]}")
+    return await wallet_detail(db, wallet)
 
 
 async def report(db) -> dict[str, Any]:
@@ -146,7 +358,23 @@ async def report(db) -> dict[str, Any]:
         at = int(e["seen_at"].timestamp() * 1000)
         w["last_at"] = max(w["last_at"] or 0, at)
         w["events"].append({"pool": e["pool"], "name": e["name"], "kind": e["kind"], "at": at, "evidence": ev})
+    creators, traces, rows = await _load(db)
+    net = _network(creators, traces)
+    for w in by.values():
+        t = traces.get(w["wallet"])
+        row = rows.get(w["wallet"])
+        w["group"] = net["group_of"].get(w["wallet"])
+        w["linked"] = sum(1 for l in net["linked"] if w["wallet"] in l["creators"])
+        w["traced_at"] = int(row["traced_at"].timestamp() * 1000) if row else None
+        w["trace"] = None if not t else {
+            "tx_count": t.get("tx_count"), "tx_count_capped": t.get("tx_count_capped"), "first_at": t.get("first_at"),
+            "sol_balance": t.get("sol_balance"),
+            "funder": (t.get("funders") or [None])[0],
+            "sent_sol": sum(f["sol"] for f in t.get("sent_to") or []),
+        }
     wallets = sorted(by.values(), key=lambda w: (-(w["drained"] + w["suspicious"]), -(w["last_at"] or 0)))
     watched = await db.fetchval("select count(*) from danger_pool_watch where first_seen > now() - make_interval(hours => $1)", WATCH_HOURS)
-    return {"wallets": wallets, "watched_pools": watched,
+    net.pop("group_of")
+    return {"wallets": wallets, "watched_pools": watched, "network": net,
+            "traced": sum(1 for w in creators if w in traces), "pending_trace": sum(1 for w in creators if w not in rows),
             "rules": {"watch_hours": WATCH_HOURS, "min_peak_tvl": MIN_PEAK_TVL, "drain_pct": DRAIN_FRAC * 100}}

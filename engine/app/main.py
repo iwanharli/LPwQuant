@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import re
 from contextlib import asynccontextmanager
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -486,6 +487,26 @@ async def get_danger_wallets() -> dict:
     if engine.db is None:
         raise HTTPException(status_code=503, detail="engine not ready")
     return await danger_wallets.report(engine.db)
+
+
+@app.get("/api/danger-wallets/{wallet}")
+async def get_danger_wallet(wallet: str) -> dict:
+    """One wallet's events, pools, SOL trace (funders, counterparties) and network group."""
+    if engine.db is None:
+        raise HTTPException(status_code=503, detail="engine not ready")
+    if not re.fullmatch(r"[1-9A-HJ-NP-Za-km-z]{32,44}", wallet):
+        raise HTTPException(status_code=400, detail="alamat wallet tidak valid")
+    return await danger_wallets.wallet_detail(engine.db, wallet)
+
+
+@app.post("/api/danger-wallets/{wallet}/trace")
+async def trace_danger_wallet(wallet: str) -> dict:
+    """Trace a wallet now (any wallet, e.g. one found on a pool page); takes a minute or two."""
+    if engine.db is None:
+        raise HTTPException(status_code=503, detail="engine not ready")
+    if not re.fullmatch(r"[1-9A-HJ-NP-Za-km-z]{32,44}", wallet):
+        raise HTTPException(status_code=400, detail="alamat wallet tidak valid")
+    return await danger_wallets.trace_now(engine.db, wallet)
 
 
 @app.get("/api/lp-leaders")

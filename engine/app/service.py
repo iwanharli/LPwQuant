@@ -78,6 +78,8 @@ def danger_signs(row: dict[str, Any], security: dict[str, Any] | None) -> list[s
     creator = danger_wallets.CREATOR_OF.get(row.get("address") or "")
     if creator and danger_wallets.KNOWN.get(creator):
         signs.append(f"pembuat pool ini tercatat {danger_wallets.KNOWN[creator]}× di daftar wallet berbahaya")
+    elif creator and danger_wallets.LINKED.get(creator):
+        signs.append(f"pembuat pool ini terhubung dana dengan wallet berbahaya ({danger_wallets.LINKED[creator]})")
     risks = " ".join(str(r) for r in (security or {}).get("risks", []))
     if "Copycat" in risks:
         signs.append("RugCheck: nama/simbol meniru token lain")
@@ -192,6 +194,7 @@ class Engine:
         self._tasks.append(asyncio.create_task(lp_leaders.quick_loop(self.db), name="lp_leaders_quick"))
         self._tasks.append(asyncio.create_task(web_push.loop(self.db, lambda: self.rows), name="web_push"))
         self._tasks.append(asyncio.create_task(danger_wallets.loop(self.db, lambda: self.rows), name="danger_wallets"))
+        self._tasks.append(asyncio.create_task(danger_wallets.trace_loop(self.db), name="danger_trace"))
         self._tasks.append(asyncio.create_task(netpnl.refresh_loop(self.db), name="netpnl_refresh"))
         self._tasks.append(asyncio.create_task(netpnl.watch_new_transactions(self.db), name="netpnl_watch"))
         if config.PAPER_ENABLED:

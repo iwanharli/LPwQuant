@@ -18,6 +18,7 @@ import { apiFetch, createFailoverFetch } from "./rpc";
 import { WalletHistory } from "./wallet-history";
 import { botWallet } from "./auto-close";
 import { pg } from "./db";
+import { traceWallet } from "./wallet-trace";
 
 const MAX_POSITIONS = 20;
 let history: WalletHistory | null = null;
@@ -845,6 +846,16 @@ export function startClaimServer(port = config.claimPort, allowed = config.dashb
         return send(res, 502, { detail: err instanceof Error ? err.message : "gagal membaca pool" }, origin);
       }
       return send(res, 200, { creators }, origin);
+    }
+    if (req.method === "GET" && url.pathname === "/wallet-trace") {
+      // Funders and SOL counterparties of one wallet (the danger-wallet network). Slow: a few hundred RPC calls.
+      const wallet = url.searchParams.get("wallet") ?? "";
+      if (!BASE58.test(wallet)) return send(res, 400, { detail: "alamat wallet tidak valid" }, origin);
+      try {
+        return send(res, 200, await traceWallet(rpc(), wallet), origin);
+      } catch (err) {
+        return send(res, 502, { detail: err instanceof Error ? err.message : "gagal melacak wallet" }, origin);
+      }
     }
     if (req.method === "GET" && url.pathname === "/lp-owners") {
       // Wallets that hold a DLMM position in each given pool right now (one getProgramAccounts per pool, only the
