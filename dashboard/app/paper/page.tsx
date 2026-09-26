@@ -3,7 +3,7 @@ import PaperHub from "../components/paper/paper-hub";
 
 export const metadata: Metadata = {
   title: "Paper trading · Quant",
-  description: "Semua uji paper: profil LP, Panda, pembuat pool, dan limit order, dengan ukuran yang sama",
+  description: "Semua uji paper: profil LP dan Panda, dengan ukuran yang sama",
 };
 
 export default function Page() {
