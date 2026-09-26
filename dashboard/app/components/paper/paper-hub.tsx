@@ -37,6 +37,8 @@ type Strategy = {
   worst_usd?: number | null;
   worst_pct?: number | null;
   pnl_7d_usd?: number | null;
+  odd_fee_count?: number;
+  pnl_without_odd_usd?: number | null;
   positions_per_day?: number | null;
   avg_hold_hours?: number | null;
   total_hold_hours?: number | null;
@@ -207,6 +209,14 @@ function Summary({ data, error, onOpen }: { data: Overview | null; error: boolea
                     <td className="px-3 py-3 text-right">
                       <div className={`font-semibold ${tone(s.closed ? s.pnl_usd : null)}`}>{s.closed ? money(s.pnl_usd) : "–"}</div>
                       <div className={`text-[11px] ${tone(s.return_pct)}`}>{s.return_pct == null ? "" : `${pct(s.return_pct)} dari modal`}</div>
+                      {!!s.odd_fee_count && s.pnl_without_odd_usd != null && (
+                        <div
+                          className="mt-0.5 text-[11px] text-amber-300"
+                          title="Posisi dengan fee lebih dari 3% modal per jam: bisa lonjakan sesaat yang jarang terulang, atau kesalahan data"
+                        >
+                          ⚠ tanpa {s.odd_fee_count} fee tak wajar: {money(s.pnl_without_odd_usd)}
+                        </div>
+                      )}
                     </td>
                     <td className="px-3 py-3 text-right">
                       <div className="text-ink-2">{s.closed} selesai</div>

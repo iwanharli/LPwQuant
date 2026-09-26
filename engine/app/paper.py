@@ -12,6 +12,7 @@ non-refundable bin-array rent. Position rent is refundable, so it is tracked but
 positions are marked net of the cost to exit them now. Rent/tx constants come from the DLMM SDK.
 """
 
+import asyncio
 import json
 import logging
 import math
@@ -22,6 +23,7 @@ from typing import Any, Iterable
 
 import asyncpg
 
+from . import config
 from .backtest import LpPosition, summarize
 from .costs import BINS_PER_BIN_ARRAY, CostModel, entry_costs, exit_cost, resized_cost_pct, round_trip_cost_pct, swap_cost_fraction  # noqa: F401
 from .depth import realization_factor
@@ -225,6 +227,21 @@ async def close_retired_positions(db, active_profiles: tuple[str, ...]) -> int:
     for r in rows:
         log.warning("paper: closed #%s %s of retired profile %s", r["id"], r["name"], r["profile"])
     return len(rows)
+
+
+async def _new_bin_arrays(pool: str, low_pct: float | None) -> int | None:
+    """Bin arrays from the active bin down to `low_pct` that nobody has opened yet (ingestor, on chain)."""
+    if low_pct is None or low_pct >= 0:
+        return None
+    import urllib.request
+
+    url = f"{config.CLAIM_SERVER_URL}/bin-arrays?pool={pool}&low_pct={max(low_pct, -99.0)}"
+    try:
+        body = await asyncio.to_thread(lambda: json.load(urllib.request.urlopen(url, timeout=20)))
+        return int(body.get("new_arrays") or 0)
+    except Exception as err:
+        log.info("bin arrays for %s: %s", pool[:6], err)
+        return None
 
 
 def pool_fee_rate(pool: dict[str, Any]) -> float:
@@ -608,8 +625,13 @@ class PaperTrader:
         )
         pool = self._pool_ctx(pool, row)
         sol_to_y = (self.sol_usd or 0.0) / y_usd
+        new_arrays = plan.get("new_bin_arrays")
+        if new_arrays is None:
+            # No bin depth for this pool: ask the chain which bin arrays under the range do not exist yet, rather
+            # than assume none (their rent never comes back).
+            new_arrays = await _new_bin_arrays(row["address"], plan.get("range_low_pct"))
         pos.cost_entry_y, pos.rent_sol = entry_costs(
-            pos.lp, pos.positions, pool, y_usd, sol_to_y, self.cfg.costs, plan.get("new_bin_arrays")
+            pos.lp, pos.positions, pool, y_usd, sol_to_y, self.cfg.costs, new_arrays
         )
         pos.cost_exit_y = exit_cost(pos.lp, price, pos.positions, pool, y_usd, sol_to_y, self.cfg.costs)
         snapshot = {k: row.get(k) for k in ("score", "safety", "flags", "regime", "market", "insights", "security",

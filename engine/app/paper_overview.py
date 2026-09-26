@@ -10,11 +10,14 @@ from datetime import datetime, timezone
 from typing import Any
 
 MIN_CLOSED = 20
+# Fees faster than this (% of the position's capital per hour held) are not what a pool normally pays: a brief
+# spike, or a model error. They are counted, but the result is also shown without them.
+ODD_FEE_PCT_PER_HOUR = 3.0
 
 
 def _row(key: str, label: str, tab: str, trades: list[tuple[float, float]], open_n: int, started, note: str,
          profile: str | None = None, holds: list[float] | None = None, recent_7d: float | None = None,
-         opened: int | None = None) -> dict[str, Any]:
+         opened: int | None = None, odd: list[float] | None = None) -> dict[str, Any]:
     holds = [h for h in (holds or []) if h is not None and h >= 0]
     days = max(1.0, (datetime.now(timezone.utc) - started).total_seconds() / 86400) if started else None
     pnls = sorted(p for p, _ in trades)
@@ -45,6 +48,9 @@ def _row(key: str, label: str, tab: str, trades: list[tuple[float, float]], open
         # How long closed positions were held, in hours: the average and all of them together.
         # Result of the positions closed in the last seven days, and how often the strategy opens a position.
         "pnl_7d_usd": recent_7d,
+        # Positions whose fees came in implausibly fast, and the result without them.
+        "odd_fee_count": len(odd or []),
+        "pnl_without_odd_usd": sum(pnls) - sum(odd or []) if odd else None,
         "positions_per_day": (opened / days) if opened is not None and days else None,
         "avg_hold_hours": sum(holds) / len(holds) if holds else None,
         "total_hold_hours": sum(holds) if holds else None,
@@ -59,7 +65,7 @@ async def overview(db, papers: dict[str, Any], sol_usd: float) -> dict[str, Any]
     rows: list[dict[str, Any]] = []
     for key, trader in papers.items():
         closed = await db.fetch(
-            """select capital_usd, pnl_pct, extract(epoch from exit_ts - entry_ts) / 3600 as hold_h,
+            """select capital_usd, pnl_pct, fee_pct, extract(epoch from exit_ts - entry_ts) / 3600 as hold_h,
                       exit_ts > now() - interval '7 days' as recent
                from paper_positions where profile = $1 and status = 'closed'""", key)
         agg = await db.fetchrow(
@@ -71,10 +77,12 @@ async def overview(db, papers: dict[str, Any], sol_usd: float) -> dict[str, Any]
             agg["open"], agg["started"], "Profil LP dari rencana screener", profile=key,
             holds=[float(r["hold_h"]) for r in closed if r["hold_h"] is not None],
             recent_7d=sum(r["capital_usd"] * r["pnl_pct"] / 100 for r in closed if r["recent"]), opened=agg["n"],
+            odd=[r["capital_usd"] * r["pnl_pct"] / 100 for r in closed
+                 if (r["fee_pct"] or 0) / max(float(r["hold_h"] or 0), 1.0) >= ODD_FEE_PCT_PER_HOUR],
         ))
 
     panda = await db.fetch(
-        """select status, size_usd, pnl_usd, opened_at, extract(epoch from closed_at - opened_at) / 3600 as hold_h,
+        """select status, size_usd, pnl_usd, fees_usd, opened_at, extract(epoch from closed_at - opened_at) / 3600 as hold_h,
                   closed_at > now() - interval '7 days' as recent
            from paper_panda_runs""")
     rows.append(_row(
@@ -84,6 +92,8 @@ async def overview(db, papers: dict[str, Any], sol_usd: float) -> dict[str, Any]
         "Range lebar satu sisi, keluar di pantulan pertama",
         holds=[float(r["hold_h"]) for r in panda if r["status"] == "closed" and r["hold_h"] is not None],
         recent_7d=sum(r["pnl_usd"] or 0 for r in panda if r["status"] == "closed" and r["recent"]), opened=len(panda),
+        odd=[r["pnl_usd"] or 0 for r in panda if r["status"] == "closed"
+             and (r["fees_usd"] or 0) / r["size_usd"] * 100 / max(float(r["hold_h"] or 0), 1.0) >= ODD_FEE_PCT_PER_HOUR],
     ))
 
     grid = await db.fetch("select profit_usd, ts > now() - interval '7 days' as recent from paper_sol_grid_fills where side = 'sell'")

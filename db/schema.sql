@@ -507,6 +507,8 @@ create index if not exists paper_panda_runs_status on paper_panda_runs (status);
 alter table paper_panda_runs add column if not exists new_arrays integer not null default 0;
 -- Set once the range's bin arrays were checked on chain (2026-09-26); earlier runs had new_arrays left at 0.
 alter table paper_panda_runs add column if not exists rent_checked boolean not null default false;
+-- 2 = per-bin fee share (2026-09-26); 1 = the earlier value/(value+TVL), rescaled once by _fix_fees.
+alter table paper_panda_runs add column if not exists fee_model integer not null default 1;
 -- The price range each position served, so a flat "latest closed positions" list does not need one Meteora call
 -- per pool to draw its range bar.
 alter table portfolio_positions_index add column if not exists min_price double precision;

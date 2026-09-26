@@ -75,6 +75,7 @@ APPROXIMATIONS = [
     "Candle 15 menit disusun dari candle 5 menit Meteora, karena Meteora tidak menyediakan 15 menit.",
     "Filter 'total fees > 30 SOL' dan 'volume 5 menit' tidak ada di data kita; diganti fee/TVL 24 jam > 20%.",
     "Phishing % (GMGN) tidak selalu tersedia; yang dipakai flag keamanan engine dan RugCheck.",
+    "Fee: hanya bin tempat harga berada yang dapat fee, jadi bagian kita = likuiditas kita per bin ÷ likuiditas pool di bin itu (dari data bin on-chain). Posisi yang dibuka sebelum 26/09 dihitung ulang dengan kedalaman pool saat ini.",
     "Sewa posisi 0,08 SOL dikunci saat posisi terbuka lalu dikembalikan, jadi tidak dihitung sebagai kerugian.",
     "Sewa bin array: 0,0714 SOL per array (SDK Meteora) yang belum ada di range posisi, dicek on-chain saat posisi dibuka. Range sampai -90% hampir selalu butuh array baru, karena jarang ada yang memasang likuiditas sejauh itu.",
     "Jumlah bin mengikuti bin step pool: sebanyak yang dibutuhkan untuk menjangkau -90% dari harga masuk.",
@@ -217,6 +218,16 @@ def exit_signal(c15: list[Candle]) -> str | None:
     return None
 
 
+def fee_share(size_usd: float, bins: int, row: dict[str, Any] | None, tvl: float) -> float:
+    """Our share of the fees a swap pays: only the bin the price is in earns, so it is our liquidity in that bin
+    over the pool's liquidity in that bin. Ours is the position spread evenly over its bins; the pool's comes from
+    the on-chain bin depth, or TVL over 70 bins (one array) when the pool has no depth data."""
+    ours = size_usd / max(bins, 1)
+    depth = (row or {}).get("depth") or {}
+    pool_bin = depth.get("active_bin_usd") or depth.get("avg_nonempty_bin_usd") or (max(tvl, 0.0) / 70)
+    return ours / (ours + pool_bin) if ours + pool_bin > 0 else 0.0
+
+
 def position_value(size: float, ratio: float) -> tuple[float, float]:
     """(quote value, token value) of a one-sided quote position, per the bins it was spread over.
 
@@ -281,9 +292,27 @@ class PandaPaper:
                 )
             log.info("panda %s: %d new bin array(s), rent %.2f USD", r["name"], new, rent)
 
+    async def _fix_fees(self) -> None:
+        """Runs from before the per-bin fee share (2026-09-26) were credited value/(value+TVL), as if the whole
+        position sat in the active bin. Rescale their fees by new share / old share, measured on the pool now,
+        and take the difference off closed results. An estimate: the pool's depth at the time is not kept."""
+        rows = self.rows()
+        for r in await self.db.fetch("select * from paper_panda_runs where fee_model < 2"):
+            tvl = r["last_tvl"] or 0.0
+            old = r["size_usd"] / (r["size_usd"] + tvl) if tvl > 0 else 0.0
+            new = fee_share(r["size_usd"], r["bins"] or BINS, rows.get(r["pool"]), tvl)
+            fees = r["fees_usd"] * (new / old) if old > 0 else r["fees_usd"]
+            await self.db.execute(
+                """update paper_panda_runs set fees_usd = $2, pnl_usd = case when status = 'closed'
+                     then pnl_usd - $3 + $2 else pnl_usd end, fee_model = 2 where id = $1""",
+                r["id"], fees, r["fees_usd"],
+            )
+            log.info("panda %s fees %.2f -> %.2f (share %.4f -> %.4f)", r["name"], r["fees_usd"], fees, old, new)
+
     async def step(self) -> None:
         now = datetime.now(timezone.utc)
         await self._fix_rent()
+        await self._fix_fees()
         rows = self.rows()
         for r in await self.db.fetch("select * from paper_panda_runs where status = 'open'"):
             await self._tick(dict(r), rows.get(r["pool"]), now)
@@ -309,8 +338,10 @@ class PandaPaper:
         ratio = price / r["entry_price"]
         quote_usd, token_usd = position_value(r["size_usd"], ratio)
         value = quote_usd + token_usd
-        in_range = ratio >= 1 + RANGE_LOW_PCT / 100
-        earned = (cum - r["last_cum_fees"]) * value / (value + max(tvl, 0.0)) if in_range and cum > r["last_cum_fees"] else 0.0
+        # The range runs from the entry price down: above the entry (a pump) or under its floor it earns nothing.
+        in_range = 1 + RANGE_LOW_PCT / 100 <= ratio <= 1.0
+        share = fee_share(r["size_usd"], r["bins"] or BINS, row, tvl)
+        earned = (cum - r["last_cum_fees"]) * share if in_range and cum > r["last_cum_fees"] else 0.0
         await self.db.execute(
             """update paper_panda_runs set last_cum_fees = $2, fees_usd = fees_usd + $3, last_price = $4,
                  last_tvl = $5, last_volume_24h = $6, ticks = ticks + 1, checked_at = $7,
@@ -395,8 +426,8 @@ class PandaPaper:
                 continue
             await self.db.execute(
                 """insert into paper_panda_runs (pool, name, mint, quote, opened_at, status, size_usd, sol_usd,
-                     entry_price, range_low_pct, bins, last_cum_fees, last_price, last_tvl, min_ratio, checked_at)
-                   values ($1,$2,$3,$4,$5,'open',$6,$7,$8,$9,$10,$11,$8,$12,1,$5)""",
+                     entry_price, range_low_pct, bins, last_cum_fees, last_price, last_tvl, min_ratio, checked_at, fee_model)
+                   values ($1,$2,$3,$4,$5,'open',$6,$7,$8,$9,$10,$11,$8,$12,1,$5,2)""",
                 row["address"], row.get("name") or "?", row.get("base_mint") or "", (row.get("name") or "-").rsplit("-", 1)[-1],
                 now, SIZE_USD, sol, price, RANGE_LOW_PCT, BINS,
                 await self._pool_cum_fees(row["address"]), _f(row.get("tvl")) or 0.0,
