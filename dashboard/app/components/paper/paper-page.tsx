@@ -1,7 +1,9 @@
 "use client";
 
 import { useUrlState } from "../../lib/url-state";
-import { useEffect, useState, type ReactNode } from "react";
+import { useAutoRefresh } from "../../lib/auto-refresh";
+import { Candidates, Funnel, type Candidate } from "../panda-page";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { STRATEGY_LABEL, TIER_META } from "../../lib/flags";
 import {
   ENGINE_URL,
@@ -25,9 +27,7 @@ import {
 import type { Tier } from "../../lib/types";
 import PageHeader from "../page-header";
 import TopBar from "../top-bar";
-import { ChevronIcon } from "../icons";
 import { Delta, StatusDot } from "../ui";
-import EquityChart from "./equity-chart";
 import { SkeletonTable } from "../skeleton";
 
 const REFRESH_MS = 30_000;
@@ -102,53 +102,6 @@ function usePaperData(profile: string) {
     };
   }, [profile]);
   return { data, error };
-}
-
-function Card({
-  title,
-  children,
-  right,
-  collapsible = false,
-  collapsedRight,
-}: {
-  title: string;
-  children: ReactNode;
-  right?: ReactNode;
-  collapsible?: boolean;
-  /** Shown in the header instead of `right` while collapsed. */
-  collapsedRight?: ReactNode;
-}) {
-  const [open, setOpen] = useState(true);
-  const header = (
-    <>
-      <span className="flex items-center gap-2">
-        {collapsible && (
-          <ChevronIcon className={`text-ink-3 transition-transform ${open ? "" : "-rotate-90"}`} aria-hidden />
-        )}
-        <h2 className="text-sm font-semibold text-ink">{title}</h2>
-      </span>
-      {open ? right : (collapsedRight ?? right)}
-    </>
-  );
-  return (
-    <section className="overflow-hidden rounded-2xl border border-white/[0.06] bg-panel shadow-[0_14px_42px_rgba(0,0,0,0.20),inset_0_1px_0_rgba(255,255,255,0.04)]">
-      {collapsible ? (
-        <button
-          type="button"
-          onClick={() => setOpen((o) => !o)}
-          aria-expanded={open}
-          className={`flex w-full items-center justify-between gap-3 bg-white/[0.02] px-4 py-3 text-left transition-colors hover:bg-raised/40 ${
-            open ? "border-b border-line" : ""
-          }`}
-        >
-          {header}
-        </button>
-      ) : (
-        <div className="flex items-center justify-between gap-3 border-b border-line bg-white/[0.02] px-4 py-3">{header}</div>
-      )}
-      {open && children}
-    </section>
-  );
 }
 
 function Tile({ label, value, hint }: { label: string; value: ReactNode; hint: ReactNode }) {
@@ -469,168 +422,6 @@ function ResultsCard({ summary: s, profileLabel }: { summary: PaperSummary | und
   );
 }
 
-function fmtMult(value: number | null | undefined, suffix: string): string {
-  return value == null ? "–" : `${String(value).replace(".", ",")}${suffix}`;
-}
-
-const VERDICT_META = {
-  collecting: { severity: "info", label: "Mengumpulkan data" },
-  profitable: { severity: "good", label: "Terbukti untung (CI > 0)" },
-  losing: { severity: "critical", label: "Terbukti rugi (CI < 0)" },
-  inconclusive: { severity: "warning", label: "Belum meyakinkan (CI melewati 0)" },
-} as const;
-
-function VerdictBadge({ verdict }: { verdict: ProfileSummary["verdict"] }) {
-  if (!verdict) return null;
-  const meta = VERDICT_META[verdict.status];
-  const total = verdict.trades + verdict.trades_needed;
-  return (
-    <div
-      className="mt-1.5 inline-flex items-center gap-1.5 text-[11px] text-ink-2"
-      title={`Aturan ditetapkan di awal: minimal ${total} posisi ditutup, lalu 95% CI rata-rata return per trade harus di atas 0`}
-    >
-      <StatusDot severity={meta.severity} />
-      {meta.label}
-      {verdict.status === "collecting" && (
-        <span className="tabular-nums text-ink-3">
-          · {verdict.trades}/{total} posisi
-        </span>
-      )}
-    </div>
-  );
-}
-
-function ProfileCompareCard({
-  profiles,
-  selected,
-  onSelect,
-}: {
-  profiles: ProfileSummary[] | undefined;
-  selected: string;
-  onSelect: (key: string) => void;
-}) {
-  return (
-    <section className="overflow-hidden rounded-2xl border border-white/[0.06] bg-panel shadow-[0_14px_42px_rgba(0,0,0,0.20),inset_0_1px_0_rgba(255,255,255,0.04)]">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line bg-white/[0.02] px-4 py-3">
-        <h2 className="text-sm font-semibold text-ink">Perbandingan profil risiko</h2>
-        <span className="text-xs text-ink-3">
-          Modal awal dan data live sama untuk semua profil. Klik baris untuk melihat detail profil.
-        </span>
-      </div>
-      {!profiles ? (
-        <p className="px-4 py-8 text-sm text-ink-3">Memuat…</p>
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[1080px] text-sm tabular-nums">
-            <thead className="text-[11px] font-medium uppercase tracking-[0.08em] text-ink-3">
-              <tr className="border-b border-line">
-                <th className="px-4 py-2.5 text-left font-medium">Profil</th>
-                <th className="px-3 py-2.5 text-left font-medium">Aturan</th>
-                <th className="px-3 py-2.5 text-right font-medium">Equity</th>
-                <th className="px-3 py-2.5 text-right font-medium">PnL total</th>
-                <th className="px-3 py-2.5 text-right font-medium">Terealisasi</th>
-                <th className="px-3 py-2.5 text-right font-medium">Belum terealisasi</th>
-                <th className="px-3 py-2.5 text-right font-medium">Posisi buka / tutup</th>
-                <th className="px-3 py-2.5 text-right font-medium">Win rate</th>
-                <th className="px-3 py-2.5 text-right font-medium">Rata-rata / trade</th>
-                <th className="px-3 py-2.5 text-right font-medium">Biaya</th>
-                <th className="px-4 py-2.5 text-right font-medium">Drawdown maks</th>
-              </tr>
-            </thead>
-            <tbody>
-              {/* Highest total PnL first: the same equity minus starting capital shown in the PnL column. */}
-              {[...profiles]
-                .sort((a, b) => b.equity_usd - b.start_equity_usd - (a.equity_usd - a.start_equity_usd))
-                .map((p) => {
-                const total = p.equity_usd - p.start_equity_usd;
-                const pct = p.start_equity_usd > 0 ? (total / p.start_equity_usd) * 100 : 0;
-                const active = p.key === selected;
-                const st = p.settings;
-                return (
-                  <tr
-                    key={p.key}
-                    tabIndex={0}
-                    aria-selected={active}
-                    onClick={() => onSelect(p.key)}
-                    onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && onSelect(p.key)}
-                    className={`cursor-pointer border-b border-line/70 align-top outline-none transition-colors last:border-b-0 ${
-                      active ? "bg-accent/10 shadow-[inset_3px_0_0_var(--color-accent)]" : "hover:bg-hover/70 focus-visible:bg-hover"
-                    }`}
-                  >
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2 font-semibold text-ink">
-                        <span
-                          className="h-0.5 w-4 rounded-full"
-                          style={{ background: PROFILE_COLORS[p.key] ?? "var(--color-accent)" }}
-                          aria-hidden
-                        />
-                        {p.label}
-                        {p.entries_paused && (
-                          <span className="inline-flex items-center gap-1 text-[11px] font-medium text-warning">
-                            <StatusDot severity="warning" /> dijeda
-                          </span>
-                        )}
-                      </div>
-                      <div className="mt-0.5 max-w-[16rem] text-xs leading-5 text-ink-3">{p.description}</div>
-                      <VerdictBadge verdict={p.verdict} />
-                    </td>
-                    <td className="px-3 py-3">
-                      <div className="flex flex-wrap gap-1">
-                        {st.tiers.map((t) => (
-                          <TierBadge key={t} tier={t} />
-                        ))}
-                      </div>
-                      <div className="mt-1.5 text-xs leading-5 text-ink-3">
-                        Ukuran {fmtMult(st.size_mult, "×")}
-                        {st.position_floor_usd ? ` (min ${usd.format(st.position_floor_usd)})` : ""} · maks{" "}
-                        {st.max_open_per_tier}/tier · fee ≥
-                        {fmtMult(st.min_fee_cost_ratio, "×")} biaya ({fmtMult(st.fee_gate_hours, " j")})
-                        <br />
-                        Tahan min {fmtMult(st.min_hold_hours, " j")} · stop-loss {fmtMult(st.stop_loss_mult, "×")} · jeda di
-                        drawdown {st.max_drawdown_pct == null ? "–" : `${st.max_drawdown_pct}%`}
-                        {st.max_atr_pct != null ? ` · hanya ATR ≤${st.max_atr_pct}%` : ""}
-                        {st.plan_variant === "single" ? " · posisi satu sisi (quote)" : ""}
-                      </div>
-                    </td>
-                    <td className="px-3 py-3 text-right font-medium text-ink">{usd.format(p.equity_usd)}</td>
-                    <td className="px-3 py-3 text-right">
-                      <div className="text-ink">
-                        {total >= 0 ? "+" : ""}
-                        {usd.format(total)}
-                      </div>
-                      <Delta value={pct} digits={2} />
-                    </td>
-                    <td className="px-3 py-3 text-right text-ink-2">{usd.format(p.realized_usd)}</td>
-                    <td className="px-3 py-3 text-right text-ink-2">{usd.format(p.unrealized_usd)}</td>
-                    <td className="px-3 py-3 text-right text-ink-2">
-                      {integer.format(p.open_count)} / {integer.format(p.closed_count)}
-                    </td>
-                    <td className="px-3 py-3 text-right text-ink-2">
-                      {p.overall.trades ? fmtPct(p.overall.win_rate_pct) : "–"}
-                    </td>
-                    <td className="px-3 py-3 text-right">
-                      {p.overall.trades ? (
-                        <>
-                          <div className="text-ink">{fmtSignedPct(p.overall.mean_return_pct, 2)}</div>
-                          <div className="text-[11px] text-ink-3">CI {ciText(p.overall)}</div>
-                        </>
-                      ) : (
-                        <span className="text-ink-3">–</span>
-                      )}
-                    </td>
-                    <td className="px-3 py-3 text-right text-ink-2">{usd.format(p.costs_usd)}</td>
-                    <td className="px-4 py-3 text-right text-ink-2">{fmtPct(p.max_drawdown_pct, 2)}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </section>
-  );
-}
-
 function ProfileTabs({
   profiles,
   selected,
@@ -706,15 +497,81 @@ function PositionsCard({
   );
 }
 
-const LP_VIEWS = ["berjalan", "selesai", "hasil", "equity", "banding"] as const;
+const LP_VIEWS = ["berjalan", "selesai", "seleksi", "aturan"] as const;
 type LpView = (typeof LP_VIEWS)[number];
 const LP_VIEW_LABEL: Record<LpView, string> = {
   berjalan: "Berjalan",
   selesai: "Selesai",
-  hasil: "Hasil & statistik",
-  equity: "Kurva equity",
-  banding: "Bandingkan profil",
+  seleksi: "Seleksi Pool",
+  aturan: "Aturan",
 };
+
+type ScreenData = { updated_at: number | null; funnel: Record<string, number>; pools: Candidate[] };
+
+/** The profile's view of the live pools: the ones that pass its screen with their entry checklist, then why the
+ * rest fail. Same layout as Panda's. */
+function ProfileScreen({ profile }: { profile: string }) {
+  const [data, setData] = useState<ScreenData | null>(null);
+  const load = useCallback(() => {
+    fetch(`${ENGINE_URL}/api/paper/screen?profile=${profile}`)
+      .then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
+      .then((d: ScreenData) => setData(d))
+      .catch(() => undefined);
+  }, [profile]);
+  useAutoRefresh(load, 30_000);
+  useEffect(load, [load]);
+  if (!data) return <SkeletonTable rows={5} columns={4} title={false} />;
+  return (
+    <div className="space-y-5">
+      <Candidates data={{ checked_at: data.updated_at, pools: data.pools }} />
+      <Funnel funnel={data.funnel} />
+    </div>
+  );
+}
+
+/** Entry and exit rules of one profile, in the words the page uses elsewhere. */
+function ProfileRules({ summary: s }: { summary: PaperSummary }) {
+  const st = s.profile?.settings;
+  if (!st) return null;
+  const entry = [
+    s.profile?.description,
+    `Tier pool: ${st.tiers.join(", ")} · maks ${st.max_open_per_tier} posisi per tier · jeda ${s.config.cooldown_hours} jam sebelum masuk pool yang sama lagi.`,
+    st.plan_variant === "single" ? "Satu sisi: hanya SOL/USDC di bawah harga, tidak ada swap saat masuk." : "Dua sisi: token dan SOL/USDC di sekitar harga.",
+    st.max_atr_pct != null ? `Volatilitas pool (ATR candle 30m) maksimal ${st.max_atr_pct}%.` : "Tanpa batas volatilitas.",
+    st.min_fee_cost_ratio != null
+      ? `Gerbang fee: fee ${st.fee_gate_hours ?? 1} jam harus ≥ ${st.min_fee_cost_ratio}× biaya masuk-keluar.`
+      : "Tanpa gerbang fee.",
+    `Ukuran posisi: rencana engine × ${st.size_mult}, minimal ${usd.format(st.position_floor_usd ?? 0)}.`,
+  ];
+  const exit = [
+    `Stop-loss: rugi melewati batas rencana pool (disesuaikan ATR) × ${st.stop_loss_mult}.`,
+    "Keluar range: harga di luar range lebih lama dari batas menit di rencana.",
+    `Setelah ditahan minimal ${st.min_hold_hours ?? 0} jam: breakout di luar batas rencana, fee turun jauh dari saat masuk, atau batas waktu maksimal.`,
+    st.max_drawdown_pct != null
+      ? `Rem: equity turun > ${st.max_drawdown_pct}% dari puncak → posisi baru dijeda 24 jam.`
+      : "Tanpa rem drawdown.",
+  ];
+  return (
+    <section className="grid gap-4 rounded-2xl border border-white/[0.06] bg-panel p-4 md:grid-cols-2">
+      {[
+        { title: "Masuk", items: entry },
+        { title: "Keluar", items: exit },
+      ].map((b) => (
+        <div key={b.title}>
+          <h3 className="text-base font-semibold text-ink">{b.title}</h3>
+          <ul className="mt-2 space-y-2 text-sm leading-6 text-ink-2">
+            {b.items.filter(Boolean).map((t) => (
+              <li key={t} className="flex gap-2">
+                <span className="mt-2.5 h-1.5 w-1.5 shrink-0 rounded-full bg-accent" aria-hidden />
+                <span>{t}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
+    </section>
+  );
+}
 
 export default function PaperPage({
   embedded = false,
@@ -840,38 +697,11 @@ export default function PaperPage({
               tab={view === "berjalan" ? "open" : "closed"}
             />
           )}
-          {view === "hasil" && <ResultsCard summary={s} profileLabel={s?.profile?.label} />}
+          {view === "selesai" && <ResultsCard summary={s} profileLabel={s?.profile?.label} />}
+          {view === "seleksi" && <ProfileScreen profile={profile} />}
+          {view === "aturan" && s && <ProfileRules summary={s} />}
         </div>
 
-        {view === "banding" && <ProfileCompareCard profiles={data?.profiles} selected={profile} onSelect={setProfile} />}
-
-        {view === "equity" && (
-            <Card
-              title="Kurva equity per profil"
-              right={<span className="text-xs text-ink-3">30 hari terakhir</span>}
-              collapsedRight={
-                s ? (
-                  <span className="flex items-center gap-3 text-xs tabular-nums">
-                    <span className="text-ink">{usd.format(s.equity_usd)}</span>
-                    <Delta value={totalPct} digits={2} />
-                  </span>
-                ) : undefined
-              }
-            >
-              <div className="px-2 py-3 sm:px-4">
-                <EquityChart
-                  series={(data?.profiles ?? []).map((p) => ({
-                    key: p.key,
-                    label: p.label,
-                    color: PROFILE_COLORS[p.key] ?? "var(--color-accent)",
-                    points: data?.equityByProfile[p.key] ?? [],
-                  }))}
-                  start={s?.start_equity_usd ?? 0}
-                  selected={profile}
-                />
-              </div>
-            </Card>
-        )}
 
         <p className="pb-2 text-center text-xs leading-5 text-ink-3">
           Simulasi: likuiditas rata di semua bin, fee dari fee/TVL 1 jam pool.

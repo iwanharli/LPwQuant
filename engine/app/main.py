@@ -13,7 +13,7 @@ from . import config
 from .backtest import default_params, run_backtest
 from .charts import MAX_HOURS, load_candles, pool_paper_positions, profile_decision
 from .freshness import check_freshness
-from . import busy_hours, holders_map, sol_grid, ledger, limit_recs, netpnl, panda, paper_lo, paper_overview, paper_pool, portfolio
+from . import busy_hours, holders_map, profile_screen, sol_grid, ledger, limit_recs, netpnl, panda, paper_lo, paper_overview, paper_pool, portfolio
 
 log = logging.getLogger("api")
 from .service import Engine
@@ -459,6 +459,12 @@ async def paper_reset() -> dict:
     if not engine.papers:
         raise HTTPException(status_code=503, detail="paper trading not ready")
     return {"deleted": await engine.reset_papers()}
+
+
+@app.get("/api/paper/screen")
+async def paper_screen(profile: str = Query("satu_sisi")) -> dict:
+    """The profile's view of the live pools: why pools fail it, and the entry checklist of those that pass."""
+    return {"updated_at": engine.updated_at, **profile_screen.screen(engine.rows, _paper(profile))}
 
 
 @app.get("/api/paper/summary")

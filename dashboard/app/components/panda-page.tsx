@@ -147,7 +147,7 @@ function Rules({ p, approximations }: { p: Report["params"]; approximations: str
 }
 
 type Check = { key: string; label: string; ok: boolean; detail: string };
-type Candidate = {
+export type Candidate = {
   address: string;
   name: string;
   price: number | null;
@@ -164,7 +164,7 @@ type Candidate = {
 };
 
 /** Pools that cleared every screening gate, each with the entry trigger broken into its parts. */
-function Candidates({ data }: { data: NonNullable<Report["candidates"]> }) {
+export function Candidates({ data }: { data: { checked_at: number | null; slots?: number; pools: Candidate[] } }) {
   const pools = data.pools ?? [];
   return (
     <section className="rounded-2xl border border-white/[0.06] bg-panel">
@@ -238,7 +238,7 @@ function Candidates({ data }: { data: NonNullable<Report["candidates"]> }) {
   );
 }
 
-function Funnel({ funnel }: { funnel: Record<string, number> }) {
+export function Funnel({ funnel }: { funnel: Record<string, number> }) {
   const rows = Object.entries(funnel);
   const total = rows.reduce((n, [, v]) => n + v, 0);
   const passed = funnel.lolos ?? 0;
