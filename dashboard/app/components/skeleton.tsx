@@ -85,3 +85,31 @@ export function SkeletonChart({ height = 260 }: { height?: number }) {
     </section>
   );
 }
+
+/** One card split into KPI cells, the strip the paper-test pages open with. */
+export function SkeletonStrip({ count = 4 }: { count?: number }) {
+  return (
+    <section className="overflow-hidden rounded-2xl border border-white/[0.06] bg-panel" aria-busy="true">
+      <div className="grid grid-cols-2 gap-px bg-line/40 sm:grid-cols-4">
+        {Array.from({ length: count }, (_, i) => (
+          <div key={i} className="bg-panel px-4 py-3.5">
+            <SkeletonBox className="h-2.5 w-20" />
+            <SkeletonBox className="mt-2.5 h-6 w-28" />
+            <SkeletonBox className="mt-2 h-2.5 w-36" />
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+/** A sub-tab bar with its underline. */
+export function SkeletonTabs({ count = 4 }: { count?: number }) {
+  return (
+    <div className="flex gap-1 border-b border-line pb-2.5 pt-2" aria-hidden>
+      {Array.from({ length: count }, (_, i) => (
+        <SkeletonBox key={i} className="mx-3 h-4 w-24" />
+      ))}
+    </div>
+  );
+}

@@ -28,7 +28,7 @@ import type { Tier } from "../../lib/types";
 import PageHeader from "../page-header";
 import TopBar from "../top-bar";
 import { Delta, StatusDot } from "../ui";
-import { SkeletonTable } from "../skeleton";
+import { SkeletonStrip, SkeletonTable, SkeletonTabs } from "../skeleton";
 
 const REFRESH_MS = 30_000;
 const TIERS: Tier[] = ["low", "medium", "high"];
@@ -492,7 +492,13 @@ function useScreen(profile: string) {
 }
 
 function ProfileScreen({ data }: { data: ScreenData | null }) {
-  if (!data) return <SkeletonTable rows={5} columns={4} title={false} />;
+  if (!data)
+    return (
+      <div className="grid items-start gap-5 lg:grid-cols-[7fr_3fr]">
+        <SkeletonTable rows={5} columns={4} />
+        <SkeletonTable rows={4} columns={2} />
+      </div>
+    );
   return (
     <SelectionView candidates={{ checked_at: data.updated_at, pools: data.pools }} funnel={data.funnel} rejected={data.rejected} />
   );
@@ -602,7 +608,15 @@ export default function PaperPage({
 
         {!fixedProfile && <ProfileTabs profiles={data?.profiles} selected={profile} onSelect={setProfile} />}
 
-        <div
+        {!s && !error && (
+          <>
+            <SkeletonStrip count={4} />
+            <SkeletonTabs count={4} />
+            <SkeletonTable rows={5} columns={7} title={false} />
+          </>
+        )}
+
+        {s && <div
           className={`space-y-5 transition-opacity ${loadingProfile ? "pointer-events-none opacity-50" : ""}`}
           aria-busy={loadingProfile}
         >
@@ -684,7 +698,7 @@ export default function PaperPage({
               </p>
             </div>
           )}
-        </div>
+        </div>}
 
 
     </>

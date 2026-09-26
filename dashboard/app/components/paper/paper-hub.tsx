@@ -6,7 +6,7 @@ import { ENGINE_URL, fmtDateTime, fmtNum, usd } from "../../lib/format";
 import { useUrlState } from "../../lib/url-state";
 import PageHeader from "../page-header";
 import PandaPage from "../panda-page";
-import { SkeletonTable, SkeletonTiles } from "../skeleton";
+import { SkeletonBox, SkeletonStrip, SkeletonTable } from "../skeleton";
 import TopBar from "../top-bar";
 import PaperPage from "./paper-page";
 import { PROFILE_COLORS } from "../../lib/paper-types";
@@ -120,8 +120,13 @@ function Summary({ data, error, onOpen }: { data: Overview | null; error: boolea
   if (!data)
     return (
       <>
-        <SkeletonTiles count={4} />
-        <SkeletonTable rows={7} columns={8} title={false} />
+        <SkeletonStrip count={4} />
+        <SkeletonTable rows={5} columns={8} />
+        <div className="grid gap-3 md:grid-cols-3">
+          {[0, 1, 2].map((i) => (
+            <SkeletonBox key={i} className="h-20 rounded-2xl" />
+          ))}
+        </div>
       </>
     );
 

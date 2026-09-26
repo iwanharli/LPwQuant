@@ -6,7 +6,7 @@ import { ENGINE_URL, fmtDateTime, fmtNum, usd, usdCompact } from "../lib/format"
 import { useUrlState } from "../lib/url-state";
 import PageHeader from "./page-header";
 import TopBar from "./top-bar";
-import { SkeletonTable, SkeletonTiles } from "./skeleton";
+import { SkeletonStrip, SkeletonTable, SkeletonTabs } from "./skeleton";
 
 type Run = {
   id: number;
@@ -501,8 +501,9 @@ export default function PandaPage({ embedded = false }: { embedded?: boolean }) 
 
         {!r && !error && (
           <>
-            <SkeletonTiles count={4} />
-            <SkeletonTable rows={6} columns={6} title={false} />
+            <SkeletonStrip count={4} />
+            <SkeletonTabs count={4} />
+            <SkeletonTable rows={5} columns={6} title={false} />
           </>
         )}
 
