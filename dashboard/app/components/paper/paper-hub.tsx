@@ -237,6 +237,30 @@ function Summary({ data, error, onOpen }: { data: Overview | null; error: boolea
   );
 }
 
+const DEFAULT_PROFILES = [
+  { key: "satu_sisi", label: "Satu Sisi" },
+  { key: "satu_sisi_sering", label: "Satu Sisi Sering" },
+];
+const PROFILES_KEY = "paper:profiles";
+
+function lastProfiles(): { key: string; label: string }[] {
+  try {
+    const raw = typeof window === "undefined" ? null : window.localStorage.getItem(PROFILES_KEY);
+    const list = raw ? (JSON.parse(raw) as { key: string; label: string }[]) : null;
+    return list?.length ? list : DEFAULT_PROFILES;
+  } catch {
+    return DEFAULT_PROFILES;
+  }
+}
+
+function rememberProfiles(list: { key: string; label: string }[]) {
+  try {
+    window.localStorage.setItem(PROFILES_KEY, JSON.stringify(list));
+  } catch {
+    // private window: the defaults do
+  }
+}
+
 // Every profile the engine may run, so a profile tab in the URL survives the first render before the list loads.
 const PROFILE_TABS = Object.keys(PROFILE_COLORS);
 const ALL_TABS = [...TABS, ...PROFILE_TABS];
@@ -245,10 +269,15 @@ export default function PaperHub() {
   const [tab, setTab] = useUrlState<string>("tab", "ringkasan", ALL_TABS);
   const { data, error } = useOverview();
   // One tab per running profile, between the overview and Panda, in the engine's order.
-  const profiles = (data?.strategies ?? []).filter((s) => s.tab === "lp" && s.profile);
+  // Until the overview loads, the profiles seen last time (or the ones running now), so the tab bar does not jump.
+  const loaded = (data?.strategies ?? [])
+    .filter((s) => s.tab === "lp" && s.profile)
+    .map((p) => ({ key: p.profile as string, label: p.label }));
+  const profiles = loaded.length ? loaded : lastProfiles();
+  if (loaded.length) rememberProfiles(loaded);
   const tabs: { key: string; label: string }[] = [
     { key: "ringkasan", label: TAB_LABEL.ringkasan },
-    ...profiles.map((p) => ({ key: p.profile as string, label: p.label })),
+    ...profiles,
     { key: "panda", label: TAB_LABEL.panda },
     { key: "sol", label: TAB_LABEL.sol },
   ];
