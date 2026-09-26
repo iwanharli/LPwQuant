@@ -287,7 +287,6 @@ export default function PaperHub() {
                 tab === t.key ? "border-accent text-ink" : "border-transparent text-ink-3 hover:text-ink-2"
               }`}
             >
-              {PROFILE_COLORS[t.key] && <span className="h-2 w-2 rounded-full" style={{ background: PROFILE_COLORS[t.key] }} aria-hidden />}
               {t.label}
               {t.kind && (
                 <span
