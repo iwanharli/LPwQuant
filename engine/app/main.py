@@ -364,7 +364,7 @@ async def get_paper_overview() -> dict:
     """Every paper test on one yardstick: total, median, without the best trades, verdict."""
     if engine.db is None:
         raise HTTPException(status_code=503, detail="engine not ready")
-    return await paper_overview.overview(engine.db, engine.papers, engine.sol_usd or config.SOL_USD_FALLBACK)
+    return await paper_overview.overview(engine.db, engine.papers, engine.sol_usd or config.SOL_USD_FALLBACK, engine.rows)
 
 
 @app.get("/api/paper/sol-grid")

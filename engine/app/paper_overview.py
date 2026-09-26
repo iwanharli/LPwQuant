@@ -17,7 +17,7 @@ ODD_FEE_PCT_PER_HOUR = 3.0
 
 def _row(key: str, label: str, tab: str, trades: list[tuple[float, float]], open_n: int, started, note: str,
          profile: str | None = None, holds: list[float] | None = None, recent_7d: float | None = None,
-         opened: int | None = None, odd: list[float] | None = None) -> dict[str, Any]:
+         opened: int | None = None, odd: list[float] | None = None, passing: int | None = None) -> dict[str, Any]:
     holds = [h for h in (holds or []) if h is not None and h >= 0]
     days = max(1.0, (datetime.now(timezone.utc) - started).total_seconds() / 86400) if started else None
     pnls = sorted(p for p, _ in trades)
@@ -36,6 +36,8 @@ def _row(key: str, label: str, tab: str, trades: list[tuple[float, float]], open
     return {
         "key": key, "label": label, "tab": tab, "profile": profile, "note": note,
         "closed": n, "open": open_n,
+        # Pools (levels, for the grid) that pass the strategy's screen right now: the "y" of "x aktif / y lolos".
+        "passing": passing,
         "started_at": int(started.timestamp() * 1000) if started else None,
         "pnl_usd": sum(pnls), "capital_usd": capital,
         "return_pct": sum(pnls) / capital * 100 if capital else None,
@@ -61,7 +63,10 @@ def _row(key: str, label: str, tab: str, trades: list[tuple[float, float]], open
     }
 
 
-async def overview(db, papers: dict[str, Any], sol_usd: float) -> dict[str, Any]:
+async def overview(db, papers: dict[str, Any], sol_usd: float, pools: dict[str, Any] | None = None) -> dict[str, Any]:
+    from . import panda as panda_mod, profile_screen
+
+    pools = pools or {}
     rows: list[dict[str, Any]] = []
     for key, trader in papers.items():
         closed = await db.fetch(
@@ -76,6 +81,7 @@ async def overview(db, papers: dict[str, Any], sol_usd: float) -> dict[str, Any]
             [(r["capital_usd"] * r["pnl_pct"] / 100, r["capital_usd"]) for r in closed],
             agg["open"], agg["started"], "Profil LP dari rencana screener", profile=key,
             holds=[float(r["hold_h"]) for r in closed if r["hold_h"] is not None],
+            passing=profile_screen.screen(pools, trader)["funnel"].get("lolos", 0) if pools else None,
             recent_7d=sum(r["capital_usd"] * r["pnl_pct"] / 100 for r in closed if r["recent"]), opened=agg["n"],
             odd=[r["capital_usd"] * r["pnl_pct"] / 100 for r in closed
                  if (r["fee_pct"] or 0) / max(float(r["hold_h"] or 0), 1.0) >= ODD_FEE_PCT_PER_HOUR],
@@ -91,6 +97,7 @@ async def overview(db, papers: dict[str, Any], sol_usd: float) -> dict[str, Any]
         sum(r["status"] == "open" for r in panda), min((r["opened_at"] for r in panda), default=None),
         "Range lebar satu sisi, keluar di pantulan pertama",
         holds=[float(r["hold_h"]) for r in panda if r["status"] == "closed" and r["hold_h"] is not None],
+        passing=sum(1 for row in pools.values() if panda_mod.screen(row)[0]) if pools else None,
         recent_7d=sum(r["pnl_usd"] or 0 for r in panda if r["status"] == "closed" and r["recent"]), opened=len(panda),
         odd=[r["pnl_usd"] or 0 for r in panda if r["status"] == "closed"
              and (r["fees_usd"] or 0) / r["size_usd"] * 100 / max(float(r["hold_h"] or 0), 1.0) >= ODD_FEE_PCT_PER_HOUR],
@@ -112,6 +119,7 @@ async def overview(db, papers: dict[str, Any], sol_usd: float) -> dict[str, Any]
         "sol_grid", "Grid SOL-USDC", "sol",
         [(r["profit_usd"] or 0, 200.0) for r in grid] + floating, len(held), first,
         "5 limit order 1% di bawah harga, jual 1% di atasnya", holds=grid_holds,
+        passing=await db.fetchval("select count(*) from paper_sol_grid"),
         recent_7d=sum(r["profit_usd"] or 0 for r in grid if r["recent"]), opened=grid_buys,
     ))
     return {"min_closed": MIN_CLOSED, "strategies": rows}

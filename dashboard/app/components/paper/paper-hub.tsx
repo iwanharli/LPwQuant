@@ -37,6 +37,7 @@ type Strategy = {
   worst_usd?: number | null;
   worst_pct?: number | null;
   pnl_7d_usd?: number | null;
+  passing?: number | null;
   odd_fee_count?: number;
   pnl_without_odd_usd?: number | null;
   positions_per_day?: number | null;
@@ -158,12 +159,15 @@ function Summary({ data, error, onOpen }: { data: Overview | null; error: boolea
           <p className="text-xs text-ink-3">Klik baris untuk membuka detailnya</p>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[1000px] text-sm tabular-nums">
+          <table className="w-full min-w-[1080px] text-sm tabular-nums">
             <thead className="text-[11px] font-medium uppercase tracking-[0.08em] text-ink-3">
               <tr className="border-b border-line">
                 <th className="px-4 py-2.5 text-left font-medium">Strategi</th>
                 <th className="px-3 py-2.5 text-left font-medium">Kesimpulan</th>
                 <th className="px-3 py-2.5 text-right font-medium">Hasil</th>
+                <th className="px-3 py-2.5 text-right font-medium" title="Posisi aktif / pool yang lolos seleksi sekarang (Grid: level memegang SOL / jumlah level)">
+                  Aktif / lolos
+                </th>
                 <th className="px-3 py-2.5 text-right font-medium">Trade</th>
                 <th className="px-3 py-2.5 text-right font-medium">Untung</th>
                 <th className="px-3 py-2.5 text-right font-medium" title="Hasil posisi yang ditutup dalam 7 hari terakhir">Hasil 7 hari</th>
@@ -217,6 +221,12 @@ function Summary({ data, error, onOpen }: { data: Overview | null; error: boolea
                           ⚠ tanpa {s.odd_fee_count} fee tak wajar: {money(s.pnl_without_odd_usd)}
                         </div>
                       )}
+                    </td>
+                    <td className="px-3 py-3 text-right">
+                      <div className="font-medium text-ink">
+                        {s.open}/{s.passing ?? "–"}
+                      </div>
+                      <div className="text-[11px] text-ink-3">{s.tab === "sol" ? "level pegang SOL" : "aktif / lolos"}</div>
                     </td>
                     <td className="px-3 py-3 text-right">
                       <div className="text-ink-2">{s.closed} selesai</div>
