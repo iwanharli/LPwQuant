@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 from contextlib import asynccontextmanager
 from datetime import datetime
@@ -95,6 +96,65 @@ async def pool_candles(
         return {**out, "quote": quote or None, "quote_usd": rate}
     except Exception as err:  # upstream HTTP errors, timeouts
         raise HTTPException(status_code=502, detail=f"candles unavailable: {str(err)[:120]}") from err
+
+
+_pool_lps_cache: dict[str, tuple[float, dict]] = {}
+
+
+@app.get("/api/pools/{address}/lps")
+async def pool_lps(address: str) -> dict:
+    """The wallets providing liquidity to this pool right now (on chain), each with its positions' value, range and
+    PnL (Meteora), labelled when it is on the LP leaderboard, followed by Copy LP, or registered here. Cached 5 min."""
+    hit = _pool_lps_cache.get(address)
+    if hit and hit[0] > time.time():
+        return hit[1]
+    url = f"{config.CLAIM_SERVER_URL}/lp-owners?pools={address}"
+    try:
+        owners = (await asyncio.to_thread(lp_leaders._get_json, url, 60)).get("owners", {}).get(address) or []
+    except Exception as err:
+        raise HTTPException(status_code=502, detail=f"gagal membaca pemilik posisi: {str(err)[:80]}") from err
+    leaders = {}
+    if engine.db is not None:
+        rows = await engine.db.fetch("select wallet, stats from lp_leaders")
+        ranked = sorted((json.loads(r["stats"]) if isinstance(r["stats"], str) else dict(r["stats"]) for r in rows),
+                        key=lambda s: -(s.get("win_rate") or 0))
+        leaders = {s["wallet"]: (i + 1, s) for i, s in enumerate(ranked)}
+        followed = {w["wallet"] for w in await copy_paper.followed(engine.db)}
+        mine = {r["address"] for r in await engine.db.fetch("select address from portfolio_wallets")}
+    else:
+        followed, mine = set(), set()
+    out = []
+    for w in owners[:40]:
+        try:
+            body = await asyncio.to_thread(portfolio._get, f"/positions/{address}/pnl", {"user": w, "status": "open", "page_size": 50})
+        except Exception:
+            body = {}
+        ps = [portfolio._position(p) for p in body.get("positions") or [] if not p.get("isClosed")]
+        rank, st = leaders.get(w, (None, None))
+        out.append({
+            "wallet": w,
+            "positions": len(ps),
+            "value_usd": sum(p["value_usd"] for p in ps),
+            "deposit_usd": sum(p["deposit_usd"] for p in ps),
+            "pnl_usd": sum(p["pnl_usd"] for p in ps),
+            "fees_usd": sum(p["fees_usd"] for p in ps),
+            "min_price": min((p["min_price"] for p in ps if p["min_price"]), default=None),
+            "max_price": max((p["max_price"] for p in ps if p["max_price"]), default=None),
+            "created_at": min((p["created_at"] for p in ps if p["created_at"]), default=None),
+            "leader_rank": rank,
+            "leader_win_rate": (st or {}).get("win_rate"),
+            "leader_meets": (st or {}).get("meets"),
+            "followed": w in followed,
+            "mine": w in mine,
+        })
+        await asyncio.sleep(0.1)
+    out.sort(key=lambda o: -o["value_usd"])
+    total = sum(o["value_usd"] for o in out)
+    for o in out:
+        o["share_pct"] = o["value_usd"] / total * 100 if total > 0 else None
+    result = {"pool": address, "count": len(owners), "wallets": out, "total_usd": total}
+    _pool_lps_cache[address] = (time.time() + 300, result)
+    return result
 
 
 @app.get("/api/pools/{address}/paper")

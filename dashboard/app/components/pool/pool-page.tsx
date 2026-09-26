@@ -26,6 +26,7 @@ import BusyHours from "../busy-hours";
 import EntryCheck from "./entry-check";
 import DangerBanner from "../danger-banner";
 import HoldersMap from "./holders-map";
+import PoolLps from "./pool-lps";
 import TopBar from "../top-bar";
 import PumpWarning from "../pump-warning";
 import { Delta, PlanBadge, RegimeBadge, StatusDot, TokenAvatar } from "../ui";
@@ -533,6 +534,8 @@ export default function PoolPage({ address }: { address: string }) {
             </section>
           </aside>
         </div>
+
+        <PoolLps address={address} />
 
         <HoldersMap mint={pool?.base_mint ?? null} symbol={pool?.base_symbol ?? pool?.name.split("-")[0] ?? ""} />
 
