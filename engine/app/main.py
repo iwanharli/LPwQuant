@@ -372,7 +372,7 @@ async def get_copy_paper() -> dict:
     """Paper copies of the followed LP wallets' positions, $100 each."""
     if engine.db is None:
         raise HTTPException(status_code=503, detail="engine not ready")
-    return await copy_paper.report(engine.db)
+    return await copy_paper.report(engine.db, engine.rows)
 
 
 @app.get("/api/lp-leaders")

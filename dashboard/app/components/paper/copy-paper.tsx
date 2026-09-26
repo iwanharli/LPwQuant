@@ -8,6 +8,7 @@ import { ENGINE_URL, fmtDateTime, fmtNum, usd } from "../../lib/format";
 import { STRATEGY_NOTES } from "../../lib/strategy-notes";
 import { useUrlState } from "../../lib/url-state";
 import { Kpi, StrategyNotes } from "../panda-page";
+import RangeView, { RangeStrip } from "./range-view";
 import { SkeletonStrip, SkeletonTable, SkeletonTabs } from "../skeleton";
 
 type Run = {
@@ -28,6 +29,7 @@ type Run = {
   their_deposit_usd: number | null;
   min_price: number | null;
   max_price: number | null;
+  price: number | null;
   opened_at: number;
   closed_at: number | null;
   checked_at: number | null;
@@ -89,6 +91,7 @@ function Table({ runs, empty }: { runs: Run[]; empty: string }) {
                     modal {usd.format(r.size_usd)}
                     {r.their_deposit_usd ? ` · wallet ${usd.format(r.their_deposit_usd)}` : ""}
                   </div>
+                  {r.min_price && r.max_price ? <RangeStrip min={r.min_price} max={r.max_price} current={r.price} /> : null}
                 </td>
                 <td className="px-3 py-2.5">
                   <span className={`whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium ${r.status === "open" ? EXIT_TONE.running : EXIT_TONE.planned}`}>
@@ -124,6 +127,11 @@ function Table({ runs, empty }: { runs: Run[]; empty: string }) {
                 <tr className="border-b border-line/60">
                   <td colSpan={8} className="p-0">
                     <div className="grid gap-4 bg-white/[0.015] px-4 py-4 md:grid-cols-[1fr_auto]">
+                      {r.min_price && r.max_price ? (
+                        <div className="md:col-span-2">
+                          <RangeView min={r.min_price} max={r.max_price} current={r.price} shape="spot" bins={70} token={r.pair.split("/")[0]} quote={r.pair.split("/")[1] ?? "SOL"} />
+                        </div>
+                      ) : null}
                           <dl className="grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-3 lg:grid-cols-4">
                             {(
                               [

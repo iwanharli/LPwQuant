@@ -6,6 +6,7 @@ import { ENGINE_URL, fmtDateTime, fmtNum, usd, usdCompact } from "../lib/format"
 import { useUrlState } from "../lib/url-state";
 import { EXIT_TONE } from "../lib/exit-status";
 import { STRATEGY_NOTES, type StrategyNote } from "../lib/strategy-notes";
+import RangeView, { RangeStrip } from "./paper/range-view";
 import { useAutoRefresh } from "../lib/auto-refresh";
 import PageHeader from "./page-header";
 import TopBar from "./top-bar";
@@ -320,6 +321,20 @@ function duration(from: number, to: number): string {
 }
 
 function Detail({ x }: { x: Run }) {
+  const chart = (
+    <div className="md:col-span-2">
+      <RangeView
+        min={x.entry_price * (1 + x.range_low_pct / 100)}
+        max={x.entry_price}
+        current={x.last_price}
+        entry={x.entry_price}
+        shape="spot"
+        bins={x.bins}
+        quote={x.quote}
+        token={x.name.split("-")[0]}
+      />
+    </div>
+  );
   const low = x.entry_price * (1 + x.range_low_pct / 100);
   const end = x.closed_at ?? x.checked_at ?? x.opened_at;
   const cost = (x.costs_usd ?? 0) + (x.rent_usd ?? 0);
@@ -341,6 +356,7 @@ function Detail({ x }: { x: Run }) {
   ];
   return (
     <div className="grid gap-4 bg-white/[0.015] px-4 py-4 md:grid-cols-[1fr_auto]">
+      {chart}
       <dl className="grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-3 lg:grid-cols-4">
         {items.map(([k, v, cls]) => (
           <div key={k}>
@@ -398,6 +414,7 @@ function RunTable({ runs, empty }: { runs: Run[]; empty: string }) {
                     <div className="text-[11px] text-ink-3">
                       modal {usd.format(x.size_usd)} · TVL {x.last_tvl == null ? "–" : usdCompact.format(x.last_tvl)}
                     </div>
+                    <RangeStrip min={x.entry_price * (1 + x.range_low_pct / 100)} max={x.entry_price} current={x.last_price} />
                   </td>
                   <td className="px-3 py-2.5">
                     <span className={`whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium ${st.cls}`}>{st.label}</span>

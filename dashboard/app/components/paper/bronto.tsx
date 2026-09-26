@@ -8,6 +8,7 @@ import { ENGINE_URL, fmtDateTime, fmtNum, usd } from "../../lib/format";
 import { STRATEGY_NOTES } from "../../lib/strategy-notes";
 import { useUrlState } from "../../lib/url-state";
 import { Kpi, SelectionView, StrategyNotes, type Candidate } from "../panda-page";
+import RangeView, { RangeStrip } from "./range-view";
 import { SkeletonStrip, SkeletonTable, SkeletonTabs } from "../skeleton";
 
 type Run = {
@@ -28,6 +29,8 @@ type Run = {
   new_arrays: number;
   range_low_pct: number;
   range_high_pct: number;
+  entry_price: number;
+  last_price: number;
   opened_at: number;
   closed_at: number | null;
   checked_at: number | null;
@@ -109,6 +112,7 @@ function Table({ runs, empty }: { runs: Run[]; empty: string }) {
                     <div className="text-[11px] text-ink-3">
                       fee {fmtNum(x.base_fee_pct ?? 0, 1)}% · range {fmtNum(x.range_low_pct, 0)}% / +{fmtNum(x.range_high_pct, 0)}%
                     </div>
+                    <RangeStrip min={x.entry_price * (1 + x.range_low_pct / 100)} max={x.entry_price * (1 + x.range_high_pct / 100)} current={x.last_price} />
                   </td>
                   <td className="px-3 py-2.5">
                     <span className={`whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium ${st.cls}`}>{st.label}</span>
@@ -129,6 +133,17 @@ function Table({ runs, empty }: { runs: Run[]; empty: string }) {
                   <tr className="border-b border-line/60">
                     <td colSpan={9} className="p-0">
                       <div className="grid gap-4 bg-white/[0.015] px-4 py-4 md:grid-cols-[1fr_auto]">
+                        <div className="md:col-span-2">
+                          <RangeView
+                            min={x.entry_price * (1 + x.range_low_pct / 100)}
+                            max={x.entry_price * (1 + x.range_high_pct / 100)}
+                            current={x.last_price}
+                            entry={x.entry_price}
+                            shape="spot"
+                            bins={70}
+                            token={x.name.split("-")[0]}
+                          />
+                        </div>
                           <dl className="grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-3 lg:grid-cols-4">
                             {(
                               [

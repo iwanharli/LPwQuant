@@ -125,7 +125,7 @@ class CopyPaper:
                 log.info("copy %s closed %s: %+.2f USD", w[:4], r["pair"], pnl)
 
 
-async def report(db) -> dict[str, Any]:
+async def report(db, rows: dict[str, dict[str, Any]] | None = None) -> dict[str, Any]:
     runs = [dict(r) for r in await db.fetch("select * from paper_copy_runs order by opened_at desc limit 300")]
     ms = lambda t: int(t.timestamp() * 1000) if t else None  # noqa: E731
     closed = [r for r in runs if r["status"] == "closed"]
@@ -141,6 +141,7 @@ async def report(db) -> dict[str, Any]:
             "pnl_usd": r["pnl_usd"] if r["status"] == "closed" else r["size_usd"] * running_pct / 100,
             "costs_usd": r["costs_usd"], "their_deposit_usd": r["their_deposit_usd"],
             "min_price": r["min_price"], "max_price": r["max_price"],
+            "price": ((rows or {}).get(r["pool"]) or {}).get("price"),
             "opened_at": ms(r["opened_at"]), "closed_at": ms(r["closed_at"]), "checked_at": ms(r["checked_at"]),
         })
     return {

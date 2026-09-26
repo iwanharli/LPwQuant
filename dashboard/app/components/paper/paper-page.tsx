@@ -6,6 +6,7 @@ import { useAutoRefresh } from "../../lib/auto-refresh";
 import { EXIT_TONE } from "../../lib/exit-status";
 import { Kpi, SelectionView, StrategyNotes, type Candidate } from "../panda-page";
 import { STRATEGY_NOTES } from "../../lib/strategy-notes";
+import RangeView, { RangeStrip } from "./range-view";
 import { Fragment, useCallback, useEffect, useState, type ReactNode } from "react";
 import { STRATEGY_LABEL, TIER_META } from "../../lib/flags";
 import {
@@ -361,6 +362,7 @@ function LpTable({ positions, empty }: { positions: PaperPosition[]; empty: stri
                       <div className="text-[11px] text-ink-3">
                         modal {usd.format(x.capital_usd)} · tier {x.tier}
                       </div>
+                      <RangeStrip min={x.min_price} max={x.max_price} current={px} />
                     </td>
                     <td className="px-3 py-2.5">
                       <span className={`whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium ${st.cls}`}>{st.label}</span>
@@ -389,6 +391,18 @@ function LpTable({ positions, empty }: { positions: PaperPosition[]; empty: stri
                     <tr className="border-b border-line/60">
                       <td colSpan={10} className="p-0">
                         <div className="grid gap-4 bg-white/[0.015] px-4 py-4 md:grid-cols-[1fr_auto]">
+                          <div className="md:col-span-2">
+                            <RangeView
+                              min={x.min_price}
+                              max={x.max_price}
+                              current={px}
+                              entry={x.entry_price}
+                              shape={x.strategy === "bid_ask" ? "bid_ask" : x.strategy === "curve" ? "curve" : "spot"}
+                              bins={Math.round(Math.log(x.max_price / x.min_price) / Math.log(1 + x.bin_step / 10_000)) + 1}
+                              quote={x.quote_symbol ?? "SOL"}
+                              token={x.name.split("-")[0]}
+                            />
+                          </div>
                           <dl className="grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-3 lg:grid-cols-4">
                             {(
                               [

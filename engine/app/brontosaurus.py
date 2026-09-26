@@ -239,6 +239,7 @@ async def report(db, rows: dict[str, dict[str, Any]] | None = None) -> dict[str,
         running = value + r["fees_usd"] - SIZE_USD - (r["entry_cost_usd"] or 0)
         out.append({
             "id": r["id"], "pool": r["pool"], "name": r["name"], "status": r["status"], "exit_reason": r["exit_reason"],
+            "entry_price": r["entry_price"], "last_price": price,
             "size_usd": r["size_usd"], "fees_usd": r["fees_usd"],
             "value_usd": r["lp_value_usd"] if r["status"] == "closed" else value,
             "price_change_pct": (price / r["entry_price"] - 1) * 100,
