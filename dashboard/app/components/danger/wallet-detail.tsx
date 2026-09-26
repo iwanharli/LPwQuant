@@ -230,7 +230,7 @@ export default function WalletDetail({ wallet, onPick }: { wallet: string; onPic
             </div>
           ) : (
             <div className="mt-1 text-xs text-ink-3">
-              {t.tx_count_capped ? "Riwayat terlalu panjang (>3000 transaksi) untuk mencari pendana pertama." : "Tidak ada kiriman SOL di transaksi awalnya."}
+              {t.tx_count_capped ? "Riwayat terlalu panjang (>20.000 transaksi) untuk mencari pendana pertama." : "Tidak ada kiriman SOL di transaksi awalnya."}
             </div>
           )}
         </div>

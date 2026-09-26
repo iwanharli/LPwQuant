@@ -9,7 +9,7 @@
 import type { Connection, ParsedInstruction, ParsedTransactionWithMeta, PartiallyDecodedInstruction } from "@solana/web3.js";
 import { PublicKey } from "@solana/web3.js";
 
-const MAX_SIGNATURES = 3000;
+const MAX_SIGNATURES = 20_000; // 20 cheap calls; busy pool creators often have thousands
 const EARLIEST_TX = 12;
 const RECENT_TX = 80;
 const MIN_SOL = 0.01;
