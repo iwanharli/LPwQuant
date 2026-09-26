@@ -93,56 +93,50 @@ type View = "running" | "done" | "funnel" | "rules";
 const VIEWS = ["running", "done", "funnel", "rules"] as const;
 
 function Rules({ p, approximations }: { p: Report["params"]; approximations: string[] }) {
-  const rows = [
-    {
-      title: "Seleksi",
-      body: `Market cap ≥ ${usdCompact.format(p.min_market_cap)}, volume 24 jam ≥ ${usdCompact.format(p.min_volume_24h)}, fee/TVL ≥ ${p.min_fee_tvl_24h}%, holder ≥ ${p.min_holders}, top-10 holder < ${p.max_top10_pct}%, insider < 10%, bundling < 60%, lolos cek keamanan, dan volume terbukti organik.`,
-    },
-    {
-      title: "Entry",
-      body: `Harga menembus ke atas Supertrend 15 menit dalam 1 jam terakhir, atau harga sedang di puncaknya dengan tren sudah naik. Selalu masih dalam ${p.near_high_pct}% dari puncak.`,
-    },
-    {
-      title: "Posisi",
-      body: `${usd.format(p.size_usd)}, hanya sisi SOL/USDC, tersebar rata dari harga sampai ${p.range_low_pct}% di bawahnya pada ${p.bins} bin. Maksimal ${p.max_open} posisi sekaligus.`,
-    },
-    {
-      title: "Exit",
-      body: `RSI(2) > 90 ditambah harga di atas upper Bollinger, atau RSI(2) > 90 ditambah batang hijau pertama MACD. Sinyal itu baru berlaku setelah harga turun ${p.min_drop_before_exit_pct}% atau posisi dipegang ${p.min_hold_min} menit, karena fase panen fee terjadi saat harga jatuh. Ditutup juga bila volume mati atau lewat ${p.max_hold_h} jam.`,
-    },
-    {
-      title: "Biaya",
-      body: `Swap keluar 1% dari token tersisa dan biaya jaringan. Sewa posisi ${p.position_rent_sol} SOL dikembalikan saat ditutup; sewa bin array ${p.new_bin_array_sol} SOL hanya kalau range membuat bin baru.`,
-    },
+  // Same card as the LP profiles' Aturan: entry on the left, exit on the right, notes underneath.
+  const entry = [
+    `Seleksi: market cap ≥ ${usdCompact.format(p.min_market_cap)}, volume 24 jam ≥ ${usdCompact.format(p.min_volume_24h)}, fee/TVL ≥ ${p.min_fee_tvl_24h}%, holder ≥ ${p.min_holders}, top-10 holder < ${p.max_top10_pct}%, insider < 10%, bundling < 60%, lolos cek keamanan, volume terbukti organik.`,
+    `Pemicu: harga menembus ke atas Supertrend 15 menit dalam 1 jam terakhir, atau sedang di puncaknya dengan tren naik. Selalu masih dalam ${p.near_high_pct}% dari puncak.`,
+    `Posisi: ${usd.format(p.size_usd)}, hanya SOL/USDC, tersebar rata dari harga sampai ${p.range_low_pct}% di bawahnya. Maksimal ${p.max_open} posisi sekaligus.`,
+  ];
+  const exit = [
+    "Pantulan pertama: RSI(2) > 90 ditambah harga di atas Bollinger atas, atau ditambah batang hijau pertama MACD.",
+    `Sinyal itu baru berlaku setelah harga turun ${p.min_drop_before_exit_pct}% atau posisi dipegang ${p.min_hold_min} menit.`,
+    `Ditutup juga bila volume 24 jam mati atau posisi sudah ${p.max_hold_h} jam. Tanpa stop-loss.`,
+    `Biaya: swap keluar 1% dari token tersisa dan biaya jaringan. Sewa posisi ${p.position_rent_sol} SOL kembali saat ditutup; sewa bin array ${p.new_bin_array_sol} SOL hanya bila range membuka array baru.`,
   ];
   return (
-    <div className="grid gap-3 lg:grid-cols-2">
-      <section className="rounded-2xl border border-white/[0.06] bg-panel p-4">
-        <h2 className="text-sm font-semibold text-ink">Aturan yang dijalankan</h2>
-        <dl className="mt-3 space-y-3">
-          {rows.map((r) => (
-            <div key={r.title}>
-              <dt className="text-[11px] font-medium uppercase tracking-wider text-ink-3">{r.title}</dt>
-              <dd className="mt-1 text-xs leading-5 text-ink-2">{r.body}</dd>
-            </div>
-          ))}
-        </dl>
+    <div className="space-y-5">
+      <section className="grid gap-4 rounded-2xl border border-white/[0.06] bg-panel p-4 md:grid-cols-2">
+        {[
+          { title: "Masuk", items: entry },
+          { title: "Keluar", items: exit },
+        ].map((b) => (
+          <div key={b.title}>
+            <h3 className="text-base font-semibold text-ink">{b.title}</h3>
+            <ul className="mt-2 space-y-2 text-sm leading-6 text-ink-2">
+              {b.items.map((t) => (
+                <li key={t} className="flex gap-2">
+                  <span className="mt-2.5 h-1.5 w-1.5 shrink-0 rounded-full bg-accent" aria-hidden />
+                  <span>{t}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
       </section>
-      <section className="rounded-2xl border border-white/[0.06] bg-panel p-4">
-        <h2 className="text-sm font-semibold text-ink">Yang tidak bisa ditiru persis</h2>
-        <ul className="mt-3 space-y-2 text-xs leading-5 text-ink-2">
+      <div className="rounded-2xl border border-white/[0.06] bg-panel px-4 py-3 text-sm leading-6 text-ink-3">
+        <div className="font-medium text-ink-2">Yang tidak bisa ditiru persis</div>
+        <ul className="mt-1 space-y-1">
           {approximations.map((a) => (
-            <li key={a} className="flex gap-2">
-              <span className="text-ink-3">·</span>
-              <span>{a}</span>
-            </li>
+            <li key={a}>· {a}</li>
           ))}
         </ul>
-        <p className="mt-4 rounded-xl border border-amber-400/25 bg-amber-400/[0.06] px-3 py-2 text-[11px] leading-5 text-ink-2">
-          Semua klaim performa Panda Strat di media sosial belum pernah diverifikasi on-chain. Uji ini menjalankan aturannya dengan harga dan fee Meteora
-          yang sebenarnya, supaya angkanya datang dari data, bukan dari klaim.
+        <p className="mt-2">
+          Klaim performa Panda Strat di media sosial belum pernah diverifikasi on-chain; uji ini menjalankan aturannya dengan harga dan fee Meteora yang
+          sebenarnya.
         </p>
-      </section>
+      </div>
     </div>
   );
 }
