@@ -169,7 +169,7 @@ function Candidates({ data }: { data: NonNullable<Report["candidates"]> }) {
   return (
     <section className="rounded-2xl border border-white/[0.06] bg-panel">
       <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-line px-4 py-3">
-        <h2 className="text-sm font-semibold text-ink">Lolos seleksi · checklist entry</h2>
+        <h2 className="text-base font-semibold text-ink">Lolos seleksi · checklist entry</h2>
         <span className="text-xs text-ink-3">
           {data.checked_at ? `dicek ${fmtDateTime(data.checked_at)} WIB` : "menunggu pengecekan pertama"}
           {data.slots != null && data.slots <= 0 ? " · slot posisi penuh" : ""}
@@ -186,15 +186,15 @@ function Candidates({ data }: { data: NonNullable<Report["candidates"]> }) {
                 ? { label: "Siap masuk", cls: "bg-emerald-400/10 text-emerald-300" }
                 : { label: "Tunggu sinyal", cls: "bg-amber-400/10 text-amber-300" };
             return (
-              <li key={p.address} className="grid gap-3 px-4 py-3.5 lg:grid-cols-[1.1fr_1.6fr]">
+              <li key={p.address} className="grid gap-4 px-4 py-4 lg:grid-cols-[1.1fr_1.4fr]">
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
-                    <Link href={`/pool/${p.address}`} className="font-semibold text-ink hover:text-accent">
+                    <Link href={`/pool/${p.address}`} className="text-base font-semibold text-ink hover:text-accent">
                       {p.name.replace("-", "/")}
                     </Link>
-                    <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${status.cls}`}>{status.label}</span>
+                    <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${status.cls}`}>{status.label}</span>
                   </div>
-                  <dl className="mt-2 grid grid-cols-3 gap-x-4 gap-y-1.5 text-[11px] tabular-nums">
+                  <dl className="mt-3 grid grid-cols-3 gap-x-4 gap-y-2 text-sm tabular-nums">
                     {[
                       ["MC", p.market_cap == null ? "–" : usdCompact.format(p.market_cap)],
                       ["Volume 24j", p.volume_24h == null ? "–" : usdCompact.format(p.volume_24h)],
@@ -205,17 +205,17 @@ function Candidates({ data }: { data: NonNullable<Report["candidates"]> }) {
                       ["1 jam", p.change_pct_1h == null ? "–" : `${p.change_pct_1h >= 0 ? "+" : ""}${fmtNum(p.change_pct_1h, 1)}%`],
                     ].map(([k, v]) => (
                       <div key={k}>
-                        <dt className="text-ink-3">{k}</dt>
-                        <dd className="text-ink-2">{v}</dd>
+                        <dt className="text-xs text-ink-3">{k}</dt>
+                        <dd className="font-medium text-ink">{v}</dd>
                       </div>
                     ))}
                   </dl>
                 </div>
-                <ul className="space-y-1.5">
+                <ul className="space-y-2">
                   {p.checks.map((c) => (
-                    <li key={c.key} className="flex items-start gap-2 text-xs">
+                    <li key={c.key} className="flex items-start gap-2.5 text-sm leading-6">
                       <span
-                        className={`mt-0.5 grid h-4 w-4 shrink-0 place-items-center rounded-full text-[10px] font-bold ${
+                        className={`mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full text-xs font-bold ${
                           c.ok ? "bg-emerald-400/15 text-emerald-300" : "bg-rose-400/15 text-rose-300"
                         }`}
                         aria-label={c.ok ? "terpenuhi" : "belum"}
@@ -224,7 +224,7 @@ function Candidates({ data }: { data: NonNullable<Report["candidates"]> }) {
                       </span>
                       <span className="min-w-0">
                         <span className={c.ok ? "text-ink-2" : "text-ink"}>{c.label}</span>
-                        <span className="ml-1.5 text-ink-3">· {c.detail}</span>
+                        <span className="block text-xs text-ink-3">{c.detail}</span>
                       </span>
                     </li>
                   ))}
@@ -244,8 +244,8 @@ function Funnel({ funnel }: { funnel: Record<string, number> }) {
   const passed = funnel.lolos ?? 0;
   return (
     <section className="rounded-2xl border border-white/[0.06] bg-panel p-4">
-      <h2 className="text-sm font-semibold text-ink">Corong seleksi · {total} pool dicek sekarang</h2>
-      <p className="mt-0.5 text-xs text-ink-3">Panda menyebut seleksi sebagai 70% pekerjaannya. Ini alasan tiap pool gugur.</p>
+      <h2 className="text-base font-semibold text-ink">Corong seleksi · {total} pool dicek sekarang</h2>
+      <p className="mt-0.5 text-sm text-ink-3">Panda menyebut seleksi sebagai 70% pekerjaannya. Ini alasan tiap pool gugur.</p>
       <div className="mt-3 flex items-center justify-between gap-3 rounded-xl border border-emerald-400/25 bg-emerald-400/[0.07] px-3 py-2.5">
         <span className="text-sm font-medium text-emerald-300">Lolos semua filter</span>
         <span className="text-lg font-semibold tabular-nums text-emerald-300">{passed}</span>
@@ -254,7 +254,7 @@ function Funnel({ funnel }: { funnel: Record<string, number> }) {
         {rows
           .filter(([k]) => k !== "lolos")
           .map(([why, n]) => (
-            <li key={why} className="flex items-center gap-3 rounded-lg px-3 py-1.5 text-xs hover:bg-white/[0.02]">
+            <li key={why} className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm hover:bg-white/[0.02]">
               <span className="min-w-0 flex-1 truncate text-ink-3">{why}</span>
               <span className="h-1.5 w-24 overflow-hidden rounded-full bg-white/[0.06]">
                 <span className="block h-full rounded-full bg-ink-3/50" style={{ width: `${total ? (n / total) * 100 : 0}%` }} />
