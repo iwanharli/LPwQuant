@@ -822,7 +822,8 @@ class PaperTrader:
             snapshot = _json(r["entry_snapshot"]) or {}
             out.append({
                 "id": r["id"], "status": r["status"], "address": r["address"], "name": r["name"],
-                "quote_symbol": r["quote_symbol"], "tier": r["tier"], "strategy": r["strategy"], "regime": r["regime"],
+                "quote_symbol": r["quote_symbol"], "base_mint": r["base_mint"],
+                "tier": r["tier"], "strategy": r["strategy"], "regime": r["regime"],
                 "score": r["score"], "bin_step": r["bin_step"], "entry_ts": entry_ts, "entry_price": r["entry_price"],
                 "min_price": r["min_price"], "max_price": r["max_price"], "range_low_pct": r["range_low_pct"],
                 "range_high_pct": r["range_high_pct"], "capital_usd": r["capital_usd"],

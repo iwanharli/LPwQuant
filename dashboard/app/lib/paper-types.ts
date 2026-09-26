@@ -122,6 +122,7 @@ export type PaperPosition = {
   exit_price: number | null;
   exit_reason: string | null;
   flags: string[];
+  base_mint?: string | null;
 };
 
 export type EquityPoint = { ts: number; equity_usd: number; open_count: number };

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useUrlState } from "../../lib/url-state";
 import { useAutoRefresh } from "../../lib/auto-refresh";
+import { EXIT_TONE } from "../../lib/exit-status";
 import { Kpi, SelectionView, type Candidate } from "../panda-page";
 import { Fragment, useCallback, useEffect, useState, type ReactNode } from "react";
 import { STRATEGY_LABEL, TIER_META } from "../../lib/flags";
@@ -300,14 +301,14 @@ function ProfileTabs({
 }
 
 const LP_REASON: Record<string, { label: string; cls: string }> = {
-  open: { label: "Berjalan", cls: "bg-sky-400/10 text-sky-300" },
-  out_of_range: { label: "Keluar range", cls: "bg-white/[0.06] text-ink-2" },
-  max_hold: { label: "Batas waktu", cls: "bg-white/[0.06] text-ink-2" },
-  fee_decay: { label: "Fee melemah", cls: "bg-amber-400/10 text-amber-300" },
-  breakout: { label: "Breakout", cls: "bg-amber-400/10 text-amber-300" },
-  stop_loss: { label: "Stop loss", cls: "bg-rose-400/10 text-rose-300" },
-  delisted: { label: "Pool tidak dipantau", cls: "bg-rose-400/10 text-rose-300" },
-  profile_retired: { label: "Profil dihentikan", cls: "bg-white/[0.06] text-ink-3" },
+  open: { label: "Berjalan", cls: EXIT_TONE.running },
+  out_of_range: { label: "Keluar range", cls: EXIT_TONE.planned },
+  max_hold: { label: "Batas waktu", cls: EXIT_TONE.planned },
+  fee_decay: { label: "Fee melemah", cls: EXIT_TONE.changed },
+  breakout: { label: "Breakout", cls: EXIT_TONE.changed },
+  stop_loss: { label: "Stop loss", cls: EXIT_TONE.loss },
+  delisted: { label: "Pool tidak dipantau", cls: EXIT_TONE.loss },
+  profile_retired: { label: "Profil dihentikan", cls: EXIT_TONE.stopped },
 };
 const lpMoney = (v: number) => `${v >= 0 ? "+" : "−"}${usd.format(Math.abs(v))}`;
 const lpTone = (v: number) => (v > 0.005 ? "text-emerald-300" : v < -0.005 ? "text-rose-300" : "text-ink-2");
@@ -395,7 +396,8 @@ function LpTable({ positions, empty }: { positions: PaperPosition[]; empty: stri
                                 ["Lama dipegang", fmtHours(x.hold_hours)],
                                 ["Fee", `+${usd.format(fee)} (${fmtNum(x.fee_pct, 2)}%)`],
                                 ["IL", `${fmtNum(x.il_pct, 2)}%`],
-                                ["Biaya", `${usd.format(cost)} (${fmtNum(x.cost_pct, 2)}%)`],
+                                ["Biaya swap & jaringan", `${usd.format(cost)} (${fmtNum(x.cost_pct, 2)}%)`],
+                                ["Sewa posisi", `${fmtNum(x.rent_sol, 4)} SOL · kembali saat ditutup`],
                                 ["Hasil", `${lpMoney(pnl)} (${fmtSignedPct(x.pnl_pct, 2)})`],
                               ] as [string, string][]
                             ).map(([k, v]) => (
@@ -408,6 +410,10 @@ function LpTable({ positions, empty }: { positions: PaperPosition[]; empty: stri
                           <div className="flex flex-col gap-2 text-xs md:items-end">
                             <Link href={`/pool/${x.address}`} className="btn-accent rounded-full px-3 py-1.5 font-medium">Buka grafik pool</Link>
                             <a href={`https://app.meteora.ag/dlmm/${x.address}`} target="_blank" rel="noreferrer" className="text-ink-3 hover:text-accent">Meteora ↗</a>
+                            {x.base_mint && (
+                              <a href={`https://gmgn.ai/sol/token/${x.base_mint}`} target="_blank" rel="noreferrer" className="text-ink-3 hover:text-accent">GMGN ↗</a>
+                            )}
+                            <span className="font-mono text-[11px] text-ink-3">{x.address.slice(0, 6)}…{x.address.slice(-4)}</span>
                           </div>
                         </div>
                       </td>
@@ -623,8 +629,8 @@ export default function PaperPage({
             ))}
           </div>
 
-          {view === "berjalan" && <LpTable positions={data?.open ?? []} empty="Belum ada posisi berjalan. Engine memeriksa tiap siklus." />}
-          {view === "selesai" && <LpTable positions={data?.closed ?? []} empty="Belum ada posisi yang ditutup." />}
+          {view === "berjalan" && <LpTable positions={data?.open ?? []} empty="Belum ada posisi berjalan. Dicek tiap menit: pool harus lolos seleksi dan checklist entry." />}
+          {view === "selesai" && <LpTable positions={data?.closed ?? []} empty="Belum ada posisi yang selesai." />}
           {view === "selesai" && <ResultsCard summary={s} profileLabel={s?.profile?.label} />}
           {view === "seleksi" && <ProfileScreen data={screen} />}
           {view === "aturan" && s && (

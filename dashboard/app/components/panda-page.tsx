@@ -1,9 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { Fragment, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useState } from "react";
 import { ENGINE_URL, fmtDateTime, fmtNum, usd, usdCompact } from "../lib/format";
 import { useUrlState } from "../lib/url-state";
+import { EXIT_TONE } from "../lib/exit-status";
+import { useAutoRefresh } from "../lib/auto-refresh";
 import PageHeader from "./page-header";
 import TopBar from "./top-bar";
 import { SkeletonStrip, SkeletonTable, SkeletonTabs } from "./skeleton";
@@ -68,12 +70,12 @@ type Report = {
 };
 
 const REASON: Record<string, { label: string; cls: string }> = {
-  open: { label: "Berjalan", cls: "bg-sky-400/10 text-sky-300" },
-  rsi2_bb: { label: "Exit: RSI(2) + Bollinger", cls: "bg-emerald-400/10 text-emerald-300" },
-  rsi2_macd: { label: "Exit: RSI(2) + MACD", cls: "bg-emerald-400/10 text-emerald-300" },
-  flatline: { label: "Datar, tak memantul", cls: "bg-rose-400/10 text-rose-300" },
-  time: { label: "72 jam", cls: "bg-white/[0.06] text-ink-2" },
-  vanished: { label: "Pool hilang", cls: "bg-rose-400/10 text-rose-300" },
+  open: { label: "Berjalan", cls: EXIT_TONE.running },
+  rsi2_bb: { label: "Exit: RSI(2) + Bollinger", cls: EXIT_TONE.planned },
+  rsi2_macd: { label: "Exit: RSI(2) + MACD", cls: EXIT_TONE.planned },
+  flatline: { label: "Datar, tak memantul", cls: EXIT_TONE.changed },
+  time: { label: "72 jam", cls: EXIT_TONE.changed },
+  vanished: { label: "Pool hilang", cls: EXIT_TONE.loss },
 };
 const money = (v: number) => `${v >= 0 ? "+" : "−"}${usd.format(Math.abs(v))}`;
 const tone = (v: number) => (v > 0 ? "text-emerald-300" : v < 0 ? "text-rose-300" : "text-ink-2");
@@ -449,30 +451,18 @@ export default function PandaPage({ embedded = false }: { embedded?: boolean }) 
   const [error, setError] = useState(false);
   const [view, setView] = useUrlState<View>("panda", "running", VIEWS);
 
-  useEffect(() => {
-    let cancelled = false;
-    const load = () =>
-      fetch(`${ENGINE_URL}/api/panda/paper`)
-        .then((x) => (x.ok ? x.json() : Promise.reject(new Error(String(x.status)))))
-        .then((b) => {
-          if (cancelled) return;
-          setR(b as Report);
-          setError(false);
-        })
-        .catch(() => !cancelled && setError(true));
-    void load();
-    // Poll only while the tab is visible, and fetch straight away when it is opened again.
-    const t = setInterval(() => document.visibilityState === "visible" && load(), 30_000);
-    const onVisible = () => document.visibilityState === "visible" && load();
-    document.addEventListener("visibilitychange", onVisible);
-    window.addEventListener("focus", onVisible);
-    return () => {
-      cancelled = true;
-      clearInterval(t);
-      document.removeEventListener("visibilitychange", onVisible);
-      window.removeEventListener("focus", onVisible);
-    };
+  const load = useCallback(() => {
+    fetch(`${ENGINE_URL}/api/panda/paper`)
+      .then((x) => (x.ok ? x.json() : Promise.reject(new Error(String(x.status)))))
+      .then((b) => {
+        setR(b as Report);
+        setError(false);
+      })
+      .catch(() => setError(true));
   }, []);
+  // Same refresh as every other paper tab: every 30 s while visible, at once when the tab comes back.
+  useAutoRefresh(load, 30_000);
+  useEffect(load, [load]);
 
   const p = r?.params;
   const closed = r?.counts.closed ?? 0;
@@ -547,9 +537,9 @@ export default function PandaPage({ embedded = false }: { embedded?: boolean }) 
             </div>
 
             {view === "running" && (
-              <RunTable runs={running} empty="Belum ada pool yang lolos seleksi sekaligus memberi sinyal entry. Engine memeriksa tiap 5 menit." />
+              <RunTable runs={running} empty="Belum ada posisi berjalan. Dicek tiap 5 menit: pool harus lolos seleksi dan memberi sinyal entry." />
             )}
-            {view === "done" && <RunTable runs={finished} empty="Belum ada posisi yang ditutup." />}
+            {view === "done" && <RunTable runs={finished} empty="Belum ada posisi yang selesai." />}
             {view === "funnel" && (
               <SelectionView
                 candidates={r.candidates ?? { checked_at: null, pools: [] }}
