@@ -142,7 +142,7 @@ export default function LeadersPage() {
                         <th className="px-4 py-2.5 text-left font-medium">Wallet</th>
                         <th className="px-3 py-2.5 text-right font-medium">Hasil 7 hari</th>
                         <th className="px-3 py-2.5 text-right font-medium">Hasil sampel</th>
-                        <th className="px-3 py-2.5 text-right font-medium">Untung</th>
+                        <th className="px-3 py-2.5 text-right font-medium" title="Posisi yang untung dibagi semua posisi di sampel">Win rate</th>
                         <th className="px-3 py-2.5 text-right font-medium">Median / posisi</th>
                         <th className="px-3 py-2.5 text-right font-medium">Tanpa 3 terbaik</th>
                         <th className="px-3 py-2.5 text-right font-medium">Lama pegang</th>
@@ -179,8 +179,8 @@ export default function LeadersPage() {
                             <div className="text-[11px] text-ink-3">{l.sample} posisi</div>
                           </td>
                           <td className={`px-3 py-3 text-right ${l.win_rate == null ? "text-ink-3" : l.win_rate >= 0.5 ? "text-emerald-300" : "text-rose-300"}`}>
-                            {l.sample ? `${l.wins} dari ${l.sample}` : "–"}
-                            <div className="text-[11px] opacity-80">{l.win_rate == null ? "" : `${fmtNum(l.win_rate * 100, 0)}%`}</div>
+                            <div className="font-semibold">{l.win_rate == null ? "–" : `${fmtNum(l.win_rate * 100, 0)}%`}</div>
+                            <div className="text-[11px] opacity-80">{l.sample ? `${l.wins} dari ${l.sample} posisi` : ""}</div>
                           </td>
                           <td className={`px-3 py-3 text-right ${tone(l.median_usd)}`}>
                             {money(l.median_usd)}
