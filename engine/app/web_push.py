@@ -57,6 +57,9 @@ def _send(sub: dict[str, Any], payload: dict[str, Any], private_key: str) -> int
         return res.status_code
     except WebPushException as err:
         return err.response.status_code if err.response is not None else 0
+    except Exception as err:  # network hiccup: this device misses one notification, the round goes on
+        log.info("push send failed: %s", err)
+        return 0
 
 
 async def send_all(db, payload: dict[str, Any]) -> tuple[int, int]:
