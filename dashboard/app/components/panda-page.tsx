@@ -95,8 +95,8 @@ export function Kpi({ label, value, hint, cls }: { label: string; value: string;
 type View = "running" | "done" | "funnel" | "rules" | "notes";
 const VIEWS = ["running", "done", "funnel", "rules", "notes"] as const;
 
-function Rules({ p, approximations }: { p: Report["params"]; approximations: string[] }) {
-  // Same card as the LP profiles' Aturan: entry on the left, exit on the right, notes underneath.
+function Rules({ p }: { p: Report["params"] }) {
+  // Same card as the LP profiles' Aturan: entry on the left, exit on the right. Rules only; notes live in Catatan.
   const entry = [
     `Seleksi: market cap ≥ ${usdCompact.format(p.min_market_cap)}, volume 24 jam ≥ ${usdCompact.format(p.min_volume_24h)}, fee/TVL ≥ ${p.min_fee_tvl_24h}%, holder ≥ ${p.min_holders}, top-10 holder < ${p.max_top10_pct}%, insider < 10%, bundling < 60%, lolos cek keamanan, volume terbukti organik.`,
     `Pemicu: harga menembus ke atas Supertrend 15 menit dalam 1 jam terakhir, atau sedang di puncaknya dengan tren naik. Selalu masih dalam ${p.near_high_pct}% dari puncak.`,
@@ -128,47 +128,6 @@ function Rules({ p, approximations }: { p: Report["params"]; approximations: str
           </div>
         ))}
       </section>
-      <section className="rounded-2xl border border-accent/25 bg-accent/[0.05] p-4">
-        <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <h3 className="text-base font-semibold text-ink">Rencana perbaikan setelah 20 posisi selesai</h3>
-          <span className="text-xs text-ink-3">dicatat 26/09 · belum dijalankan</span>
-        </div>
-        <p className="mt-1 text-sm leading-6 text-ink-3">
-          Uji berjalan tanpa diubah sampai 20 posisi selesai. Yang diperhatikan: seberapa dalam rugi posisi yang tidak memantul. Kalau hasil tetap di
-          sekitar nol atau minus, Panda dihentikan; kalau ingin idenya dipakai, versi berikut diuji berdampingan.
-        </p>
-        <ol className="mt-3 space-y-2 text-sm leading-6 text-ink-2">
-          {[
-            ["Range lebih sempit (−20% s/d −40%)", "likuiditas lebih pekat di dekat harga, bagian fee 3–5× lebih besar, rugi maksimum terbatas."],
-            ["Batas keluar struktural", "keluar bila harga menembus bawah range atau tidak memantul dalam 24 jam; rugi dipotong di −20% s/d −30%, bukan −74%."],
-            ["Masuk setelah dump pertama, bukan di puncak", "pump memecoin memuncak ±menit ke-10 lalu turun; masuk setelah turun 30–50% sesuai logika beli-saat-jatuh."],
-            ["Keluar di pantulan hanya bila sudah untung bersih", "sinyal RSI(2) + Bollinger/MACD sekarang menutup posisi meski masih rugi (GO-SOL keluar di −45,5% dengan −$12,36 saat pantulan kecil). Bila belum untung, tahan sampai sinyal berikutnya, pool mati, atau batas waktu; perlu dipasangkan dengan batas keluar struktural (no. 2) agar posisi yang tak kembali tidak ditahan terlalu lama."],
-          ].map(([t, d], i) => (
-            <li key={t} className="flex gap-3">
-              <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-accent/15 text-xs font-bold text-accent">{i + 1}</span>
-              <span>
-                <span className="font-medium text-ink">{t}</span> — {d}
-              </span>
-            </li>
-          ))}
-        </ol>
-        <p className="mt-3 text-xs leading-5 text-ink-3">
-          Alasan: fee Panda hanya ±$0,1–2 per posisi $100 (likuiditas tersebar di ±233 bin), sehingga hasil bergantung pada pantulan harga. Tanpa
-          stop, titik impasnya butuh ±97% posisi menang.
-        </p>
-      </section>
-      <div className="rounded-2xl border border-white/[0.06] bg-panel px-4 py-3 text-sm leading-6 text-ink-3">
-        <div className="font-medium text-ink-2">Yang tidak bisa ditiru persis</div>
-        <ul className="mt-1 space-y-1">
-          {approximations.map((a) => (
-            <li key={a}>· {a}</li>
-          ))}
-        </ul>
-        <p className="mt-2">
-          Klaim performa Panda Strat di media sosial belum pernah diverifikasi on-chain; uji ini menjalankan aturannya dengan harga dan fee Meteora yang
-          sebenarnya.
-        </p>
-      </div>
     </div>
   );
 }
@@ -578,8 +537,8 @@ export default function PandaPage({ embedded = false }: { embedded?: boolean }) 
                 rejected={r.rejected}
               />
             )}
-            {view === "rules" && <Rules p={p} approximations={r.approximations} />}
-            {view === "notes" && <StrategyNotes note={STRATEGY_NOTES.panda} />}
+            {view === "rules" && <Rules p={p} />}
+            {view === "notes" && <PandaNotes approximations={r.approximations} />}
           </>
         )}
     </>
@@ -592,6 +551,56 @@ export default function PandaPage({ embedded = false }: { embedded?: boolean }) 
         {header}
         {body}
       </main>
+    </div>
+  );
+}
+
+/** Panda's Catatan: the review, the improvement plan for after 20 positions, and what the paper test cannot copy. */
+function PandaNotes({ approximations }: { approximations: string[] }) {
+  return (
+    <div className="space-y-5">
+      <StrategyNotes note={STRATEGY_NOTES.panda} />
+      <section className="rounded-2xl border border-accent/25 bg-accent/[0.05] p-4">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <h3 className="text-base font-semibold text-ink">Rencana perbaikan setelah 20 posisi selesai</h3>
+          <span className="text-xs text-ink-3">dicatat 26/09 · belum dijalankan</span>
+        </div>
+        <p className="mt-1 text-sm leading-6 text-ink-3">
+          Uji berjalan tanpa diubah sampai 20 posisi selesai. Yang diperhatikan: seberapa dalam rugi posisi yang tidak memantul. Kalau hasil tetap di
+          sekitar nol atau minus, Panda dihentikan; kalau ingin idenya dipakai, versi berikut diuji berdampingan.
+        </p>
+        <ol className="mt-3 space-y-2 text-sm leading-6 text-ink-2">
+          {[
+            ["Range lebih sempit (−20% s/d −40%)", "likuiditas lebih pekat di dekat harga, bagian fee 3–5× lebih besar, rugi maksimum terbatas."],
+            ["Batas keluar struktural", "keluar bila harga menembus bawah range atau tidak memantul dalam 24 jam; rugi dipotong di −20% s/d −30%, bukan −74%."],
+            ["Masuk setelah dump pertama, bukan di puncak", "pump memecoin memuncak ±menit ke-10 lalu turun; masuk setelah turun 30–50% sesuai logika beli-saat-jatuh."],
+            ["Keluar di pantulan hanya bila sudah untung bersih", "sinyal RSI(2) + Bollinger/MACD sekarang menutup posisi meski masih rugi (GO-SOL keluar di −45,5% dengan −$12,36 saat pantulan kecil). Bila belum untung, tahan sampai sinyal berikutnya, pool mati, atau batas waktu; perlu dipasangkan dengan batas keluar struktural (no. 2) agar posisi yang tak kembali tidak ditahan terlalu lama."],
+          ].map(([t, d], i) => (
+            <li key={t} className="flex gap-3">
+              <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-accent/15 text-xs font-bold text-accent">{i + 1}</span>
+              <span>
+                <span className="font-medium text-ink">{t}</span> — {d}
+              </span>
+            </li>
+          ))}
+        </ol>
+        <p className="mt-3 text-xs leading-5 text-ink-3">
+          Alasan: fee Panda hanya ±$0,1–2 per posisi $100 (likuiditas tersebar di ±233 bin), sehingga hasil bergantung pada pantulan harga. Tanpa
+          stop, titik impasnya butuh ±97% posisi menang.
+        </p>
+      </section>
+      <div className="rounded-2xl border border-white/[0.06] bg-panel px-4 py-3 text-sm leading-6 text-ink-3">
+        <div className="font-medium text-ink-2">Yang tidak bisa ditiru persis</div>
+        <ul className="mt-1 space-y-1">
+          {approximations.map((a) => (
+            <li key={a}>· {a}</li>
+          ))}
+        </ul>
+        <p className="mt-2">
+          Klaim performa Panda Strat di media sosial belum pernah diverifikasi on-chain; uji ini menjalankan aturannya dengan harga dan fee Meteora yang
+          sebenarnya.
+        </p>
+      </div>
     </div>
   );
 }

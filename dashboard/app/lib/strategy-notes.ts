@@ -59,7 +59,7 @@ export const STRATEGY_NOTES: Record<string, StrategyNote> = {
     ],
     next: [
       "Jalankan tanpa diubah sampai 20 posisi selesai, lalu nilai terutama rugi posisi yang tak memantul.",
-      "Rencana perbaikan (lihat Aturan): range −20% s/d −40%, batas keluar struktural, masuk setelah dump pertama, keluar di pantulan hanya bila sudah untung.",
+      "Setelah itu uji rencana perbaikan di bawah ini berdampingan dengan versi sekarang.",
     ],
   },
   sol_grid: {

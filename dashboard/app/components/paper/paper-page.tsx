@@ -640,11 +640,11 @@ export default function PaperPage({
           {view === "selesai" && <LpTable positions={data?.closed ?? []} empty="Belum ada posisi yang selesai." />}
           {view === "selesai" && <ResultsCard summary={s} profileLabel={s?.profile?.label} />}
           {view === "seleksi" && <ProfileScreen data={screen} />}
-          {view === "catatan" && <StrategyNotes note={STRATEGY_NOTES[profile]} />}
-          {view === "aturan" && s && (
+          {view === "catatan" && (
             <div className="space-y-5">
-              <ProfileRules summary={s} />
-        <p className="rounded-2xl border border-white/[0.06] bg-panel px-4 py-3 text-sm leading-6 text-ink-3">
+              <StrategyNotes note={STRATEGY_NOTES[profile]} />
+              {s && (
+                <p className="rounded-2xl border border-white/[0.06] bg-panel px-4 py-3 text-sm leading-6 text-ink-3">
                 Simulasi: likuiditas rata di semua bin, fee dari fee/TVL 1 jam pool.
                 {s?.costs.enabled ? (
                   <>
@@ -662,8 +662,10 @@ export default function PaperPage({
                 )}{" "}
                 Bukan saran finansial.
               </p>
+              )}
             </div>
           )}
+          {view === "aturan" && s && <ProfileRules summary={s} />}
         </div>}
 
 

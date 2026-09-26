@@ -176,7 +176,15 @@ export default function SolGrid() {
           </section>
         ))}
 
-      {view === "catatan" && <StrategyNotes note={STRATEGY_NOTES.sol_grid} />}
+      {view === "catatan" && (
+        <div className="space-y-5">
+          <StrategyNotes note={STRATEGY_NOTES.sol_grid} />
+          <p className="rounded-2xl border border-white/[0.06] bg-panel px-4 py-3 text-sm leading-6 text-ink-3">
+            Harga dibaca tiap {p.tick_s} detik dari pool SOL-USDC terbesar di Meteora. Bonus fee Meteora saat order terisi tidak dihitung, jadi hasil
+            sedikit di bawah kenyataan. Biaya jaringan dihitung per order.{r.started_at ? ` Mulai ${fmtDateTime(r.started_at)} WIB.` : ""}
+          </p>
+        </div>
+      )}
 
       {view === "aturan" && (
         <div className="space-y-5">
@@ -212,10 +220,6 @@ export default function SolGrid() {
               </div>
             ))}
           </section>
-          <p className="rounded-2xl border border-white/[0.06] bg-panel px-4 py-3 text-sm leading-6 text-ink-3">
-            Harga dibaca tiap {p.tick_s} detik dari pool SOL-USDC terbesar di Meteora. Bonus fee Meteora saat order terisi tidak dihitung, jadi hasil
-            sedikit di bawah kenyataan. Biaya jaringan dihitung per order.{r.started_at ? ` Mulai ${fmtDateTime(r.started_at)} WIB.` : ""}
-          </p>
         </div>
       )}
     </>
