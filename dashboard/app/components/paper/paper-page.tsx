@@ -419,21 +419,6 @@ function ResultsCard({ summary: s, profileLabel }: { summary: PaperSummary | und
           <h2 className="text-sm font-semibold text-ink">
             Hasil trading{profileLabel ? <span className="font-normal text-ink-3"> · {profileLabel}</span> : null}
           </h2>
-          <div role="tablist" className="flex rounded-xl border border-white/[0.08] bg-bg/80 p-1 shadow-inner shadow-black/20">
-            {tabs.map((t) => (
-              <button
-                key={t.id}
-                role="tab"
-                aria-selected={tab === t.id}
-                onClick={() => setTab(t.id)}
-                className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
-                  tab === t.id ? "bg-raised text-ink shadow-sm shadow-black/25" : "text-ink-3 hover:bg-raised/50 hover:text-ink-2"
-                }`}
-              >
-                {t.label}
-              </button>
-            ))}
-          </div>
         </div>
         <span className="text-xs text-ink-3">Posisi yang sudah ditutup · CI bootstrap per jam entry</span>
       </div>
@@ -681,39 +666,21 @@ function PositionsCard({
   open,
   closed,
   profileLabel,
+  tab,
 }: {
   open: PaperPosition[];
   closed: PaperPosition[];
   profileLabel?: string;
+  tab: "open" | "closed";
 }) {
-  const [tab, setTab] = useState<"open" | "closed">("open");
-  const tabs = [
-    { id: "open" as const, label: "Terbuka", count: open.length },
-    { id: "closed" as const, label: "Ditutup", count: closed.length },
-  ];
   return (
     <section className="overflow-hidden rounded-2xl border border-white/[0.06] bg-panel shadow-[0_14px_42px_rgba(0,0,0,0.20),inset_0_1px_0_rgba(255,255,255,0.04)]">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line bg-white/[0.02] px-4 py-3">
         <div className="flex items-center gap-3">
           <h2 className="text-sm font-semibold text-ink">
-            Posisi{profileLabel ? <span className="font-normal text-ink-3"> · {profileLabel}</span> : null}
+            {tab === "open" ? "Posisi berjalan" : "Posisi selesai"}
+            {profileLabel ? <span className="font-normal text-ink-3"> · {profileLabel}</span> : null}
           </h2>
-          <div role="tablist" className="flex rounded-xl border border-white/[0.08] bg-bg/80 p-1 shadow-inner shadow-black/20">
-            {tabs.map((t) => (
-              <button
-                key={t.id}
-                role="tab"
-                aria-selected={tab === t.id}
-                onClick={() => setTab(t.id)}
-                className={`flex items-center gap-1.5 rounded-md px-3 py-1 text-xs font-medium transition-colors ${
-                  tab === t.id ? "bg-raised text-ink shadow-sm shadow-black/25" : "text-ink-3 hover:bg-raised/50 hover:text-ink-2"
-                }`}
-              >
-                {t.label}
-                <span className="tabular-nums text-ink-3">{t.count}</span>
-              </button>
-            ))}
-          </div>
         </div>
         <span className="text-xs text-ink-3">
           {tab === "open" ? "Diperbarui tiap siklus engine" : "100 posisi terakhir"}
@@ -724,10 +691,11 @@ function PositionsCard({
   );
 }
 
-const LP_VIEWS = ["posisi", "hasil", "equity", "banding"] as const;
+const LP_VIEWS = ["berjalan", "selesai", "hasil", "equity", "banding"] as const;
 type LpView = (typeof LP_VIEWS)[number];
 const LP_VIEW_LABEL: Record<LpView, string> = {
-  posisi: "Posisi",
+  berjalan: "Berjalan",
+  selesai: "Selesai",
   hasil: "Hasil & statistik",
   equity: "Kurva equity",
   banding: "Bandingkan profil",
@@ -739,7 +707,7 @@ export default function PaperPage({ embedded = false, initialProfile }: { embedd
   const [leader, setLeader] = useState("satu_sisi");
   const profile = picked ?? leader;
   const { data, error } = usePaperData(profile);
-  const [view, setView] = useUrlState<LpView>("lp", "posisi", LP_VIEWS);
+  const [view, setView] = useUrlState<LpView>("lp", "berjalan", LP_VIEWS);
   const top = data?.profiles?.reduce((a, b) =>
     b.equity_usd - b.start_equity_usd > a.equity_usd - a.start_equity_usd ? b : a,
   )?.key;
@@ -829,17 +797,25 @@ export default function PaperPage({ embedded = false, initialProfile }: { embedd
                 role="tab"
                 aria-selected={view === v}
                 onClick={() => setView(v)}
-                className={`-mb-px shrink-0 border-b-2 px-4 py-2 text-sm font-medium transition-colors ${
+                className={`-mb-px shrink-0 border-b-2 px-4 py-2.5 text-sm font-medium transition-colors ${
                   view === v ? "border-accent text-ink" : "border-transparent text-ink-3 hover:text-ink-2"
                 }`}
               >
                 {LP_VIEW_LABEL[v]}
-                {v === "posisi" && s ? <span className="ml-1.5 text-xs text-ink-3">{s.open_count}</span> : null}
+                {v === "berjalan" && s?.open_count ? ` (${s.open_count})` : null}
+                {v === "selesai" && s?.closed_count ? ` (${s.closed_count})` : null}
               </button>
             ))}
           </div>
 
-          {view === "posisi" && <PositionsCard open={data?.open ?? []} closed={data?.closed ?? []} profileLabel={s?.profile?.label} />}
+          {(view === "berjalan" || view === "selesai") && (
+            <PositionsCard
+              open={data?.open ?? []}
+              closed={data?.closed ?? []}
+              profileLabel={s?.profile?.label}
+              tab={view === "berjalan" ? "open" : "closed"}
+            />
+          )}
           {view === "hasil" && <ResultsCard summary={s} profileLabel={s?.profile?.label} />}
         </div>
 
