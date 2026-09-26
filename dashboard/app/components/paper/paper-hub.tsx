@@ -36,6 +36,8 @@ type Strategy = {
   wins?: number;
   worst_usd?: number | null;
   worst_pct?: number | null;
+  avg_hold_hours?: number | null;
+  total_hold_hours?: number | null;
   verdict: Verdict;
 };
 type Overview = { min_closed: number; strategies: Strategy[] };
@@ -69,6 +71,7 @@ const VERDICT: Record<Verdict, { label: string; cls: string; hint: string }> = {
 };
 const VERDICT_ORDER: Record<Verdict, number> = { viable: 0, luck: 1, loss: 2, data: 3 };
 
+const span = (h: number) => (h < 1 ? `${Math.round(h * 60)} mnt` : h < 48 ? `${fmtNum(h, 1)} jam` : `${fmtNum(h / 24, 1)} hari`);
 const tone = (n: number | null | undefined) => (n == null ? "text-ink-3" : n > 0 ? "text-emerald-300" : n < 0 ? "text-rose-300" : "text-ink-2");
 const money = (n: number | null | undefined) => (n == null ? "–" : `${n >= 0 ? "+" : "−"}${usd.format(Math.abs(n))}`);
 const pct = (n: number | null | undefined, d = 1) => (n == null ? "–" : `${n >= 0 ? "+" : "−"}${fmtNum(Math.abs(n), d)}%`);
@@ -151,7 +154,7 @@ function Summary({ data, error, onOpen }: { data: Overview | null; error: boolea
           <p className="text-xs text-ink-3">Klik baris untuk membuka detailnya</p>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[900px] text-sm tabular-nums">
+          <table className="w-full min-w-[1000px] text-sm tabular-nums">
             <thead className="text-[11px] font-medium uppercase tracking-[0.08em] text-ink-3">
               <tr className="border-b border-line">
                 <th className="px-4 py-2.5 text-left font-medium">Strategi</th>
@@ -162,7 +165,10 @@ function Summary({ data, error, onOpen }: { data: Overview | null; error: boolea
                 <th className="px-3 py-2.5 text-right font-medium" title="Total hasil setelah 3 trade terbaik dibuang: minus berarti untungnya dari 1-3 trade yang meledak">
                   Tanpa 3 terbaik
                 </th>
-                <th className="px-4 py-2.5 text-right font-medium">Rugi terbesar</th>
+                <th className="px-3 py-2.5 text-right font-medium">Rugi terbesar</th>
+                <th className="px-4 py-2.5 text-right font-medium" title="Rata-rata lama satu posisi dibuka sampai ditutup, dan total semua posisi">
+                  Lama posisi
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -209,13 +215,17 @@ function Summary({ data, error, onOpen }: { data: Overview | null; error: boolea
                       <div className="text-[11px] text-ink-3">{s.win_rate == null ? "" : `${fmtNum(s.win_rate * 100, 0)}%`}</div>
                     </td>
                     <td className={`px-3 py-3 text-right ${tone(s.without_best3_usd)}`}>{money(s.without_best3_usd)}</td>
-                    <td className="px-4 py-3 text-right">
+                    <td className="px-3 py-3 text-right">
                       <div className={tone(s.worst_usd != null && s.worst_usd < 0 ? s.worst_usd : null)}>
                         {s.worst_usd != null && s.worst_usd < 0 ? money(s.worst_usd) : "–"}
                       </div>
                       <div className="text-[11px] text-ink-3">
                         {s.worst_pct != null && s.worst_usd != null && s.worst_usd < 0 ? `${pct(s.worst_pct)} dari modalnya` : ""}
                       </div>
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <div className="text-ink-2">{s.avg_hold_hours == null ? "–" : `${span(s.avg_hold_hours)} / posisi`}</div>
+                      <div className="text-[11px] text-ink-3">{s.total_hold_hours == null ? "" : `total ${span(s.total_hold_hours)}`}</div>
                     </td>
                   </tr>
                 );
