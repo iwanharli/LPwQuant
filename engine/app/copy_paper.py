@@ -33,6 +33,15 @@ TX_FEE_SOL = 0.0006  # open, add, remove, close
 EXIT_SWAP_PCT = 0.3  # selling the token part left at exit, as % of the position
 
 
+def copy_return_pct(entry_pct: float | None, now_pct: float | None) -> float:
+    """What a copier made from the moment it joined: (1 + now) / (1 + entry) - 1, in %. A wallet mark at or below
+    -99% when we joined means the value was already gone (or Meteora reported nothing): nothing left to copy."""
+    base = 1 + (entry_pct or 0) / 100
+    if base <= 0.01:
+        return 0.0
+    return ((1 + (now_pct or 0) / 100) / base - 1) * 100
+
+
 def _open_positions(wallet: str) -> list[dict[str, Any]]:
     """The wallet's open DLMM positions with Meteora's PnL. Blocking."""
     body = portfolio._get("/portfolio/open", {"user": wallet, "page_size": 50})
@@ -101,6 +110,8 @@ class CopyPaper:
                 created = (q.get("created_at") or 0) / 1000
                 if first_look or time.time() - created > FRESH_MIN * 60:
                     continue
+                if (q["pnl_pct"] or 0) <= -50:
+                    continue  # already down half on arrival: a broken or emptied position, not one to copy
                 await self.db.execute(
                     """insert into paper_copy_runs (wallet, position, pool, pair, their_created_at, opened_at, status,
                          size_usd, entry_pnl_pct, last_pnl_pct, their_deposit_usd, min_price, max_price, checked_at)
@@ -115,7 +126,7 @@ class CopyPaper:
                 final = await asyncio.to_thread(_final_pnl_pct, w, r["pool"], r["position"])
                 if final is None:
                     final = r["last_pnl_pct"]  # not listed as closed yet: the last mark we saw
-                result_pct = ((1 + final / 100) / (1 + (r["entry_pnl_pct"] or 0) / 100) - 1) * 100
+                result_pct = copy_return_pct(r["entry_pnl_pct"], final)
                 costs = TX_FEE_SOL * self.sol_usd() + r["size_usd"] * EXIT_SWAP_PCT / 100
                 pnl = r["size_usd"] * result_pct / 100 - costs
                 await self.db.execute(
@@ -131,7 +142,7 @@ async def report(db, rows: dict[str, dict[str, Any]] | None = None) -> dict[str,
     closed = [r for r in runs if r["status"] == "closed"]
     out = []
     for r in runs:
-        running_pct = ((1 + (r["last_pnl_pct"] or 0) / 100) / (1 + (r["entry_pnl_pct"] or 0) / 100) - 1) * 100
+        running_pct = copy_return_pct(r["entry_pnl_pct"], r["last_pnl_pct"])
         out.append({
             "id": r["id"], "wallet": r["wallet"], "position": r["position"], "pool": r["pool"], "pair": r["pair"],
             "status": r["status"], "size_usd": r["size_usd"],
