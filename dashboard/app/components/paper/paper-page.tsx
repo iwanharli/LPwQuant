@@ -490,7 +490,7 @@ function ProfileScreen({ profile }: { profile: string }) {
   useEffect(load, [load]);
   if (!data) return <SkeletonTable rows={5} columns={4} title={false} />;
   return (
-    <div className="space-y-5">
+    <div className="grid items-start gap-5 lg:grid-cols-[7fr_3fr]">
       <Candidates data={{ checked_at: data.updated_at, pools: data.pools }} />
       <Funnel funnel={data.funnel} />
     </div>

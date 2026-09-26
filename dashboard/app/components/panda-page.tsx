@@ -186,7 +186,7 @@ export function Candidates({ data }: { data: { checked_at: number | null; slots?
                 ? { label: "Siap masuk", cls: "bg-emerald-400/10 text-emerald-300" }
                 : { label: "Tunggu sinyal", cls: "bg-amber-400/10 text-amber-300" };
             return (
-              <li key={p.address} className="grid gap-4 px-4 py-4 lg:grid-cols-[1.1fr_1.4fr]">
+              <li key={p.address} className="grid gap-4 px-4 py-4 xl:grid-cols-[1.1fr_1.4fr]">
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
                     <Link href={`/pool/${p.address}`} className="text-base font-semibold text-ink hover:text-accent">
@@ -497,7 +497,7 @@ export default function PandaPage({ embedded = false }: { embedded?: boolean }) 
             )}
             {view === "done" && <RunTable runs={finished} empty="Belum ada posisi yang ditutup." />}
             {view === "funnel" && (
-              <div className="space-y-5">
+              <div className="grid items-start gap-5 lg:grid-cols-[7fr_3fr]">
                 {r.candidates && <Candidates data={r.candidates} />}
                 <Funnel funnel={r.screening_funnel} />
               </div>
