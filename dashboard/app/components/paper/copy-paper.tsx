@@ -34,7 +34,124 @@ type Run = {
   closed_at: number | null;
   checked_at: number | null;
 };
-type Leader = { wallet: string; pnl_7d_usd: number; win_rate: number | null; hold_median_h: number | null; deposit_median_usd: number | null; top_pairs: string[] };
+type Leader = {
+  wallet: string;
+  pnl_7d_usd: number;
+  positions_7d: number;
+  win_rate: number | null;
+  wins: number;
+  sample: number;
+  median_usd: number | null;
+  median_pct: number | null;
+  hold_median_h: number | null;
+  deposit_median_usd: number | null;
+  lifetime_pnl_usd: number;
+  lifetime_closed: number;
+  last_closed_at: number | null;
+  top_pairs: string[];
+};
+
+const MEDAL = ["🥇", "🥈", "🥉"];
+
+/** One followed wallet: who it is, how it trades, and what copying it has returned so far. */
+function WalletCard({ w, rank, runs }: { w: Leader; rank: number; runs: Run[] }) {
+  const mine = runs.filter((r) => r.wallet === w.wallet);
+  const open = mine.filter((r) => r.status === "open").length;
+  const done = mine.filter((r) => r.status === "closed");
+  const copyPnl = done.reduce((n, r) => n + r.pnl_usd, 0);
+  const copyWins = done.filter((r) => r.pnl_usd > 0).length;
+  const wr = w.win_rate == null ? null : w.win_rate * 100;
+  const tiles: [string, string, string?][] = [
+    ["Hasil 7 hari", money(w.pnl_7d_usd), tone(w.pnl_7d_usd)],
+    ["Median / posisi", w.median_usd == null ? "–" : `${money(w.median_usd)}`, tone(w.median_usd)],
+    ["Lama pegang", w.hold_median_h == null ? "–" : span(w.hold_median_h * 3_600_000)],
+    ["Modal / posisi", w.deposit_median_usd == null ? "–" : usd.format(w.deposit_median_usd)],
+  ];
+  return (
+    <article className="flex flex-col rounded-2xl border border-white/[0.06] bg-panel p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <span
+            className={`grid h-10 w-10 place-items-center rounded-full text-lg font-extrabold ${
+              rank <= 3 ? "bg-gradient-to-br from-amber-200/25 to-amber-600/10" : "border border-white/[0.1] bg-white/[0.04] text-sm text-ink-2"
+            }`}
+          >
+            {MEDAL[rank - 1] ?? rank}
+          </span>
+          <div>
+            <div className="font-mono text-base font-semibold text-ink">{short(w.wallet)}</div>
+            <div className="text-[11px] text-ink-3">
+              seumur hidup <span className={tone(w.lifetime_pnl_usd)}>{money(w.lifetime_pnl_usd)}</span> · {fmtNum(w.lifetime_closed, 0)} posisi
+            </div>
+          </div>
+        </div>
+        {open > 0 && (
+          <span className="live-breath inline-flex items-center gap-1 rounded-full bg-accent/15 px-2 py-0.5 text-[11px] font-semibold text-accent">
+            <span className="live-dot h-1.5 w-1.5 rounded-full bg-current" aria-hidden />
+            {open} ditiru
+          </span>
+        )}
+      </div>
+
+      <div className="mt-4">
+        <div className="flex items-baseline justify-between text-xs">
+          <span className="text-ink-3">Win rate</span>
+          <span className={`text-lg font-bold tabular-nums ${wr == null ? "text-ink-3" : wr >= 50 ? "text-emerald-300" : "text-rose-300"}`}>
+            {wr == null ? "–" : `${fmtNum(wr, 0)}%`}
+          </span>
+        </div>
+        <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-white/[0.06]">
+          <div className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-emerald-300" style={{ width: `${Math.min(100, wr ?? 0)}%` }} />
+        </div>
+        <div className="mt-1 text-[11px] text-ink-3">
+          {w.wins} dari {w.sample} posisi untung · {w.positions_7d} posisi dalam 7 hari
+        </div>
+      </div>
+
+      <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3">
+        {tiles.map(([k, v, cls]) => (
+          <div key={k}>
+            <dt className="text-[11px] uppercase tracking-[0.08em] text-ink-3">{k}</dt>
+            <dd className={`mt-0.5 font-semibold tabular-nums ${cls ?? "text-ink"}`}>{v}</dd>
+          </div>
+        ))}
+      </dl>
+
+      {w.top_pairs.length > 0 && (
+        <div className="mt-4 flex flex-wrap gap-1.5">
+          {w.top_pairs.map((pair) => (
+            <span key={pair} className="rounded-full border border-white/[0.08] bg-white/[0.03] px-2 py-0.5 text-[11px] text-ink-2">
+              {pair}
+            </span>
+          ))}
+        </div>
+      )}
+
+      <div className="mt-4 rounded-xl border border-white/[0.06] bg-white/[0.02] px-3 py-2.5">
+        <div className="text-[11px] uppercase tracking-[0.08em] text-ink-3">Hasil tiruan kita</div>
+        <div className="mt-1 flex items-baseline justify-between gap-2">
+          <span className={`text-base font-semibold tabular-nums ${done.length ? tone(copyPnl) : "text-ink-3"}`}>
+            {done.length ? money(copyPnl) : "belum ada yang selesai"}
+          </span>
+          <span className="text-[11px] text-ink-3">
+            {done.length ? `${copyWins} dari ${done.length} untung · ` : ""}
+            {open} berjalan
+          </span>
+        </div>
+      </div>
+
+      <div className="mt-auto flex flex-wrap gap-3 pt-4 text-xs">
+        <a href={`https://solscan.io/account/${w.wallet}`} target="_blank" rel="noreferrer" className="text-ink-3 hover:text-accent">
+          Solscan ↗
+        </a>
+        <a href={`https://gmgn.ai/sol/address/${w.wallet}`} target="_blank" rel="noreferrer" className="text-ink-3 hover:text-accent">
+          GMGN ↗
+        </a>
+        {w.last_closed_at && <span className="ml-auto text-ink-3">aktif {fmtDateTime(w.last_closed_at)}</span>}
+      </div>
+    </article>
+  );
+}
 type Report = {
   params: { follow: number; size_usd: number; tick_s: number; fresh_min: number; exit_swap_pct: number };
   wallets: Leader[];
@@ -249,22 +366,17 @@ export default function CopyPaper() {
             Belum ada wallet yang layak diikuti. Daftar diambil dari halaman LP teratas.
           </p>
         ) : (
-          <section className="overflow-hidden rounded-2xl border border-white/[0.06] bg-panel">
-            <ul className="divide-y divide-white/[0.05]">
-              {r.wallets.map((w) => (
-                <li key={w.wallet} className="flex flex-wrap items-center gap-x-5 gap-y-1 px-4 py-3 text-sm tabular-nums">
-                  <a href={`https://solscan.io/account/${w.wallet}`} target="_blank" rel="noreferrer" className="font-mono font-medium text-ink hover:text-accent">
-                    {short(w.wallet)}
-                  </a>
-                  <span className={tone(w.pnl_7d_usd)}>7 hari {money(w.pnl_7d_usd)}</span>
-                  <span className="text-ink-2">win rate {w.win_rate == null ? "–" : `${fmtNum(w.win_rate * 100, 0)}%`}</span>
-                  <span className="text-ink-2">pegang {w.hold_median_h == null ? "–" : span(w.hold_median_h * 3_600_000)}</span>
-                  <span className="text-ink-2">modal {w.deposit_median_usd == null ? "–" : usd.format(w.deposit_median_usd)}</span>
-                  <span className="text-xs text-ink-3">{w.top_pairs.join(" · ")}</span>
-                </li>
+          <div className="space-y-3">
+            <p className="text-sm text-ink-3">
+              {r.wallets.length} wallet teratas di <Link href="/leaders" className="text-ink-2 underline decoration-white/20 hover:text-accent">LP teratas</Link> yang
+              layak diikuti, diurutkan hasil 7 hari. Daftarnya ikut berubah tiap 6 jam.
+            </p>
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+              {r.wallets.map((w, i) => (
+                <WalletCard key={w.wallet} w={w} rank={i + 1} runs={r.runs} />
               ))}
-            </ul>
-          </section>
+            </div>
+          </div>
         ))}
       {view === "aturan" && (
         <section className="grid gap-4 rounded-2xl border border-white/[0.06] bg-panel p-4 md:grid-cols-2">
