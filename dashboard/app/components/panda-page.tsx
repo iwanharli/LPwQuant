@@ -396,6 +396,7 @@ function RunTable({ runs, empty }: { runs: Run[]; empty: string }) {
               <th className="px-3 py-2.5 text-right font-medium">Nilai posisi</th>
               <th className="px-3 py-2.5 text-right font-medium">Biaya</th>
               <th className="px-3 py-2.5 text-right font-medium">Hasil</th>
+              <th className="px-3 py-2.5 text-right font-medium" title="Dari dibuka sampai ditutup (atau sampai sekarang bila masih berjalan)">Lama</th>
               <th className="px-4 py-2.5 text-right font-medium">Waktu</th>
             </tr>
           </thead>
@@ -436,11 +437,12 @@ function RunTable({ runs, empty }: { runs: Run[]; empty: string }) {
                     {money(x.pnl_usd)}
                     {x.status === "open" && <div className="text-[11px] font-normal text-ink-3">sebelum biaya</div>}
                   </td>
+                  <td className="px-3 py-2.5 text-right text-ink-2">{duration(x.opened_at, x.closed_at ?? x.checked_at ?? x.opened_at)}</td>
                   <td className="px-4 py-2.5 text-right text-[11px] text-ink-3">{fmtDateTime(x.closed_at ?? x.opened_at)}</td>
                 </tr>
                 {open === x.id && (
                   <tr className="border-b border-line/60">
-                    <td colSpan={9} className="p-0"><Detail x={x} /></td>
+                    <td colSpan={10} className="p-0"><Detail x={x} /></td>
                   </tr>
                 )}
                 </Fragment>
