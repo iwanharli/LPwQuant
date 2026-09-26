@@ -275,8 +275,8 @@ function Summary({ data, error, onOpen }: { data: Overview | null; error: boolea
 }
 
 const DEFAULT_PROFILES = [
-  { key: "satu_sisi", label: "Satu Sisi" },
-  { key: "satu_sisi_sering", label: "Satu Sisi Sering" },
+  { key: "satu_sisi", label: "Ankylosaurus" },
+  { key: "satu_sisi_sering", label: "Velociraptor" },
 ];
 // Every profile the engine may run, so a profile tab in the URL survives the first render before the list loads.
 const PROFILE_TABS = Object.keys(PROFILE_COLORS);

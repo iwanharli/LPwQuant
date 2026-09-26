@@ -30,11 +30,11 @@ export const STRATEGY_NOTES: Record<string, StrategyNote> = {
     basis: "14 posisi selesai sejak 24/09, +$1,62",
     pros: [
       "Rugi tetap sangat kecil (rata-rata kalah −0,09%).",
-      "Membuktikan gerbang fee 2× di Satu Sisi memang berguna.",
+      "Membuktikan gerbang fee 2× di Ankylosaurus memang berguna.",
     ],
     cons: [
       "Praktis impas: 10 dari 14 posisi keluar range dengan hasil $0,00 (fee rata-rata 0,08%, dipegang ±1 jam).",
-      "Rata-rata menang hanya +0,40%, empat kali lebih kecil dari Satu Sisi.",
+      "Rata-rata menang hanya +0,40%, empat kali lebih kecil dari Ankylosaurus.",
       "Lebih sering masuk tetapi kualitasnya turun: gerbang 1× memasukkan pool yang fee-nya tidak cukup.",
     ],
     next: [

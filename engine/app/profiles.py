@@ -85,8 +85,8 @@ PROFILES: tuple[RiskProfile, ...] = (
     ),
     RiskProfile(
         key="satu_sisi",
-        label="Satu Sisi",
-        description="Hanya token quote di bawah harga, pool ATR 30m <=2%: range sempit, tanpa swap saat masuk",
+        label="Ankylosaurus",
+        description="Lapis baja: hanya SOL/USDC di bawah harga, pool tenang (ATR 30m <=2%), fee harus 2x biaya. Rugi hampir selalu kecil",
         tiers=("low", "medium", "high"),
         max_open_per_tier=5,
         size_mult=1.0,
@@ -118,8 +118,8 @@ PROFILES: tuple[RiskProfile, ...] = (
     ),
     RiskProfile(
         key="satu_sisi_sering",
-        label="Satu Sisi Sering",
-        description="Seperti Satu Sisi tapi fee cukup 1x biaya: lebih sering masuk, untuk melihat apakah gerbang fee terlalu ketat",
+        label="Velociraptor",
+        description="Seperti Ankylosaurus tapi fee cukup 1x biaya: lebih cepat dan sering masuk, untuk menguji apakah gerbang fee terlalu ketat",
         tiers=("low", "medium", "high"),
         max_open_per_tier=5,
         size_mult=1.0,
