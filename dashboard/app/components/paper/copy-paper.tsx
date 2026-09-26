@@ -340,10 +340,16 @@ function Grouped({ runs, empty, noun }: { runs: Run[]; empty: string; noun: stri
                 <span className={`font-semibold tabular-nums ${tone(g.pnl)}`}>{money(g.pnl)}</span>
               </span>
               <span>
-                <span className="block text-[11px] uppercase tracking-[0.08em] text-ink-3">{noun.includes("berjalan") ? "Sedang untung" : "Win rate"}</span>
-                <span className={`font-semibold tabular-nums ${wr >= 50 ? "text-emerald-300" : "text-rose-300"}`}>
-                  {fmtNum(wr, 0)}% <span className="text-[11px] font-normal text-ink-3">({g.wins}/{g.list.length})</span>
-                </span>
+                <span className="block text-[11px] uppercase tracking-[0.08em] text-ink-3">{noun.includes("berjalan") ? "Posisi untung" : "Win rate"}</span>
+                {noun.includes("berjalan") ? (
+                  <span className={`font-semibold tabular-nums ${wr >= 50 ? "text-emerald-300" : "text-rose-300"}`}>
+                    {g.wins} dari {g.list.length} <span className="text-[11px] font-normal text-ink-3">({fmtNum(wr, 0)}%)</span>
+                  </span>
+                ) : (
+                  <span className={`font-semibold tabular-nums ${wr >= 50 ? "text-emerald-300" : "text-rose-300"}`}>
+                    {fmtNum(wr, 0)}% <span className="text-[11px] font-normal text-ink-3">({g.wins}/{g.list.length})</span>
+                  </span>
+                )}
               </span>
               <span>
                 <span className="block text-[11px] uppercase tracking-[0.08em] text-ink-3">Rata-rata</span>
