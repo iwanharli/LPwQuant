@@ -22,14 +22,11 @@ def screen(rows: dict[str, dict[str, Any]], trader) -> dict[str, Any]:
         d = profile_decision(row, trader)
         plan = row.get("plan_single") if cfg.plan_variant == "single" else (row.get("plan_base") or row.get("plan"))
         planned = bool(plan) and plan.get("action") == "enter"
-        if d.get("holding"):
-            key = "sedang dipegang"
-        elif d["enter"]:
+        # "lolos" = passed the screen (safety and plan); the entry checklist below says what still holds it back.
+        if d.get("holding") or d["enter"] or (planned and (plan or {}).get("tier") in cfg.tiers):
             key = "lolos"
-        elif not planned or (plan or {}).get("tier") not in cfg.tiers:
-            key = _norm(d.get("reason") or (plan or {}).get("reason") or "tidak ada rencana masuk")
         else:
-            key = "lolos seleksi, menunggu entry"
+            key = _norm(d.get("reason") or (plan or {}).get("reason") or "tidak ada rencana masuk")
         funnel[key] = funnel.get(key, 0) + 1
         if not planned or plan.get("tier") not in cfg.tiers:
             continue
