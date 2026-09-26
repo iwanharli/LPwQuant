@@ -198,46 +198,41 @@ export function Candidates({
                 ? { label: "Siap masuk", cls: "bg-emerald-400/10 text-emerald-300" }
                 : { label: "Tunggu sinyal", cls: "bg-amber-400/10 text-amber-300" };
             return (
-              <li key={p.address} className="grid gap-4 px-4 py-4 xl:grid-cols-[1.1fr_1.4fr]">
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Link href={`/pool/${p.address}`} className="text-base font-semibold text-ink hover:text-accent">
-                      {p.name.replace("-", "/")}
-                    </Link>
-                    <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${status.cls}`}>{status.label}</span>
-                  </div>
-                  <dl className="mt-3 grid grid-cols-3 gap-x-4 gap-y-2 text-sm tabular-nums">
+              <li key={p.address} className="px-4 py-3">
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                  <Link href={`/pool/${p.address}`} className="text-base font-semibold text-ink hover:text-accent">
+                    {p.name.replace("-", "/")}
+                  </Link>
+                  <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${status.cls}`}>{status.label}</span>
+                  <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-sm tabular-nums lg:ml-auto">
                     {[
                       ["MC", p.market_cap == null ? "–" : usdCompact.format(p.market_cap)],
-                      ["Volume 24j", p.volume_24h == null ? "–" : usdCompact.format(p.volume_24h)],
+                      ["Vol", p.volume_24h == null ? "–" : usdCompact.format(p.volume_24h)],
                       ["TVL", p.tvl == null ? "–" : usdCompact.format(p.tvl)],
-                      ["Fee/TVL 24j", p.fee_tvl_pct_24h == null ? "–" : `${fmtNum(p.fee_tvl_pct_24h, 0)}%`],
+                      ["Fee/TVL", p.fee_tvl_pct_24h == null ? "–" : `${fmtNum(p.fee_tvl_pct_24h, 0)}%`],
                       ["Holder", p.holders == null ? "–" : fmtNum(p.holders, 0)],
-                      ["Top 10", p.top10_pct == null ? "–" : `${fmtNum(p.top10_pct, 0)}%`],
-                      ["1 jam", p.change_pct_1h == null ? "–" : `${p.change_pct_1h >= 0 ? "+" : ""}${fmtNum(p.change_pct_1h, 1)}%`],
+                      ["Top10", p.top10_pct == null ? "–" : `${fmtNum(p.top10_pct, 0)}%`],
+                      ["1j", p.change_pct_1h == null ? "–" : `${p.change_pct_1h >= 0 ? "+" : ""}${fmtNum(p.change_pct_1h, 1)}%`],
                     ].map(([k, v]) => (
-                      <div key={k}>
-                        <dt className="text-xs text-ink-3">{k}</dt>
-                        <dd className="font-medium text-ink">{v}</dd>
-                      </div>
+                      <span key={k} className="whitespace-nowrap">
+                        <span className="text-xs text-ink-3">{k} </span>
+                        <span className="font-medium text-ink">{v}</span>
+                      </span>
                     ))}
-                  </dl>
+                  </div>
                 </div>
-                <ul className="space-y-2">
+                <ul className="mt-2 flex flex-wrap gap-1.5">
                   {p.checks.map((c) => (
-                    <li key={c.key} className="flex items-start gap-2.5 text-sm leading-6">
-                      <span
-                        className={`mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full text-xs font-bold ${
-                          c.ok ? "bg-emerald-400/15 text-emerald-300" : "bg-rose-400/15 text-rose-300"
-                        }`}
-                        aria-label={c.ok ? "terpenuhi" : "belum"}
-                      >
-                        {c.ok ? "✓" : "✕"}
-                      </span>
-                      <span className="min-w-0">
-                        <span className={c.ok ? "text-ink-2" : "text-ink"}>{c.label}</span>
-                        <span className="block text-xs text-ink-3">{c.detail}</span>
-                      </span>
+                    <li
+                      key={c.key}
+                      title={c.detail}
+                      className={`inline-flex items-center gap-1.5 rounded-lg border px-2 py-1 text-xs ${
+                        c.ok ? "border-emerald-400/20 bg-emerald-400/[0.06] text-ink-2" : "border-rose-400/25 bg-rose-400/[0.06] text-ink"
+                      }`}
+                    >
+                      <span className={`font-bold ${c.ok ? "text-emerald-300" : "text-rose-300"}`}>{c.ok ? "✓" : "✕"}</span>
+                      {c.label}
+                      <span className="text-ink-3">· {c.detail}</span>
                     </li>
                   ))}
                 </ul>
