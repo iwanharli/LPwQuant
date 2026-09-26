@@ -15,6 +15,8 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Quant · DLMM Screener",
   description: "Live Meteora DLMM pool screener",
+  appleWebApp: { capable: true, title: "Quant", statusBarStyle: "black-translucent" },
+  icons: { apple: "/apple-touch-icon.png" },
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

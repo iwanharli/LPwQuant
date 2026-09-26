@@ -1,132 +1,105 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { ENGINE_URL, usdCompact } from "../lib/format";
+import { useEffect, useState } from "react";
+import { ENGINE_URL } from "../lib/format";
 
-type NewPool = {
-  address: string;
-  name: string;
-  tvl: number;
-  pool_age_hours: number;
-  token_kind: "new" | "old" | null;
-  verdict: "ok" | "pending" | "blocked";
-  danger?: string[];
-};
+type State = "unsupported" | "ios-install" | "denied" | "off" | "on" | "busy";
 
-const KEY = "notify:new-token-pools";
-const SEEN_KEY = "notify:seen-pools";
-const EVERY_MS = 15_000;
-
-function readOn(): boolean {
-  try {
-    return localStorage.getItem(KEY) === "1";
-  } catch {
-    return false;
-  }
+function b64ToBytes(b64: string): Uint8Array {
+  const pad = "=".repeat((4 - (b64.length % 4)) % 4);
+  const raw = atob((b64 + pad).replace(/-/g, "+").replace(/_/g, "/"));
+  return Uint8Array.from(raw, (c) => c.charCodeAt(0));
 }
 
-function subscribePermission(cb: () => void) {
-  window.addEventListener("focus", cb);
-  return () => window.removeEventListener("focus", cb);
+async function currentSubscription(): Promise<PushSubscription | null> {
+  const reg = await navigator.serviceWorker.getRegistration("/");
+  return reg ? reg.pushManager.getSubscription() : null;
 }
 
 /**
- * Browser notification for every new pool whose token is itself new (launched within a day). Runs while any quant
- * tab is open, in the background too. The bell turns it on (asking the browser's permission) and off; the choice
- * and the pools already announced are remembered in this browser, so a reload does not repeat them.
+ * The bell: Web Push for new pools of newly launched tokens. The server sends them, so they arrive with every quant
+ * tab closed, on a phone too. On iPhone this needs quant installed to the home screen first (Share > Add to Home
+ * Screen); the bell says so instead of failing.
  */
 export default function NewPoolNotifier() {
-  const [on, setOn] = useState(false);
-  const permission = useSyncExternalStore(
-    subscribePermission,
-    () => (typeof Notification === "undefined" ? "unsupported" : Notification.permission),
-    () => "default",
-  );
-  const seen = useRef<Set<string> | null>(null);
-  const router = useRouter();
+  const [state, setState] = useState<State>("busy");
 
   useEffect(() => {
-    // Read the stored choice after mount so the server and first client render match.
-    const t = setTimeout(() => setOn(readOn()), 0);
-    return () => clearTimeout(t);
+    let cancelled = false;
+    const check = async () => {
+      const ios = /iPhone|iPad|iPod/.test(navigator.userAgent);
+      const standalone = window.matchMedia("(display-mode: standalone)").matches;
+      if (!("serviceWorker" in navigator) || !("PushManager" in window) || typeof Notification === "undefined") {
+        return ios && !standalone ? "ios-install" : "unsupported";
+      }
+      if (Notification.permission === "denied") return "denied";
+      return (await currentSubscription()) ? "on" : "off";
+    };
+    check()
+      .then((s) => !cancelled && setState(s))
+      .catch(() => !cancelled && setState("off"));
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  useEffect(() => {
-    if (!on || permission !== "granted") return;
-    if (!seen.current) {
-      try {
-        seen.current = new Set(JSON.parse(localStorage.getItem(SEEN_KEY) || "[]"));
-      } catch {
-        seen.current = new Set();
-      }
-    }
-    let first = seen.current.size === 0;
-    const check = async () => {
-      try {
-        const res = await fetch(`${ENGINE_URL}/api/new-pools?max_age_hours=1&min_tvl=500`);
-        if (!res.ok) return;
-        const pools = ((await res.json()) as { pools: NewPool[] }).pools.filter((p) => p.token_kind === "new");
-        const known = seen.current!;
-        for (const p of pools) {
-          if (known.has(p.address)) continue;
-          known.add(p.address);
-          if (first) continue; // the first look only learns what already exists
-          const danger = (p.danger?.length ?? 0) >= 2;
-          const status = danger ? "☠ BERBAHAYA" : p.verdict === "ok" ? "✅ Lolos cek" : p.verdict === "pending" ? "⏳ Menunggu RugCheck" : "⛔ Tidak lolos";
-          const n = new Notification(`🐣 Pool token baru: ${p.name.replace("-", "/")}`, {
-            body: `${status} · TVL ${usdCompact.format(p.tvl)} · dibuat ${Math.max(1, Math.round(p.pool_age_hours * 60))} mnt lalu`,
-            tag: p.address,
-            icon: "/favicon.ico",
-          });
-          n.onclick = () => {
-            window.focus();
-            router.push(`/pool/${p.address}`);
-          };
-        }
-        first = false;
-        localStorage.setItem(SEEN_KEY, JSON.stringify([...known].slice(-500)));
-      } catch {
-        // offline for a moment: the next check catches up
-      }
-    };
-    void check();
-    const t = setInterval(check, EVERY_MS);
-    return () => clearInterval(t);
-  }, [on, permission, router]);
-
-  if (permission === "unsupported") return null;
-
-  const toggle = async () => {
-    if (on) {
-      setOn(false);
-      try {
-        localStorage.setItem(KEY, "0");
-      } catch {}
-      return;
-    }
-    const p = Notification.permission === "default" ? await Notification.requestPermission() : Notification.permission;
-    if (p !== "granted") return;
-    setOn(true);
+  const turnOn = async () => {
+    setState("busy");
     try {
-      localStorage.setItem(KEY, "1");
-    } catch {}
+      const reg = await navigator.serviceWorker.register("/sw.js", { scope: "/" });
+      await navigator.serviceWorker.ready;
+      const permission = await Notification.requestPermission();
+      if (permission !== "granted") return setState(permission === "denied" ? "denied" : "off");
+      const { public_key } = (await (await fetch(`${ENGINE_URL}/api/push/key`)).json()) as { public_key: string | null };
+      if (!public_key) return setState("off");
+      const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToBytes(public_key) as BufferSource });
+      await fetch(`${ENGINE_URL}/api/push/subscribe`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...sub.toJSON(), user_agent: navigator.userAgent }),
+      });
+      await fetch(`${ENGINE_URL}/api/push/test`, { method: "POST" });
+      setState("on");
+    } catch {
+      setState("off");
+    }
   };
 
-  const active = on && permission === "granted";
+  const turnOff = async () => {
+    setState("busy");
+    try {
+      const sub = await currentSubscription();
+      if (sub) {
+        await fetch(`${ENGINE_URL}/api/push/unsubscribe`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(sub.toJSON()),
+        });
+        await sub.unsubscribe();
+      }
+    } finally {
+      setState("off");
+    }
+  };
+
+  if (state === "unsupported") return null;
+  const active = state === "on";
+  const title = {
+    "ios-install": "Di iPhone: pasang quant ke layar utama dulu (Bagikan → Tambah ke Layar Utama), lalu buka dari ikonnya untuk menyalakan notifikasi",
+    denied: "Notifikasi diblokir browser: izinkan dulu di pengaturan situs",
+    off: "Nyalakan notifikasi pool token baru (tetap datang meski browser ditutup)",
+    on: "Notifikasi pool token baru aktif di perangkat ini (klik untuk matikan)",
+    busy: "Menyiapkan notifikasi…",
+  }[state];
+
   return (
     <button
       type="button"
-      onClick={toggle}
-      title={
-        permission === "denied"
-          ? "Notifikasi diblokir browser: izinkan dulu di pengaturan situs"
-          : active
-            ? "Notifikasi pool token baru: aktif (klik untuk matikan)"
-            : "Nyalakan notifikasi browser untuk pool dengan token baru"
-      }
+      onClick={() => (state === "on" ? turnOff() : state === "off" ? turnOn() : state === "ios-install" || state === "denied" ? window.alert(title) : undefined)}
+      title={title}
       aria-pressed={active}
-      className={`relative grid h-9 w-9 place-items-center rounded-lg border transition-colors ${
+      disabled={state === "busy"}
+      className={`relative grid h-9 w-9 place-items-center rounded-lg border transition-colors disabled:opacity-60 ${
         active ? "border-accent/50 bg-accent/10 text-accent" : "border-white/[0.06] bg-panel/60 text-ink-3 hover:border-line-strong hover:text-ink"
       }`}
     >

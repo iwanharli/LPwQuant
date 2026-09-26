@@ -18,7 +18,7 @@ from .charts import profile_decision
 from .panda import PandaPaper
 from .portfolio import snapshot_loop as portfolio_snapshot_loop
 from .position_alerts import PositionAlerts
-from . import lp_leaders
+from . import lp_leaders, web_push
 from .sol_grid import SolGrid
 from .brontosaurus import Brontosaurus
 from .copy_paper import CopyPaper
@@ -184,6 +184,7 @@ class Engine:
         self._tasks.append(asyncio.create_task(portfolio_snapshot_loop(self.db), name="portfolio_snapshots"))
         self._tasks.append(asyncio.create_task(PositionAlerts(self.db, lambda: self.rows).run(), name="position_alerts"))
         self._tasks.append(asyncio.create_task(lp_leaders.loop(self.db, lambda: self.rows), name="lp_leaders"))
+        self._tasks.append(asyncio.create_task(web_push.loop(self.db, lambda: self.rows), name="web_push"))
         self._tasks.append(asyncio.create_task(netpnl.refresh_loop(self.db), name="netpnl_refresh"))
         self._tasks.append(asyncio.create_task(netpnl.watch_new_transactions(self.db), name="netpnl_watch"))
         if config.PAPER_ENABLED:

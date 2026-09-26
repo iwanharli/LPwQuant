@@ -614,3 +614,16 @@ create table if not exists paper_bronto_runs (
   closed_at       timestamptz
 );
 create index if not exists paper_bronto_runs_status on paper_bronto_runs (status);
+
+-- Web Push (engine/app/web_push.py): browser/phone subscriptions, and the pools already announced.
+create table if not exists push_subscriptions (
+  endpoint    text primary key,
+  p256dh      text not null,
+  auth        text not null,
+  user_agent  text,
+  created_at  timestamptz not null default now()
+);
+create table if not exists push_sent (
+  address     text primary key,
+  sent_at     timestamptz not null
+);
