@@ -2,7 +2,7 @@
 
 import { useUrlState } from "../../lib/url-state";
 import { useAutoRefresh } from "../../lib/auto-refresh";
-import { Candidates, Funnel, type Candidate } from "../panda-page";
+import { Candidates, Funnel, Kpi, type Candidate } from "../panda-page";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { STRATEGY_LABEL, TIER_META } from "../../lib/flags";
 import {
@@ -102,17 +102,6 @@ function usePaperData(profile: string) {
     };
   }, [profile]);
   return { data, error };
-}
-
-function Tile({ label, value, hint }: { label: string; value: ReactNode; hint: ReactNode }) {
-  return (
-    <div className="relative min-w-0 overflow-hidden rounded-2xl border border-white/[0.06] bg-panel px-4 py-3.5 shadow-[0_12px_32px_rgba(0,0,0,0.18),inset_0_1px_0_rgba(255,255,255,0.04)]">
-      <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/14 to-transparent" />
-      <div className="text-xs font-medium text-ink-3">{label}</div>
-      <div className="mt-2 text-2xl font-semibold tracking-tight text-ink">{value}</div>
-      <div className="mt-1 truncate text-xs text-ink-3">{hint}</div>
-    </div>
-  );
 }
 
 function TierBadge({ tier }: { tier: Tier }) {
@@ -468,30 +457,9 @@ function ProfileTabs({
   );
 }
 
-function PositionsCard({
-  open,
-  closed,
-  profileLabel,
-  tab,
-}: {
-  open: PaperPosition[];
-  closed: PaperPosition[];
-  profileLabel?: string;
-  tab: "open" | "closed";
-}) {
+function PositionsCard({ open, closed, tab }: { open: PaperPosition[]; closed: PaperPosition[]; tab: "open" | "closed" }) {
   return (
-    <section className="overflow-hidden rounded-2xl border border-white/[0.06] bg-panel shadow-[0_14px_42px_rgba(0,0,0,0.20),inset_0_1px_0_rgba(255,255,255,0.04)]">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line bg-white/[0.02] px-4 py-3">
-        <div className="flex items-center gap-3">
-          <h2 className="text-sm font-semibold text-ink">
-            {tab === "open" ? "Posisi berjalan" : "Posisi selesai"}
-            {profileLabel ? <span className="font-normal text-ink-3"> · {profileLabel}</span> : null}
-          </h2>
-        </div>
-        <span className="text-xs text-ink-3">
-          {tab === "open" ? "Diperbarui tiap siklus engine" : "100 posisi terakhir"}
-        </span>
-      </div>
+    <section className="overflow-hidden rounded-2xl border border-white/[0.06] bg-panel">
       {tab === "open" ? <OpenTable positions={open} /> : <ClosedTable positions={closed} />}
     </section>
   );
@@ -636,41 +604,33 @@ export default function PaperPage({
           className={`space-y-5 transition-opacity ${loadingProfile ? "pointer-events-none opacity-50" : ""}`}
           aria-busy={loadingProfile}
         >
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-5">
-            <Tile
-              label="Equity virtual"
-              value={s ? usd.format(s.equity_usd) : "–"}
-              hint={s ? `${totalPnl >= 0 ? "+" : ""}${usd.format(totalPnl)} (${fmtSignedPct(totalPct, 2)}) dari ${usd.format(s.start_equity_usd)}` : "–"}
-            />
-            <Tile
-              label="PnL terealisasi (bersih)"
-              value={s ? usd.format(s.realized_usd) : "–"}
-              hint={
-                s ? `${s.closed_count} posisi ditutup · biaya ${usd.format(s.costs.closed_cost_usd)}` : "–"
-              }
-            />
-            <Tile
-              label="PnL belum terealisasi (bersih)"
-              value={s ? usd.format(s.unrealized_usd) : "–"}
-              hint={
-                s
-                  ? `${s.open_count} terbuka · biaya ${usd.format(s.costs.open_cost_usd)} · rent ${s.costs.rent_locked_sol.toFixed(2)} SOL`
-                  : "–"
-              }
-            />
-            <Tile
-              label="Win rate"
-              value={s?.overall.trades ? fmtPct(s.overall.win_rate_pct) : "–"}
-              hint={s?.started_at ? `Sejak ${fmtDateTime(s.started_at)} WIB` : "Belum ada trade"}
-            />
-            <Tile
-              label="Rata-rata return / trade"
-              value={s?.overall.trades ? fmtSignedPct(s.overall.mean_return_pct, 2) : "–"}
-              hint={s?.overall.trades ? `95% CI ${ciText(s.overall)}` : "Butuh posisi yang sudah ditutup"}
-            />
-          </div>
+          <section className="overflow-hidden rounded-2xl border border-white/[0.06] bg-panel">
+            <div className="grid grid-cols-2 gap-px bg-line/40 sm:grid-cols-4">
+              <Kpi
+                label="Hasil bersih"
+                value={s ? `${totalPnl >= 0 ? "+" : "−"}${usd.format(Math.abs(totalPnl))}` : "–"}
+                hint={s ? `terealisasi ${usd.format(s.realized_usd)} · berjalan ${usd.format(s.unrealized_usd)}` : undefined}
+                cls={s ? (totalPnl > 0 ? "text-emerald-300" : totalPnl < 0 ? "text-rose-300" : undefined) : undefined}
+              />
+              <Kpi
+                label="Rata-rata per trade"
+                value={s?.overall.trades ? fmtSignedPct(s.overall.mean_return_pct, 2) : "–"}
+                hint={s?.overall.trades ? `95% CI ${ciText(s.overall)}` : "butuh posisi yang sudah ditutup"}
+              />
+              <Kpi
+                label="Win rate"
+                value={s?.overall.trades ? fmtPct(s.overall.win_rate_pct) : "–"}
+                hint={s ? `${s.open_count} posisi berjalan` : undefined}
+              />
+              <Kpi
+                label="Equity virtual"
+                value={s ? usd.format(s.equity_usd) : "–"}
+                hint={s ? `modal awal ${usd.format(s.start_equity_usd)} · ${fmtSignedPct(totalPct, 2)}` : undefined}
+              />
+            </div>
+          </section>
 
-          <div className="flex gap-1 overflow-x-auto border-b border-line" role="tablist" aria-label="Detail profil">
+          <div className="flex flex-wrap gap-1 border-b border-line" role="tablist" aria-label="Detail profil">
             {LP_VIEWS.map((v) => (
               <button
                 key={v}
@@ -678,7 +638,7 @@ export default function PaperPage({
                 role="tab"
                 aria-selected={view === v}
                 onClick={() => setView(v)}
-                className={`-mb-px shrink-0 border-b-2 px-4 py-2.5 text-sm font-medium transition-colors ${
+                className={`-mb-px border-b-2 px-4 py-2.5 text-sm font-medium transition-colors ${
                   view === v ? "border-accent text-ink" : "border-transparent text-ink-3 hover:text-ink-2"
                 }`}
               >
@@ -693,34 +653,37 @@ export default function PaperPage({
             <PositionsCard
               open={data?.open ?? []}
               closed={data?.closed ?? []}
-              profileLabel={s?.profile?.label}
               tab={view === "berjalan" ? "open" : "closed"}
             />
           )}
           {view === "selesai" && <ResultsCard summary={s} profileLabel={s?.profile?.label} />}
           {view === "seleksi" && <ProfileScreen profile={profile} />}
-          {view === "aturan" && s && <ProfileRules summary={s} />}
+          {view === "aturan" && s && (
+            <div className="space-y-5">
+              <ProfileRules summary={s} />
+        <p className="rounded-2xl border border-white/[0.06] bg-panel px-4 py-3 text-sm leading-6 text-ink-3">
+                Simulasi: likuiditas rata di semua bin, fee dari fee/TVL 1 jam pool.
+                {s?.costs.enabled ? (
+                  <>
+                    {" "}
+                    Biaya: {s.costs.txs_per_position} transaksi per posisi × {s.costs.tx_cost_sol} SOL, swap (fee pool + price
+                    impact ×{s.costs.impact_multiplier}) saat masuk dan keluar, rent posisi {s.costs.position_rent_sol.toFixed(4)}{" "}
+                    SOL dikunci lalu kembali
+                    {s.costs.new_bin_array_share > 0
+                      ? `, rent bin array baru ${Math.round(s.costs.new_bin_array_share * 100)}%`
+                      : ", bin array diasumsikan sudah ada"}
+                    .
+                  </>
+                ) : (
+                  " Biaya transaksi dan slippage tidak dihitung (PAPER_COSTS_ENABLED=false)."
+                )}{" "}
+                Bukan saran finansial.
+              </p>
+            </div>
+          )}
         </div>
 
 
-        <p className="pb-2 text-center text-xs leading-5 text-ink-3">
-          Simulasi: likuiditas rata di semua bin, fee dari fee/TVL 1 jam pool.
-          {s?.costs.enabled ? (
-            <>
-              {" "}
-              Biaya: {s.costs.txs_per_position} transaksi per posisi × {s.costs.tx_cost_sol} SOL, swap (fee pool + price
-              impact ×{s.costs.impact_multiplier}) saat masuk dan keluar, rent posisi {s.costs.position_rent_sol.toFixed(4)}{" "}
-              SOL dikunci lalu kembali
-              {s.costs.new_bin_array_share > 0
-                ? `, rent bin array baru ${Math.round(s.costs.new_bin_array_share * 100)}%`
-                : ", bin array diasumsikan sudah ada"}
-              .
-            </>
-          ) : (
-            " Biaya transaksi dan slippage tidak dihitung (PAPER_COSTS_ENABLED=false)."
-          )}{" "}
-          Bukan saran finansial.
-        </p>
     </>
   );
   if (embedded) return <div className="space-y-5">{body}</div>;

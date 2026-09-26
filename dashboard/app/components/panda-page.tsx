@@ -77,7 +77,7 @@ const REASON: Record<string, { label: string; cls: string }> = {
 const money = (v: number) => `${v >= 0 ? "+" : "−"}${usd.format(Math.abs(v))}`;
 const tone = (v: number) => (v > 0 ? "text-emerald-300" : v < 0 ? "text-rose-300" : "text-ink-2");
 
-function Kpi({ label, value, hint, cls }: { label: string; value: string; hint?: string; cls?: string }) {
+export function Kpi({ label, value, hint, cls }: { label: string; value: string; hint?: string; cls?: string }) {
   return (
     <div className="bg-panel px-4 py-3.5">
       <div className="text-[11px] font-medium uppercase tracking-[0.08em] text-ink-3">{label}</div>
