@@ -419,6 +419,21 @@ function ResultsCard({ summary: s, profileLabel }: { summary: PaperSummary | und
           <h2 className="text-sm font-semibold text-ink">
             Hasil trading{profileLabel ? <span className="font-normal text-ink-3"> · {profileLabel}</span> : null}
           </h2>
+          <div role="tablist" className="flex rounded-xl border border-white/[0.08] bg-bg/80 p-1 shadow-inner shadow-black/20">
+            {tabs.map((t) => (
+              <button
+                key={t.id}
+                role="tab"
+                aria-selected={tab === t.id}
+                onClick={() => setTab(t.id)}
+                className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
+                  tab === t.id ? "bg-raised text-ink shadow-sm shadow-black/25" : "text-ink-3 hover:bg-raised/50 hover:text-ink-2"
+                }`}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
         </div>
         <span className="text-xs text-ink-3">Posisi yang sudah ditutup · CI bootstrap per jam entry</span>
       </div>
