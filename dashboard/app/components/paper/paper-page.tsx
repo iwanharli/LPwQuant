@@ -4,7 +4,8 @@ import Link from "next/link";
 import { useUrlState } from "../../lib/url-state";
 import { useAutoRefresh } from "../../lib/auto-refresh";
 import { EXIT_TONE } from "../../lib/exit-status";
-import { Kpi, SelectionView, type Candidate } from "../panda-page";
+import { Kpi, SelectionView, StrategyNotes, type Candidate } from "../panda-page";
+import { STRATEGY_NOTES } from "../../lib/strategy-notes";
 import { Fragment, useCallback, useEffect, useState, type ReactNode } from "react";
 import { STRATEGY_LABEL, TIER_META } from "../../lib/flags";
 import {
@@ -434,13 +435,14 @@ function LpTable({ positions, empty }: { positions: PaperPosition[]; empty: stri
   );
 }
 
-const LP_VIEWS = ["berjalan", "selesai", "seleksi", "aturan"] as const;
+const LP_VIEWS = ["berjalan", "selesai", "seleksi", "aturan", "catatan"] as const;
 type LpView = (typeof LP_VIEWS)[number];
 const LP_VIEW_LABEL: Record<LpView, string> = {
   berjalan: "Berjalan",
   selesai: "Selesai",
   seleksi: "Seleksi Pool",
   aturan: "Aturan",
+  catatan: "Catatan",
 };
 
 type ScreenData = { updated_at: number | null; funnel: Record<string, number>; pools: Candidate[]; rejected?: Record<string, Candidate[]> };
@@ -579,7 +581,7 @@ export default function PaperPage({
         {!s && !error && (
           <>
             <SkeletonStrip count={4} />
-            <SkeletonTabs count={4} />
+            <SkeletonTabs count={5} />
             <SkeletonTable rows={5} columns={7} title={false} />
           </>
         )}
@@ -638,6 +640,7 @@ export default function PaperPage({
           {view === "selesai" && <LpTable positions={data?.closed ?? []} empty="Belum ada posisi yang selesai." />}
           {view === "selesai" && <ResultsCard summary={s} profileLabel={s?.profile?.label} />}
           {view === "seleksi" && <ProfileScreen data={screen} />}
+          {view === "catatan" && <StrategyNotes note={STRATEGY_NOTES[profile]} />}
           {view === "aturan" && s && (
             <div className="space-y-5">
               <ProfileRules summary={s} />

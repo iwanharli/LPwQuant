@@ -4,7 +4,8 @@ import { useCallback, useEffect, useState } from "react";
 import { useAutoRefresh } from "../../lib/auto-refresh";
 import { ENGINE_URL, fmtDateTime, fmtNum, usd } from "../../lib/format";
 import { SkeletonStrip, SkeletonTable, SkeletonTabs } from "../skeleton";
-import { Kpi } from "../panda-page";
+import { Kpi, StrategyNotes } from "../panda-page";
+import { STRATEGY_NOTES } from "../../lib/strategy-notes";
 import { EXIT_TONE } from "../../lib/exit-status";
 import { useUrlState } from "../../lib/url-state";
 
@@ -43,14 +44,14 @@ export default function SolGrid() {
   }, []);
   useAutoRefresh(load, 30_000);
   useEffect(load, [load]);
-  const [view, setView] = useUrlState<"berjalan" | "selesai" | "aturan">("grid", "berjalan", ["berjalan", "selesai", "aturan"]);
+  const [view, setView] = useUrlState<"berjalan" | "selesai" | "aturan" | "catatan">("grid", "berjalan", ["berjalan", "selesai", "aturan", "catatan"]);
 
   if (!r && error) return <p className="rounded-2xl border border-white/[0.06] bg-panel px-4 py-8 text-sm text-ink-3">Engine tidak bisa dihubungi.</p>;
   if (!r)
     return (
       <>
         <SkeletonStrip count={4} />
-        <SkeletonTabs count={3} />
+        <SkeletonTabs count={4} />
         <SkeletonTable rows={5} columns={5} title={false} />
       </>
     );
@@ -82,6 +83,7 @@ export default function SolGrid() {
             { value: "berjalan", label: `Berjalan (${holding})` },
             { value: "selesai", label: `Selesai (${r.round_trips})` },
             { value: "aturan", label: "Aturan" },
+            { value: "catatan", label: "Catatan" },
           ] as const
         ).map((o) => (
           <button
@@ -173,6 +175,8 @@ export default function SolGrid() {
             </div>
           </section>
         ))}
+
+      {view === "catatan" && <StrategyNotes note={STRATEGY_NOTES.sol_grid} />}
 
       {view === "aturan" && (
         <div className="space-y-5">

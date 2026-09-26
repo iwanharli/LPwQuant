@@ -5,6 +5,7 @@ import { Fragment, useCallback, useEffect, useState } from "react";
 import { ENGINE_URL, fmtDateTime, fmtNum, usd, usdCompact } from "../lib/format";
 import { useUrlState } from "../lib/url-state";
 import { EXIT_TONE } from "../lib/exit-status";
+import { STRATEGY_NOTES, type StrategyNote } from "../lib/strategy-notes";
 import { useAutoRefresh } from "../lib/auto-refresh";
 import PageHeader from "./page-header";
 import TopBar from "./top-bar";
@@ -91,8 +92,8 @@ export function Kpi({ label, value, hint, cls }: { label: string; value: string;
 }
 
 /** Paper test of the Panda Strat, with the screening funnel that the strategy itself calls 70% of the work. */
-type View = "running" | "done" | "funnel" | "rules";
-const VIEWS = ["running", "done", "funnel", "rules"] as const;
+type View = "running" | "done" | "funnel" | "rules" | "notes";
+const VIEWS = ["running", "done", "funnel", "rules", "notes"] as const;
 
 function Rules({ p, approximations }: { p: Report["params"]; approximations: string[] }) {
   // Same card as the LP profiles' Aturan: entry on the left, exit on the right, notes underneath.
@@ -512,7 +513,7 @@ export default function PandaPage({ embedded = false }: { embedded?: boolean }) 
         {!r && !error && (
           <>
             <SkeletonStrip count={4} />
-            <SkeletonTabs count={4} />
+            <SkeletonTabs count={5} />
             <SkeletonTable rows={5} columns={6} title={false} />
           </>
         )}
@@ -548,6 +549,7 @@ export default function PandaPage({ embedded = false }: { embedded?: boolean }) 
                   { value: "done", label: `Selesai (${closed})` },
                   { value: "funnel", label: `Seleksi Pool (${r.screening_funnel.lolos ?? 0} lolos)` },
                   { value: "rules", label: "Aturan" },
+                  { value: "notes", label: "Catatan" },
                 ] as const
               ).map((o) => (
                 <button
@@ -577,6 +579,7 @@ export default function PandaPage({ embedded = false }: { embedded?: boolean }) 
               />
             )}
             {view === "rules" && <Rules p={p} approximations={r.approximations} />}
+            {view === "notes" && <StrategyNotes note={STRATEGY_NOTES.panda} />}
           </>
         )}
     </>
@@ -589,6 +592,50 @@ export default function PandaPage({ embedded = false }: { embedded?: boolean }) 
         {header}
         {body}
       </main>
+    </div>
+  );
+}
+
+/** The Catatan sub-tab: written strengths, weaknesses and next steps for one strategy. */
+export function StrategyNotes({ note }: { note: StrategyNote | undefined }) {
+  if (!note) return <p className="rounded-2xl border border-white/[0.06] bg-panel px-4 py-10 text-center text-sm text-ink-3">Belum ada catatan.</p>;
+  const blocks = [
+    { title: "Kelebihan", items: note.pros, dot: "bg-emerald-400" },
+    { title: "Kekurangan", items: note.cons, dot: "bg-rose-400" },
+  ];
+  return (
+    <div className="space-y-5">
+      <section className="grid gap-4 rounded-2xl border border-white/[0.06] bg-panel p-4 md:grid-cols-2">
+        {blocks.map((b) => (
+          <div key={b.title}>
+            <h3 className="text-base font-semibold text-ink">{b.title}</h3>
+            <ul className="mt-2 space-y-2 text-sm leading-6 text-ink-2">
+              {b.items.map((t) => (
+                <li key={t} className="flex gap-2">
+                  <span className={`mt-2.5 h-1.5 w-1.5 shrink-0 rounded-full ${b.dot}`} aria-hidden />
+                  <span>{t}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+      </section>
+      <section className="rounded-2xl border border-accent/25 bg-accent/[0.05] p-4">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <h3 className="text-base font-semibold text-ink">Saran update strategi</h3>
+          <span className="text-xs text-ink-3">
+            ditulis {note.written} · dasar: {note.basis}
+          </span>
+        </div>
+        <ol className="mt-3 space-y-2 text-sm leading-6 text-ink-2">
+          {note.next.map((t, i) => (
+            <li key={t} className="flex gap-3">
+              <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-accent/15 text-xs font-bold text-accent">{i + 1}</span>
+              <span>{t}</span>
+            </li>
+          ))}
+        </ol>
+      </section>
     </div>
   );
 }
