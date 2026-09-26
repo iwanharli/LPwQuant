@@ -163,6 +163,11 @@ async def refresh(db, rows: dict[str, dict[str, Any]]) -> int:
 
 async def loop(db, rows) -> None:
     await asyncio.sleep(120)  # let the screener fill first
+    # A restart must not start a fresh scan when the last one is recent: each scan is 40 heavy RPC calls and a
+    # few thousand Meteora calls, and restarts on 2026-09-26 repeated it until Helius rate-limited the key.
+    last = await db.fetchval("select extract(epoch from now() - max(updated_at)) from lp_leaders")
+    if last is not None and last < RUN_EVERY_S:
+        await asyncio.sleep(RUN_EVERY_S - float(last))
     while True:
         try:
             await refresh(db, rows())
