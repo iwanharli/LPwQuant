@@ -365,8 +365,8 @@ function LpTable({ positions, empty }: { positions: PaperPosition[]; empty: stri
                     <td className="px-3 py-2.5">
                       <span className={`whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium ${st.cls}`}>{st.label}</span>
                       {x.fee_pct / Math.max(x.hold_hours, 1) >= 3 && (
-                        <div className="mt-1 text-[11px] text-amber-300" title="Fee lebih dari 3% modal per jam: lonjakan sesaat atau kesalahan data">
-                          ⚠ fee tak wajar
+                        <div className="mt-1 text-[11px] text-amber-300" title="Fee lebih dari 3% modal per jam, biasanya dari lonjakan volume sesaat: sah, tapi jarang terulang">
+                          ⚡ fee lonjakan volume
                         </div>
                       )}
                     </td>

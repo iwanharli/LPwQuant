@@ -216,9 +216,9 @@ function Summary({ data, error, onOpen }: { data: Overview | null; error: boolea
                       {!!s.odd_fee_count && s.pnl_without_odd_usd != null && (
                         <div
                           className="mt-0.5 text-[11px] text-amber-300"
-                          title="Posisi dengan fee lebih dari 3% modal per jam: bisa lonjakan sesaat yang jarang terulang, atau kesalahan data"
+                          title="Posisi dengan fee lebih dari 3% modal per jam, biasanya dari lonjakan volume sesaat: sah, tapi jarang terulang"
                         >
-                          ⚠ tanpa {s.odd_fee_count} fee tak wajar: {money(s.pnl_without_odd_usd)}
+                          ⚡ tanpa {s.odd_fee_count} posisi lonjakan: {money(s.pnl_without_odd_usd)}
                         </div>
                       )}
                     </td>
