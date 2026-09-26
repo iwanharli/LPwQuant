@@ -244,7 +244,7 @@ function Funnel({ funnel }: { funnel: Record<string, number> }) {
   const passed = funnel.lolos ?? 0;
   return (
     <section className="rounded-2xl border border-white/[0.06] bg-panel p-4">
-      <h2 className="text-base font-semibold text-ink">Corong seleksi · {total} pool dicek sekarang</h2>
+      <h2 className="text-base font-semibold text-ink">Seleksi Pool · {total} pool dicek sekarang</h2>
       <p className="mt-0.5 text-sm text-ink-3">Panda menyebut seleksi sebagai 70% pekerjaannya. Ini alasan tiap pool gugur.</p>
       <div className="mt-3 flex items-center justify-between gap-3 rounded-xl border border-emerald-400/25 bg-emerald-400/[0.07] px-3 py-2.5">
         <span className="text-sm font-medium text-emerald-300">Lolos semua filter</span>
@@ -473,7 +473,7 @@ export default function PandaPage({ embedded = false }: { embedded?: boolean }) 
                 [
                   { value: "running", label: `Berjalan${open ? ` (${open})` : ""}` },
                   { value: "done", label: `Selesai${closed ? ` (${closed})` : ""}` },
-                  { value: "funnel", label: "Corong seleksi" },
+                  { value: "funnel", label: "Seleksi Pool" },
                   { value: "rules", label: "Aturan" },
                 ] as const
               ).map((o) => (
