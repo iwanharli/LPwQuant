@@ -24,6 +24,7 @@ import type {
 import { isActivePlan, type ActivePlan } from "../../lib/types";
 import BusyHours from "../busy-hours";
 import EntryCheck from "./entry-check";
+import DangerBanner from "../danger-banner";
 import HoldersMap from "./holders-map";
 import TopBar from "../top-bar";
 import PumpWarning from "../pump-warning";
@@ -333,6 +334,7 @@ export default function PoolPage({ address }: { address: string }) {
           )}
         </div>
 
+        {pool && <DangerBanner signs={pool.danger} />}
         {pool && <PumpWarning changePct1h={pool.change_pct_1h} />}
 
         {detail.error && (

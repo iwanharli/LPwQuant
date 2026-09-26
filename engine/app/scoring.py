@@ -23,7 +23,7 @@ QUOTE_MINTS = {
 
 # Flags severe enough that the dashboard hides them by default and plans say "avoid".
 RISKY_FLAGS = {"rugged", "mint_authority", "freeze_authority", "rugcheck_danger", "dumping", "pumping", "tvl_suspect",
-               "transfer_fee"}
+               "transfer_fee", "suspicious_pool"}
 # A Token-2022 transfer fee is paid on every move: deposit, withdrawal, fee claim and swap. From this rate on, an LP
 # round trip loses more than a day of fees in most pools.
 TRANSFER_FEE_RISKY_PCT = 1.0

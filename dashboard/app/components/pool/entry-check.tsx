@@ -16,6 +16,7 @@ const LEVEL = {
 function checks(pool: PoolRow): Check[] {
   const out: Check[] = [];
   const s = (pool.security ?? {}) as NonNullable<PoolRow["security"]>;
+  if ((pool.danger?.length ?? 0) >= 2) for (const d of pool.danger ?? []) out.push({ level: "stop", text: `Mencurigakan: ${d}` });
   const change = pool.change_pct_1h;
   if (change != null && change >= PUMP_WARN_PCT) out.push({ level: "stop", text: `Sedang pump +${fmtNum(change, 0)}%/1 jam: posisi akan membeli token saat harga turun lagi` });
   else if (change != null && change <= -15) out.push({ level: "stop", text: `Sedang dump ${fmtNum(change, 0)}%/1 jam` });
@@ -24,7 +25,7 @@ function checks(pool: PoolRow): Check[] {
   else if (s.transfer_fee_mutable) out.push({ level: "warn", text: "Pajak transfer 0%, tapi pemilik token masih bisa menaikkannya" });
 
   for (const f of pool.flags) {
-    if (RISKY_FLAGS.has(f) && !["pumping", "dumping", "transfer_fee"].includes(f)) out.push({ level: "stop", text: flagMeta(f).title });
+    if (RISKY_FLAGS.has(f) && !["pumping", "dumping", "transfer_fee", "suspicious_pool"].includes(f)) out.push({ level: "stop", text: flagMeta(f).title });
   }
   if (s.cluster_pct != null && s.cluster_pct >= 5) {
     out.push({

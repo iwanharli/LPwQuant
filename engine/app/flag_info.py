@@ -29,17 +29,22 @@ FLAGS: dict[str, Flag] = {
     "mint_authority": Flag("Mint aktif", "Mint authority masih aktif: supply bisa dicetak lagi kapan saja.", "critical"),
     "freeze_authority": Flag("Freeze aktif", "Freeze authority aktif: token di wallet kamu bisa dibekukan.", "critical"),
     "cluster_10": Flag(
-        "Kelompok ≥10%", "Wallet yang saling transfer token ini memegang ≥10% supply: bisa jual serentak.", "serious"
+        "Kelompok ≥10%", "Wallet yang saling terhubung memegang ≥10% supply.", "serious"
     ),
-    "cluster_5": Flag("Kelompok ≥5%", "Wallet yang saling transfer token ini memegang 5–10% supply.", "warning"),
+    "cluster_5": Flag("Kelompok ≥5%", "Wallet terhubung memegang 5–10% supply.", "warning"),
+    "suspicious_pool": Flag(
+        "Sangat mencurigakan",
+        "Tanda pool buatan pemilik token: holder sedikit, supply terpusat, tanpa harga pasar.",
+        "critical",
+    ),
     "transfer_fee": Flag(
         "Pajak transfer",
-        "Token Token-2022 dengan pajak transfer ≥1%: dipotong setiap token masuk/keluar posisi, klaim fee, dan swap.",
+        "Pajak ≥1% tiap transfer: masuk/keluar posisi, klaim, swap.",
         "critical",
     ),
     "transfer_fee_low": Flag("Pajak transfer kecil", "Token memotong <1% setiap transfer.", "warning"),
     "transfer_fee_mutable": Flag(
-        "Pajak bisa dinaikkan", "Pajak transfer 0% sekarang, tapi pemilik token masih bisa menaikkannya.", "warning"
+        "Pajak bisa dinaikkan", "Pajak 0% tapi bisa dinaikkan pemilik token.", "warning"
     ),
     "rugcheck_danger": Flag("RugCheck danger", "RugCheck menemukan risiko level danger.", "critical"),
     "dumping": Flag("Dump", "Harga turun ≥15% dalam 1 jam.", "critical"),

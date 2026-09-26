@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { ENGINE_URL, fmtNum, fmtSignedPct, usdCompact } from "../lib/format";
 import { flagMeta } from "../lib/flags";
+import DangerBanner from "./danger-banner";
 import PumpWarning from "./pump-warning";
 import TopBar from "./top-bar";
 import PageHeader from "./page-header";
@@ -28,6 +29,7 @@ type NewPool = {
   holders: number | null;
   top10_pct: number | null;
   flags: string[];
+  danger?: string[];
   pool_age_hours: number;
   token_age_hours: number | null;
   token_kind: "new" | "old" | null;
@@ -187,6 +189,7 @@ export default function NewPoolsPage() {
                       </Link>
                       <div className="mt-0.5 empty:hidden">
                         <PumpWarning changePct1h={p.change_pct_1h} compact />
+                        <DangerBanner signs={p.danger} compact />
                       </div>
                       {p.token_kind && (
                         <span

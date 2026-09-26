@@ -52,6 +52,33 @@ def _clean(value: Any) -> Any:
     return value
 
 
+DANGER_MIN_SIGNS = 2  # this many signs at once make a pool "sangat mencurigakan"
+
+
+def danger_signs(row: dict[str, Any], security: dict[str, Any] | None) -> list[str]:
+    """Plain-language signs that a pool is a creator's own setup rather than a real market (found on 2026-09-26 in
+    $Fermah-USDC and NOTE-USDC: 2 holders, 99% held by one wallet, no price anywhere else, a made-up $1 price)."""
+    from .alerts import top10_pct
+
+    signs = []
+    holders = row.get("holders")
+    if holders is not None and holders < 20:
+        signs.append(f"hanya {holders} pemegang token")
+    top10 = top10_pct(row)
+    if top10 is not None and top10 >= 95:
+        signs.append(f"10 pemegang teratas menguasai {top10:.0f}% supply")
+    mc = row.get("market_cap")
+    if mc is not None and mc <= 0:
+        signs.append("token tidak punya harga di pasar lain (market cap $0); harga di pool bisa karangan pembuatnya")
+    tvl, vol = row.get("tvl") or 0, row.get("volume_24h") or 0
+    if tvl > 1000 and vol < tvl * 0.01:
+        signs.append(f"TVL ${tvl:,.0f} tapi hampir tanpa transaksi (volume 24 jam ${vol:,.0f})")
+    risks = " ".join(str(r) for r in (security or {}).get("risks", []))
+    if "Copycat" in risks:
+        signs.append("RugCheck: nama/simbol meniru token lain")
+    return signs
+
+
 NEW_TOKEN_HOURS = 24  # a pool whose token launched within this counts as "new token", else "old token"
 
 
@@ -537,6 +564,10 @@ class Engine:
             },
             **scored,
         }
+        danger = danger_signs(row, security)
+        row["danger"] = danger
+        if len(danger) >= DANGER_MIN_SIGNS and "suspicious_pool" not in row["flags"]:
+            row["flags"] = [*row["flags"], "suspicious_pool"]
         row["best"] = self._best_decision(row)
         return {k: _clean(v) for k, v in row.items()}
 

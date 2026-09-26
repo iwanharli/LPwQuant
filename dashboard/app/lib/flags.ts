@@ -12,6 +12,7 @@ export const RISKY_FLAGS = new Set([
   "pumping",
   "tvl_suspect",
   "transfer_fee",
+  "suspicious_pool",
 ]);
 
 type FlagMeta = { label: string; title: string; severity: Severity };
@@ -20,6 +21,11 @@ const FLAG_META: Record<string, FlagMeta> = {
   rugged: { label: "Rugged", title: "RugCheck menandai token ini sudah rug", severity: "critical" },
   mint_authority: { label: "Mint aktif", title: "Mint authority aktif: supply bisa dicetak lagi", severity: "critical" },
   freeze_authority: { label: "Freeze aktif", title: "Freeze authority aktif: token bisa dibekukan", severity: "critical" },
+  suspicious_pool: {
+    label: "☠ Sangat mencurigakan",
+    title: "Beberapa tanda pool buatan pemilik token sekaligus: pemegang sangat sedikit, supply terpusat, tanpa harga pasar, atau TVL tanpa transaksi",
+    severity: "critical",
+  },
   cluster_10: {
     label: "Kelompok ≥10%",
     title: "Wallet yang saling transfer token ini memegang ≥10% supply: bisa jual serentak. Lihat peta pemegang",

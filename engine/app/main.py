@@ -256,6 +256,7 @@ async def new_pools(max_age_hours: float = Query(1.0, gt=0, le=24), min_tvl: flo
             "top10_pct": top10_pct(row),
             "token_age_hours": row.get("token_age_hours"),
             "token_kind": token_kind(row),
+            "danger": row.get("danger") or [],
             "verdict": "pending" if pending else ("ok" if ok else "blocked"),
             "reason": reason,
         })

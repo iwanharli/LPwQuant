@@ -5,6 +5,7 @@ import { binStepPct, fmtAge, fmtPct, fmtPrice, usdCompact } from "../lib/format"
 import { type BestDecision, isActivePlan, type ConnectionStatus, type PoolRow, type SortKey } from "../lib/types";
 import { CandleIcon, ExternalLinkIcon } from "./icons";
 import { Delta, FlagChips, PlanBadge, RegimeBadge, ScoreCell, TokenAvatar } from "./ui";
+import DangerBanner from "./danger-banner";
 import PumpWarning from "./pump-warning";
 
 /**
@@ -276,6 +277,7 @@ export default function PoolTable({
                         </span>
                         {/* Where the choice is made: the trap that cost ACAT and JEANPHIL, flagged on the row itself. */}
                         <PumpWarning changePct1h={p.change_pct_1h} compact />
+                        <DangerBanner signs={p.danger} compact />
                       </div>
                       <div className="flex items-center gap-1.5 whitespace-nowrap text-[11px] text-ink-3">
                         <span>Fee {p.base_fee_pct}%</span>
