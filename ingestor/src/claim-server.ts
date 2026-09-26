@@ -832,17 +832,27 @@ export function startClaimServer(port = config.claimPort, allowed = config.dashb
       const program = new PublicKey(LBCLMM_PROGRAM_IDS["mainnet-beta"]);
       const owners: Record<string, string[]> = {};
       for (const pool of pools) {
-        try {
-          const accounts = await rpc().getProgramAccounts(program, {
-            filters: [positionLbPairFilter(new PublicKey(pool))],
-            dataSlice: { offset: 40, length: 32 }, // PositionV2: discriminator (8), lb_pair (32), owner (32)
-          });
-          owners[pool] = [...new Set(accounts.map((a) => new PublicKey(a.account.data).toBase58()))];
-        } catch (err) {
-          owners[pool] = [];
-          console.warn(`[lp-owners] ${pool.slice(0, 6)}: ${err instanceof Error ? err.message : err}`);
+        // getProgramAccounts is a heavy call: Helius answers 429 when they come too fast. Back off and retry
+        // instead of silently dropping the pool (half of them were lost that way on the first run).
+        for (let attempt = 0; attempt < 5; attempt++) {
+          try {
+            const accounts = await rpc().getProgramAccounts(program, {
+              filters: [positionLbPairFilter(new PublicKey(pool))],
+              dataSlice: { offset: 40, length: 32 }, // PositionV2: discriminator (8), lb_pair (32), owner (32)
+            });
+            owners[pool] = [...new Set(accounts.map((a) => new PublicKey(a.account.data).toBase58()))];
+            break;
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            if (!/429|Too Many/i.test(msg) || attempt === 4) {
+              owners[pool] = [];
+              console.warn(`[lp-owners] ${pool.slice(0, 6)}: ${msg}`);
+              break;
+            }
+            await new Promise((resolve) => setTimeout(resolve, 3000 * 2 ** attempt));
+          }
         }
-        await new Promise((resolve) => setTimeout(resolve, 300));
+        await new Promise((resolve) => setTimeout(resolve, 1500));
       }
       return send(res, 200, { owners }, origin);
     }

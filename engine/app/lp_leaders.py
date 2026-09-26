@@ -25,8 +25,8 @@ log = logging.getLogger("lp_leaders")
 
 RUN_EVERY_S = 6 * 3600
 POOLS = 40  # busiest screener pools to collect LP wallets from
-MAX_CANDIDATES = 500
-MAX_DEEP = 80  # wallets whose positions are read one by one
+MAX_CANDIDATES = 2000
+MAX_DEEP = 200  # wallets whose positions are read one by one
 POOLS_PER_WALLET = 25  # most recent pools per wallet, for the position statistics
 GAP_S = 0.15
 # The criteria a wallet must meet to be worth following (shown on the page as the "Layak diikuti" badge).
@@ -118,13 +118,13 @@ async def refresh(db, rows: dict[str, dict[str, Any]]) -> int:
     if not busy:
         return 0
     url = f"{config.CLAIM_SERVER_URL}/lp-owners?{urllib.parse.urlencode({'pools': ','.join(r['address'] for r in busy)})}"
-    owners = (await asyncio.to_thread(_get_json, url, 300)).get("owners") or {}
+    owners = (await asyncio.to_thread(_get_json, url, 1200)).get("owners") or {}
     seen: dict[str, int] = {}
     for ws in owners.values():
         for w in ws:
             seen[w] = seen.get(w, 0) + 1
     candidates = sorted(seen, key=lambda w: -seen[w])[:MAX_CANDIDATES]
-    log.info("lp leaders: %d wallets in %d pools", len(candidates), len(owners))
+    log.info("lp leaders: %d wallets in %d of %d pools", len(candidates), sum(1 for ws in owners.values() if ws), len(owners))
 
     totals: list[tuple[str, dict[str, Any]]] = []
     for w in candidates:
