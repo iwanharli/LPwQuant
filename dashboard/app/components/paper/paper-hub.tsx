@@ -307,6 +307,9 @@ export default function PaperHub() {
     { key: "sol", label: TAB_LABEL.sol, kind: "order" },
   ];
   const isProfile = PROFILE_TABS.includes(tab);
+  // Open positions per tab, from the overview: a profile by its key, the others by their tab.
+  const openBy: Record<string, number> = {};
+  for (const st of data?.strategies ?? []) openBy[st.profile ?? st.tab] = st.open;
   const subtitle = isProfile ? TAB_SUBTITLE.lp : TAB_SUBTITLE[(TABS as readonly string[]).includes(tab) ? (tab as Tab) : "ringkasan"];
 
   return (
@@ -330,12 +333,16 @@ export default function PaperHub() {
               {t.label}
               {t.kind && (
                 <span
-                  title={t.kind === "lp" ? "Strategi LP: posisi likuiditas DLMM" : "Strategi limit order, bukan posisi LP"}
-                  className={`rounded px-1.5 py-px text-[10px] font-semibold uppercase tracking-wider ${
-                    t.kind === "lp" ? "bg-accent/15 text-accent" : "bg-sky-400/15 text-sky-300"
+                  title={`${t.kind === "lp" ? "Strategi LP: posisi likuiditas DLMM" : "Strategi limit order, bukan posisi LP"}${
+                    openBy[t.key] ? ` · ${openBy[t.key]} posisi aktif` : ""
                   }`}
+                  className={`inline-flex items-center gap-1 rounded px-1.5 py-px text-[10px] font-semibold uppercase tracking-wider ${
+                    t.kind === "lp" ? "bg-accent/15 text-accent" : "bg-sky-400/15 text-sky-300"
+                  } ${openBy[t.key] ? "live-breath" : ""}`}
                 >
+                  {!!openBy[t.key] && <span className="live-dot h-1.5 w-1.5 rounded-full bg-current" aria-hidden />}
                   {t.kind === "lp" ? "LP" : "Order"}
+                  {!!openBy[t.key] && <span className="tabular-nums normal-case tracking-normal">{openBy[t.key]}</span>}
                 </span>
               )}
             </button>
