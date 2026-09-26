@@ -12,6 +12,7 @@ const NAV = [
   { href: "/new-pools", label: "Pool baru" },
   { href: "/paper", label: "Paper trading" },
   { href: "/leaders", label: "LP teratas" },
+  { href: "/danger", label: "Wallet bahaya" },
   { href: "/portfolio", label: "Portofolio LP" },
   { href: "/wallet", label: "Wallet" },
 ];

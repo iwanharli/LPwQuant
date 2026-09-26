@@ -8,7 +8,7 @@
  *
  * Listens on 127.0.0.1 only. The RPC key stays in this process; the browser never sees it.
  */
-import DLMM, { LBCLMM_PROGRAM_IDS, deriveBinArray, positionLbPairFilter } from "@meteora-ag/dlmm";
+import DLMM, { LBCLMM_PROGRAM_IDS, createProgram, decodeAccount, deriveBinArray, positionLbPairFilter, type LbPair } from "@meteora-ag/dlmm";
 import { BN } from "@coral-xyz/anchor";
 import { TOKEN_2022_PROGRAM_ID, getAssociatedTokenAddressSync, getMint, getTransferFeeConfig } from "@solana/spl-token";
 import { ComputeBudgetProgram, Connection, Keypair, PublicKey, type Transaction } from "@solana/web3.js";
@@ -824,6 +824,27 @@ export function startClaimServer(port = config.claimPort, allowed = config.dashb
       } catch (err) {
         return send(res, 502, { detail: err instanceof Error ? err.message : "gagal mengambil quote" }, origin);
       }
+    }
+    if (req.method === "GET" && url.pathname === "/pool-creators") {
+      // Who created each DLMM pool: the LbPair account keeps its creator, so it is known even after the pool
+      // has been emptied. One getMultipleAccounts per 100 pools.
+      const pools = (url.searchParams.get("pools") ?? "").split(",").filter((p) => BASE58.test(p)).slice(0, 100);
+      const creators: Record<string, string | null> = {};
+      try {
+        const program = createProgram(rpc());
+        const infos = await rpc().getMultipleAccountsInfo(pools.map((p) => new PublicKey(p)));
+        infos.forEach((info, i) => {
+          try {
+            const pair = info ? (decodeAccount<LbPair>(program, "lbPair", info.data) as unknown as { creator?: PublicKey }) : null;
+            creators[pools[i]] = pair?.creator ? pair.creator.toBase58() : null;
+          } catch {
+            creators[pools[i]] = null;
+          }
+        });
+      } catch (err) {
+        return send(res, 502, { detail: err instanceof Error ? err.message : "gagal membaca pool" }, origin);
+      }
+      return send(res, 200, { creators }, origin);
     }
     if (req.method === "GET" && url.pathname === "/lp-owners") {
       // Wallets that hold a DLMM position in each given pool right now (one getProgramAccounts per pool, only the

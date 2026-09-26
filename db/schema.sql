@@ -627,3 +627,24 @@ create table if not exists push_sent (
   address     text primary key,
   sent_at     timestamptz not null
 );
+
+-- Dangerous pool creators (engine/app/danger_wallets.py): young pools watched with their on-chain creator, and the
+-- events that list a creator (pool drained after launch, or a very suspicious pool).
+create table if not exists danger_pool_watch (
+  pool        text primary key,
+  name        text not null,
+  creator     text,
+  peak_tvl    double precision not null default 0,
+  last_tvl    double precision,
+  first_seen  timestamptz not null
+);
+create table if not exists danger_events (
+  pool        text not null,
+  creator     text not null,
+  kind        text not null,            -- drained | suspicious
+  name        text not null,
+  evidence    jsonb not null,
+  seen_at     timestamptz not null,
+  primary key (pool, kind)
+);
+create index if not exists danger_events_creator on danger_events (creator);

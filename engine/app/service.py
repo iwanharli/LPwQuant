@@ -18,7 +18,7 @@ from .charts import profile_decision
 from .panda import PandaPaper
 from .portfolio import snapshot_loop as portfolio_snapshot_loop
 from .position_alerts import PositionAlerts
-from . import lp_leaders, web_push
+from . import danger_wallets, lp_leaders, web_push
 from .sol_grid import SolGrid
 from .brontosaurus import Brontosaurus
 from .copy_paper import CopyPaper
@@ -73,6 +73,11 @@ def danger_signs(row: dict[str, Any], security: dict[str, Any] | None) -> list[s
     tvl, vol = row.get("tvl") or 0, row.get("volume_24h") or 0
     if tvl > 1000 and vol < tvl * 0.01:
         signs.append(f"TVL ${tvl:,.0f} tapi hampir tanpa transaksi (volume 24 jam ${vol:,.0f})")
+    from . import danger_wallets
+
+    creator = danger_wallets.CREATOR_OF.get(row.get("address") or "")
+    if creator and danger_wallets.KNOWN.get(creator):
+        signs.append(f"pembuat pool ini tercatat {danger_wallets.KNOWN[creator]}× di daftar wallet berbahaya")
     risks = " ".join(str(r) for r in (security or {}).get("risks", []))
     if "Copycat" in risks:
         signs.append("RugCheck: nama/simbol meniru token lain")
@@ -186,6 +191,7 @@ class Engine:
         self._tasks.append(asyncio.create_task(lp_leaders.loop(self.db, lambda: self.rows), name="lp_leaders"))
         self._tasks.append(asyncio.create_task(lp_leaders.quick_loop(self.db), name="lp_leaders_quick"))
         self._tasks.append(asyncio.create_task(web_push.loop(self.db, lambda: self.rows), name="web_push"))
+        self._tasks.append(asyncio.create_task(danger_wallets.loop(self.db, lambda: self.rows), name="danger_wallets"))
         self._tasks.append(asyncio.create_task(netpnl.refresh_loop(self.db), name="netpnl_refresh"))
         self._tasks.append(asyncio.create_task(netpnl.watch_new_transactions(self.db), name="netpnl_watch"))
         if config.PAPER_ENABLED:
