@@ -290,6 +290,83 @@ function Table({ runs, empty }: { runs: Run[]; empty: string }) {
   );
 }
 
+/** Finished copies, one collapsible group per wallet, best total first: which wallets are worth copying at a glance. */
+function GroupedDone({ runs }: { runs: Run[] }) {
+  const [openWallet, setOpenWallet] = useState<string | null>(null);
+  if (runs.length === 0) return <p className="rounded-2xl border border-white/[0.06] bg-panel px-4 py-10 text-center text-sm text-ink-3">Belum ada tiruan yang selesai.</p>;
+  const groups = Object.values(
+    runs.reduce<Record<string, Run[]>>((acc, r) => {
+      (acc[r.wallet] ??= []).push(r);
+      return acc;
+    }, {}),
+  )
+    .map((list) => {
+      const pnl = list.reduce((n, r) => n + r.pnl_usd, 0);
+      const wins = list.filter((r) => r.pnl_usd > 0).length;
+      const avg = list.reduce((n, r) => n + r.result_pct, 0) / list.length;
+      const delays = list.map((r) => r.delay_s ?? 0).sort((a, b) => a - b);
+      return { wallet: list[0].wallet, list, pnl, wins, avg, delay: delays[Math.floor(delays.length / 2)] };
+    })
+    .sort((a, b) => b.pnl - a.pnl);
+  return (
+    <div className="space-y-3">
+      {groups.map((g, i) => {
+        const open = openWallet === g.wallet;
+        const wr = (g.wins / g.list.length) * 100;
+        return (
+          <section key={g.wallet} className="overflow-hidden rounded-2xl border border-white/[0.06] bg-panel">
+            <button
+              type="button"
+              onClick={() => setOpenWallet(open ? null : g.wallet)}
+              aria-expanded={open}
+              className="grid w-full grid-cols-2 items-center gap-x-5 gap-y-2 px-4 py-3.5 text-left transition-colors hover:bg-white/[0.02] md:grid-cols-[auto_1.4fr_1fr_1fr_1fr_1fr_auto]"
+            >
+              <span
+                className={`grid h-9 w-9 place-items-center rounded-full font-extrabold ${
+                  i < 3 && g.pnl > 0 ? "bg-gradient-to-br from-amber-200/25 to-amber-600/10 text-lg" : "border border-white/[0.1] bg-white/[0.04] text-sm text-ink-2"
+                }`}
+              >
+                {i < 3 && g.pnl > 0 ? MEDAL[i] : i + 1}
+              </span>
+              <span>
+                <span className="font-mono font-semibold text-ink">{short(g.wallet)}</span>
+                <span className="block text-[11px] text-ink-3">{g.list.length} tiruan selesai</span>
+              </span>
+              <span>
+                <span className="block text-[11px] uppercase tracking-[0.08em] text-ink-3">Hasil</span>
+                <span className={`font-semibold tabular-nums ${tone(g.pnl)}`}>{money(g.pnl)}</span>
+              </span>
+              <span>
+                <span className="block text-[11px] uppercase tracking-[0.08em] text-ink-3">Win rate</span>
+                <span className={`font-semibold tabular-nums ${wr >= 50 ? "text-emerald-300" : "text-rose-300"}`}>
+                  {fmtNum(wr, 0)}% <span className="text-[11px] font-normal text-ink-3">({g.wins}/{g.list.length})</span>
+                </span>
+              </span>
+              <span>
+                <span className="block text-[11px] uppercase tracking-[0.08em] text-ink-3">Rata-rata</span>
+                <span className={`font-semibold tabular-nums ${tone(g.avg)}`}>
+                  {g.avg >= 0 ? "+" : ""}
+                  {fmtNum(g.avg, 2)}%
+                </span>
+              </span>
+              <span>
+                <span className="block text-[11px] uppercase tracking-[0.08em] text-ink-3">Jeda median</span>
+                <span className="font-semibold tabular-nums text-ink-2">{span(g.delay * 1000)}</span>
+              </span>
+              <span className="text-ink-3">{open ? "▾" : "▸"}</span>
+            </button>
+            {open && (
+              <div className="border-t border-line p-2">
+                <Table runs={g.list} empty="" />
+              </div>
+            )}
+          </section>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function CopyPaper() {
   const [r, setR] = useState<Report | null>(null);
   const [error, setError] = useState(false);
@@ -359,7 +436,7 @@ export default function CopyPaper() {
       {view === "berjalan" && (
         <Table runs={running} empty={`Belum ada tiruan berjalan. Dicek tiap ${p.tick_s / 60} menit: menunggu wallet yang diikuti membuka posisi baru.`} />
       )}
-      {view === "selesai" && <Table runs={done} empty="Belum ada tiruan yang selesai." />}
+      {view === "selesai" && <GroupedDone runs={done} />}
       {view === "wallet" &&
         (r.wallets.length === 0 ? (
           <p className="rounded-2xl border border-white/[0.06] bg-panel px-4 py-10 text-center text-sm text-ink-3">
