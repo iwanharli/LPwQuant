@@ -798,6 +798,9 @@ class PaperTrader:
             "unrealized_usd": unrealized,
             "open_count": len(self.open),
             "closed_count": len(trades),
+            # Same headline numbers the Panda page shows: fees earned by closed positions, and capital per position.
+            "fees_usd": sum((r["capital_usd"] or 0) * (r["fee_pct"] or 0) / 100 for r in rows),
+            "avg_capital_usd": (sum(r["capital_usd"] or 0 for r in rows) / len(rows)) if rows else None,
             "overall": _trade_stats(trades),
             "by_tier": {t: _trade_stats([x for x in trades if x["tier"] == t]) for t in TIER_ORDER},
             "by_strategy": {

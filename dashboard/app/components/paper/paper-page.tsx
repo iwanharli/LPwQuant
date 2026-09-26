@@ -572,7 +572,6 @@ export default function PaperPage({
   const s = data?.summary;
   const loadingProfile = !!s?.profile && s.profile.key !== profile;
   const totalPnl = s ? s.equity_usd - s.start_equity_usd : 0;
-  const totalPct = s ? (totalPnl / s.start_equity_usd) * 100 : 0;
 
   const header = (
         <PageHeader
@@ -625,13 +624,13 @@ export default function PaperPage({
               <Kpi
                 label="Hasil bersih"
                 value={s ? `${totalPnl >= 0 ? "+" : "−"}${usd.format(Math.abs(totalPnl))}` : "–"}
-                hint={s ? `terealisasi ${usd.format(s.realized_usd)} · berjalan ${usd.format(s.unrealized_usd)}` : undefined}
+                hint={s ? `${s.closed_count} posisi selesai · terealisasi ${usd.format(s.realized_usd)}` : undefined}
                 cls={s ? (totalPnl > 0 ? "text-emerald-300" : totalPnl < 0 ? "text-rose-300" : undefined) : undefined}
               />
               <Kpi
-                label="Rata-rata per trade"
-                value={s?.overall.trades ? fmtSignedPct(s.overall.mean_return_pct, 2) : "–"}
-                hint={s?.overall.trades ? `95% CI ${ciText(s.overall)}` : "butuh posisi yang sudah ditutup"}
+                label="Fee terkumpul"
+                value={s?.fees_usd != null ? usd.format(s.fees_usd) : "–"}
+                hint="bagian kita dari fee pool, dari posisi yang sudah selesai"
               />
               <Kpi
                 label="Win rate"
@@ -639,9 +638,9 @@ export default function PaperPage({
                 hint={s ? `${s.open_count} posisi berjalan` : undefined}
               />
               <Kpi
-                label="Equity virtual"
-                value={s ? usd.format(s.equity_usd) : "–"}
-                hint={s ? `modal awal ${usd.format(s.start_equity_usd)} · ${fmtSignedPct(totalPct, 2)}` : undefined}
+                label="Modal per posisi"
+                value={s?.avg_capital_usd != null ? usd.format(s.avg_capital_usd) : "–"}
+                hint={s ? `rata-rata · equity ${usd.format(s.equity_usd)} dari ${usd.format(s.start_equity_usd)}` : undefined}
               />
             </div>
           </section>

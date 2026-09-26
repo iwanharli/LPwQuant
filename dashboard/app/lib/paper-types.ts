@@ -63,6 +63,8 @@ export type ProfileSummary = ProfileInfo & {
 };
 
 export type PaperSummary = {
+  fees_usd?: number;
+  avg_capital_usd?: number | null;
   enabled: boolean;
   profile: ProfileInfo;
   config: { max_open_per_tier: number; tiers: Tier[]; cooldown_hours: number };
