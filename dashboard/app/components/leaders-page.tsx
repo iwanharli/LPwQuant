@@ -40,6 +40,26 @@ const tone = (n: number | null | undefined) => (n == null ? "text-ink-3" : n > 0
 const span = (h: number | null) => (h == null ? "–" : h < 1 ? `${Math.round(h * 60)} mnt` : h < 48 ? `${fmtNum(h, 1)} jam` : `${fmtNum(h / 24, 1)} hari`);
 const short = (w: string) => `${w.slice(0, 4)}…${w.slice(-4)}`;
 
+/** Rank badge: gold, silver and bronze medals for the podium, a numbered chip for the rest. */
+function Rank({ n }: { n: number }) {
+  const podium: Record<number, { cls: string; label: string }> = {
+    1: { cls: "bg-gradient-to-br from-amber-200 to-amber-500 text-black shadow-[0_0_12px_rgba(251,191,36,0.45)]", label: "Juara 1" },
+    2: { cls: "bg-gradient-to-br from-slate-100 to-slate-400 text-black shadow-[0_0_10px_rgba(203,213,225,0.35)]", label: "Juara 2" },
+    3: { cls: "bg-gradient-to-br from-orange-300 to-orange-700 text-black shadow-[0_0_10px_rgba(234,88,12,0.35)]", label: "Juara 3" },
+  };
+  const p = podium[n];
+  return (
+    <span
+      title={p?.label ?? `Peringkat ${n}`}
+      className={`grid h-8 w-8 place-items-center rounded-full text-sm font-extrabold tabular-nums ${
+        p ? p.cls : "border border-white/[0.1] bg-white/[0.04] text-ink-2"
+      }`}
+    >
+      {p ? ["", "🥇", "🥈", "🥉"][n] : n}
+    </span>
+  );
+}
+
 function Kpi({ label, value, hint, cls }: { label: string; value: string; hint?: string; cls?: string }) {
   return (
     <div className="bg-panel px-4 py-3.5">
@@ -68,7 +88,10 @@ export default function LeadersPage() {
 
   const leaders = r?.leaders ?? [];
   const good = leaders.filter((l) => l.meets);
-  const shown = onlyGood ? good : leaders;
+  // Highest win rate first; on a tie, the wallet with more positions behind it.
+  const shown = [...(onlyGood ? good : leaders)].sort(
+    (a, b) => (b.win_rate ?? -1) - (a.win_rate ?? -1) || b.sample - a.sample,
+  );
   const c = r?.criteria;
 
   return (
@@ -136,10 +159,11 @@ export default function LeadersPage() {
             ) : (
               <section className="overflow-hidden rounded-2xl border border-white/[0.06] bg-panel">
                 <div className="overflow-x-auto">
-                  <table className="w-full min-w-[1100px] text-sm tabular-nums">
+                  <table className="w-full min-w-[1160px] text-sm tabular-nums">
                     <thead className="text-[11px] font-medium uppercase tracking-[0.08em] text-ink-3">
                       <tr className="border-b border-line">
-                        <th className="px-4 py-2.5 text-left font-medium">Wallet</th>
+                        <th className="w-14 px-4 py-2.5 text-left font-medium">#</th>
+                        <th className="px-3 py-2.5 text-left font-medium">Wallet</th>
                         <th className="px-3 py-2.5 text-right font-medium">Hasil 7 hari</th>
                         <th className="px-3 py-2.5 text-right font-medium">Hasil sampel</th>
                         <th className="px-3 py-2.5 text-right font-medium" title="Posisi yang untung dibagi semua posisi di sampel">Win rate</th>
@@ -151,9 +175,12 @@ export default function LeadersPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {shown.map((l) => (
+                      {shown.map((l, i) => (
                         <tr key={l.wallet} className="border-b border-line/60 last:border-b-0 hover:bg-white/[0.02]">
                           <td className="px-4 py-3">
+                            <Rank n={i + 1} />
+                          </td>
+                          <td className="px-3 py-3">
                             <div className="flex items-center gap-2">
                               <a
                                 href={`https://solscan.io/account/${l.wallet}`}
