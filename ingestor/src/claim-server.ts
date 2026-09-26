@@ -8,7 +8,7 @@
  *
  * Listens on 127.0.0.1 only. The RPC key stays in this process; the browser never sees it.
  */
-import DLMM, { deriveBinArray } from "@meteora-ag/dlmm";
+import DLMM, { LBCLMM_PROGRAM_IDS, deriveBinArray, positionLbPairFilter } from "@meteora-ag/dlmm";
 import { BN } from "@coral-xyz/anchor";
 import { TOKEN_2022_PROGRAM_ID, getAssociatedTokenAddressSync, getMint, getTransferFeeConfig } from "@solana/spl-token";
 import { ComputeBudgetProgram, Connection, Keypair, PublicKey, type Transaction } from "@solana/web3.js";
@@ -824,6 +824,27 @@ export function startClaimServer(port = config.claimPort, allowed = config.dashb
       } catch (err) {
         return send(res, 502, { detail: err instanceof Error ? err.message : "gagal mengambil quote" }, origin);
       }
+    }
+    if (req.method === "GET" && url.pathname === "/lp-owners") {
+      // Wallets that hold a DLMM position in each given pool right now (one getProgramAccounts per pool, only the
+      // 32-byte owner field). The LP leaderboard starts from these.
+      const pools = (url.searchParams.get("pools") ?? "").split(",").filter((p) => BASE58.test(p)).slice(0, 60);
+      const program = new PublicKey(LBCLMM_PROGRAM_IDS["mainnet-beta"]);
+      const owners: Record<string, string[]> = {};
+      for (const pool of pools) {
+        try {
+          const accounts = await rpc().getProgramAccounts(program, {
+            filters: [positionLbPairFilter(new PublicKey(pool))],
+            dataSlice: { offset: 40, length: 32 }, // PositionV2: discriminator (8), lb_pair (32), owner (32)
+          });
+          owners[pool] = [...new Set(accounts.map((a) => new PublicKey(a.account.data).toBase58()))];
+        } catch (err) {
+          owners[pool] = [];
+          console.warn(`[lp-owners] ${pool.slice(0, 6)}: ${err instanceof Error ? err.message : err}`);
+        }
+        await new Promise((resolve) => setTimeout(resolve, 300));
+      }
+      return send(res, 200, { owners }, origin);
     }
     if (req.method === "GET" && url.pathname === "/bin-arrays") {
       // Which bin arrays a range from the active bin down to `low_pct` below the price would need, and how many of

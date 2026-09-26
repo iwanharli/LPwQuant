@@ -548,3 +548,10 @@ create table if not exists paper_sol_grid_equity (
   price       double precision not null,
   equity_usd  double precision not null
 );
+
+-- LP leaderboard (engine/app/lp_leaders.py): one row per Meteora wallet, statistics as JSON, refreshed every 6h.
+create table if not exists lp_leaders (
+  wallet      text primary key,
+  stats       jsonb not null,
+  updated_at  timestamptz not null
+);
