@@ -163,6 +163,31 @@ def entry_signal(c15: list[Candle]) -> tuple[bool, str]:
     return True, ""
 
 
+def entry_checklist(c15: list[Candle]) -> list[dict[str, Any]]:
+    """The entry trigger as separate checks, for the page: which part holds, which does not, and the number."""
+    if len(c15) < 30:
+        return [{"key": "candles", "label": "Riwayat candle 15m cukup (≥30)", "ok": False, "detail": f"{len(c15)} candle"}]
+    st = indicators.supertrend(c15) or {}
+    high = max(c.close for c in c15)
+    close = c15[-1].close
+    gap = (high - close) / high * 100 if high > 0 else 100.0
+    bars = st.get("bars_since_flip")
+    fresh = bars is not None and bars <= MAX_BARS_SINCE_BREAK
+    return [
+        {"key": "supertrend", "label": "Harga di atas Supertrend 15m", "ok": bool(st.get("up")),
+         "detail": "tren naik" if st.get("up") else "tren turun"},
+        {"key": "near_high", "label": f"Tidak lebih dari {NEAR_HIGH_PCT:g}% di bawah puncak 24j", "ok": gap <= NEAR_HIGH_PCT,
+         "detail": f"{gap:.1f}% di bawah puncak"},
+        {"key": "trigger", "label": f"Baru tembus Supertrend (≤{MAX_BARS_SINCE_BREAK} candle) atau di puncak (≤{AT_HIGH_PCT:g}%)",
+         "ok": fresh or gap <= AT_HIGH_PCT,
+         "detail": ("tembus " + (f"{bars} candle lalu" if bars is not None else "belum ada")) + f" · {gap:.1f}% dari puncak"},
+    ]
+
+
+# The last screening pass: pools that cleared every gate, with the entry checklist, for the funnel page.
+LAST_CANDIDATES: dict[str, Any] = {"checked_at": None, "pools": []}
+
+
 def exit_signal(c15: list[Candle]) -> str | None:
     """The strategy's confluence: RSI(2) over 90 plus either a close above the upper band or the first green MACD
     histogram bar. Returns which pair fired."""
@@ -308,9 +333,7 @@ class PandaPaper:
 
     async def _open_new(self, rows: dict[str, dict[str, Any]], now: datetime) -> None:
         open_rows = await self.db.fetch("select pool, mint from paper_panda_runs where status = 'open'")
-        slots = MAX_OPEN - len(open_rows)
-        if slots <= 0:
-            return
+        slots = MAX_OPEN - len(open_rows)  # full slots still refresh the checklist below; they only block entries
         open_mints = {r["mint"] for r in open_rows}
         open_pools = {r["pool"] for r in open_rows}
         sol = self.sol_usd()
@@ -323,6 +346,26 @@ class PandaPaper:
             if ok:
                 candidates.append(row)
         candidates.sort(key=lambda r: -(_f(r.get("fee_tvl_pct_24h")) or 0))
+        # Every pool that passes the screen, held ones included, with its entry checklist for the page.
+        shown = []
+        for address, row in rows.items():
+            if screen(row)[0]:
+                shown.append(row)
+        report_rows = []
+        for row in sorted(shown, key=lambda r: -(_f(r.get("fee_tvl_pct_24h")) or 0))[:20]:
+            try:
+                checks = entry_checklist(await self._candles_15m(row["address"]))
+            except Exception as err:
+                checks = [{"key": "candles", "label": "Candle 15m terbaca", "ok": False, "detail": str(err)[:60]}]
+            held = row["address"] in open_pools or (row.get("base_mint") or "") in open_mints
+            report_rows.append({
+                "address": row["address"], "name": row.get("name"), "price": _f(row.get("price")),
+                "market_cap": _f(row.get("market_cap")), "volume_24h": _f(row.get("volume_24h")), "tvl": _f(row.get("tvl")),
+                "fee_tvl_pct_24h": _f(row.get("fee_tvl_pct_24h")), "holders": _f(row.get("holders")),
+                "top10_pct": top10_pct(row), "change_pct_1h": _f(row.get("change_pct_1h")),
+                "checks": checks, "entry_ok": all(c["ok"] for c in checks), "held": held,
+            })
+        LAST_CANDIDATES.update(checked_at=int(now.timestamp() * 1000), pools=report_rows, slots=slots)
         for row in candidates[:12]:
             if slots <= 0:
                 break
@@ -406,6 +449,7 @@ async def report(db, rows: dict[str, dict[str, Any]] | None = None) -> dict[str,
         "capital_usd": sum(r["size_usd"] for r in closed),
         "win_rate": (sum((r["pnl_usd"] or 0) > 0 for r in closed) / len(closed)) if closed else None,
         "screening_funnel": dict(sorted(funnel.items(), key=lambda kv: -kv[1])),
+        "candidates": LAST_CANDIDATES,
         "runs": out,
         "sol_usd": config.SOL_USD_FALLBACK,
     }

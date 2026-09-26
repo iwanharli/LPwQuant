@@ -62,6 +62,7 @@ type Report = {
   win_rate: number | null;
   rent_locked_usd: number;
   screening_funnel: Record<string, number>;
+  candidates?: { checked_at: number | null; slots?: number; pools: Candidate[] };
   runs: Run[];
 };
 
@@ -142,6 +143,98 @@ function Rules({ p, approximations }: { p: Report["params"]; approximations: str
         </p>
       </section>
     </div>
+  );
+}
+
+type Check = { key: string; label: string; ok: boolean; detail: string };
+type Candidate = {
+  address: string;
+  name: string;
+  price: number | null;
+  market_cap: number | null;
+  volume_24h: number | null;
+  tvl: number | null;
+  fee_tvl_pct_24h: number | null;
+  holders: number | null;
+  top10_pct: number | null;
+  change_pct_1h: number | null;
+  checks: Check[];
+  entry_ok: boolean;
+  held: boolean;
+};
+
+/** Pools that cleared every screening gate, each with the entry trigger broken into its parts. */
+function Candidates({ data }: { data: NonNullable<Report["candidates"]> }) {
+  const pools = data.pools ?? [];
+  return (
+    <section className="rounded-2xl border border-white/[0.06] bg-panel">
+      <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-line px-4 py-3">
+        <h2 className="text-sm font-semibold text-ink">Lolos seleksi · checklist entry</h2>
+        <span className="text-xs text-ink-3">
+          {data.checked_at ? `dicek ${fmtDateTime(data.checked_at)} WIB` : "menunggu pengecekan pertama"}
+          {data.slots != null && data.slots <= 0 ? " · slot posisi penuh" : ""}
+        </span>
+      </div>
+      {pools.length === 0 ? (
+        <p className="px-4 py-8 text-center text-sm text-ink-3">Belum ada pool yang lolos semua filter seleksi.</p>
+      ) : (
+        <ul className="divide-y divide-white/[0.05]">
+          {pools.map((p) => {
+            const status = p.held
+              ? { label: "Sedang dipegang", cls: "bg-sky-400/10 text-sky-300" }
+              : p.entry_ok
+                ? { label: "Siap masuk", cls: "bg-emerald-400/10 text-emerald-300" }
+                : { label: "Tunggu sinyal", cls: "bg-amber-400/10 text-amber-300" };
+            return (
+              <li key={p.address} className="grid gap-3 px-4 py-3.5 lg:grid-cols-[1.1fr_1.6fr]">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Link href={`/pool/${p.address}`} className="font-semibold text-ink hover:text-accent">
+                      {p.name.replace("-", "/")}
+                    </Link>
+                    <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${status.cls}`}>{status.label}</span>
+                  </div>
+                  <dl className="mt-2 grid grid-cols-3 gap-x-4 gap-y-1.5 text-[11px] tabular-nums">
+                    {[
+                      ["MC", p.market_cap == null ? "–" : usdCompact.format(p.market_cap)],
+                      ["Volume 24j", p.volume_24h == null ? "–" : usdCompact.format(p.volume_24h)],
+                      ["TVL", p.tvl == null ? "–" : usdCompact.format(p.tvl)],
+                      ["Fee/TVL 24j", p.fee_tvl_pct_24h == null ? "–" : `${fmtNum(p.fee_tvl_pct_24h, 0)}%`],
+                      ["Holder", p.holders == null ? "–" : fmtNum(p.holders, 0)],
+                      ["Top 10", p.top10_pct == null ? "–" : `${fmtNum(p.top10_pct, 0)}%`],
+                      ["1 jam", p.change_pct_1h == null ? "–" : `${p.change_pct_1h >= 0 ? "+" : ""}${fmtNum(p.change_pct_1h, 1)}%`],
+                    ].map(([k, v]) => (
+                      <div key={k}>
+                        <dt className="text-ink-3">{k}</dt>
+                        <dd className="text-ink-2">{v}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                </div>
+                <ul className="space-y-1.5">
+                  {p.checks.map((c) => (
+                    <li key={c.key} className="flex items-start gap-2 text-xs">
+                      <span
+                        className={`mt-0.5 grid h-4 w-4 shrink-0 place-items-center rounded-full text-[10px] font-bold ${
+                          c.ok ? "bg-emerald-400/15 text-emerald-300" : "bg-rose-400/15 text-rose-300"
+                        }`}
+                        aria-label={c.ok ? "terpenuhi" : "belum"}
+                      >
+                        {c.ok ? "✓" : "✕"}
+                      </span>
+                      <span className="min-w-0">
+                        <span className={c.ok ? "text-ink-2" : "text-ink"}>{c.label}</span>
+                        <span className="ml-1.5 text-ink-3">· {c.detail}</span>
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </section>
   );
 }
 
@@ -403,7 +496,12 @@ export default function PandaPage({ embedded = false }: { embedded?: boolean }) 
               <RunTable runs={running} empty="Belum ada pool yang lolos seleksi sekaligus memberi sinyal entry. Engine memeriksa tiap 5 menit." />
             )}
             {view === "done" && <RunTable runs={finished} empty="Belum ada posisi yang ditutup." />}
-            {view === "funnel" && <Funnel funnel={r.screening_funnel} />}
+            {view === "funnel" && (
+              <div className="space-y-5">
+                {r.candidates && <Candidates data={r.candidates} />}
+                <Funnel funnel={r.screening_funnel} />
+              </div>
+            )}
             {view === "rules" && <Rules p={p} approximations={r.approximations} />}
           </>
         )}
