@@ -14,6 +14,8 @@ import os
 import sys
 from typing import Any, Callable
 
+from . import config  # noqa: F401  (loads .env, where the VAPID keys live)
+
 log = logging.getLogger("web_push")
 
 EVERY_S = 15
