@@ -622,73 +622,55 @@ function PandaNotes({ approximations }: { approximations: string[] }) {
   );
 }
 
-/** The Catatan sub-tab: written strengths, weaknesses and next steps for one strategy. */
+/** The Catatan sub-tab: two cards. Phase 1 is what runs now, with its rules and the strengths and weaknesses seen
+ * so far; phase 2 is the planned update, the suggestions behind it, and when it may go in. A phase gets its own
+ * strengths and weaknesses once it runs. */
 export function StrategyNotes({ note }: { note: StrategyNote | undefined }) {
   if (!note) return <p className="rounded-2xl border border-white/[0.06] bg-panel px-4 py-10 text-center text-sm text-ink-3">Belum ada catatan.</p>;
-  const blocks = [
-    { title: "Kelebihan", items: note.pros, dot: "bg-emerald-400" },
-    { title: "Kekurangan", items: note.cons, dot: "bg-rose-400" },
-  ];
   return (
-    <div className="space-y-5">
-      <section className="grid gap-4 rounded-2xl border border-white/[0.06] bg-panel p-4 md:grid-cols-2">
-        {blocks.map((b) => (
-          <div key={b.title}>
-            <h3 className="text-base font-semibold text-ink">{b.title}</h3>
-            <ul className="mt-2 space-y-2 text-sm leading-6 text-ink-2">
-              {b.items.map((t) => (
-                <li key={t} className="flex gap-2">
-                  <span className={`mt-2.5 h-1.5 w-1.5 shrink-0 rounded-full ${b.dot}`} aria-hidden />
-                  <span>{t}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        ))}
+    <div className="grid items-start gap-4 lg:grid-cols-2">
+      <section className="rounded-2xl border border-white/[0.06] bg-panel p-4">
+        <PhaseHead title="Fase 1 · sedang berjalan" meta={`ditulis ${note.written} · dasar: ${note.basis}`} />
+        {note.phases && <NoteList title="Aturan dan hasil" items={note.phases.now} numbered badge="bg-white/[0.08] text-ink-2" />}
+        <NoteList title="Kelebihan" items={note.pros} dot="bg-emerald-400" />
+        <NoteList title="Kekurangan" items={note.cons} dot="bg-rose-400" />
       </section>
-      {note.phases && (
-        <section className="grid gap-4 md:grid-cols-2">
-          {(
-            [
-              { title: "Fase 1 · sekarang", items: note.phases.now, cls: "border-white/[0.06] bg-panel", badge: "bg-white/[0.08] text-ink-2" },
-              { title: "Fase 2 · rencana update", items: note.phases.plan, cls: "border-accent/25 bg-accent/[0.05]", badge: "bg-accent/15 text-accent" },
-            ] as const
-          ).map((b) => (
-            <div key={b.title} className={`rounded-2xl border p-4 ${b.cls}`}>
-              <h3 className="text-base font-semibold text-ink">{b.title}</h3>
-              <ol className="mt-3 space-y-2 text-sm leading-6 text-ink-2">
-                {b.items.map((t, i) => (
-                  <li key={t} className="flex gap-3">
-                    <span className={`grid h-6 w-6 shrink-0 place-items-center rounded-full text-xs font-bold ${b.badge}`}>{i + 1}</span>
-                    <span>{t}</span>
-                  </li>
-                ))}
-              </ol>
-              {b.items === note.phases!.plan && (
-                <p className="mt-3 border-t border-line pt-2 text-xs text-ink-3">
-                  Kapan: {note.phases!.when} · ditulis {note.phases!.written}
-                </p>
-              )}
-            </div>
-          ))}
-        </section>
-      )}
       <section className="rounded-2xl border border-accent/25 bg-accent/[0.05] p-4">
-        <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <h3 className="text-base font-semibold text-ink">Saran update strategi</h3>
-          <span className="text-xs text-ink-3">
-            ditulis {note.written} · dasar: {note.basis}
-          </span>
-        </div>
-        <ol className="mt-3 space-y-2 text-sm leading-6 text-ink-2">
-          {note.next.map((t, i) => (
-            <li key={t} className="flex gap-3">
-              <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-accent/15 text-xs font-bold text-accent">{i + 1}</span>
-              <span>{t}</span>
-            </li>
-          ))}
-        </ol>
+        <PhaseHead title="Fase 2 · rencana update" meta={note.phases ? `Kapan: ${note.phases.when}` : undefined} />
+        {note.phases && <NoteList title="Yang akan diubah" items={note.phases.plan} numbered badge="bg-accent/15 text-accent" />}
+        <NoteList title="Saran update strategi" items={note.next} dot="bg-accent" />
+        <p className="mt-4 border-t border-line pt-2 text-xs text-ink-3">Kelebihan dan kekurangan fase 2 ditulis setelah fase ini berjalan.</p>
       </section>
+    </div>
+  );
+}
+
+function PhaseHead({ title, meta }: { title: string; meta?: string }) {
+  return (
+    <div className="border-b border-line pb-2.5">
+      <h3 className="text-base font-semibold text-ink">{title}</h3>
+      {meta && <div className="mt-0.5 text-xs text-ink-3">{meta}</div>}
+    </div>
+  );
+}
+
+function NoteList({ title, items, numbered, badge, dot }: { title: string; items: string[]; numbered?: boolean; badge?: string; dot?: string }) {
+  if (!items.length) return null;
+  return (
+    <div className="mt-4">
+      <div className="text-[11px] font-medium uppercase tracking-[0.08em] text-ink-3">{title}</div>
+      <ul className="mt-2 space-y-2 text-sm leading-6 text-ink-2">
+        {items.map((t, i) => (
+          <li key={t} className="flex gap-3">
+            {numbered ? (
+              <span className={`grid h-6 w-6 shrink-0 place-items-center rounded-full text-xs font-bold ${badge}`}>{i + 1}</span>
+            ) : (
+              <span className={`mt-2.5 h-1.5 w-1.5 shrink-0 rounded-full ${dot}`} aria-hidden />
+            )}
+            <span>{t}</span>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
