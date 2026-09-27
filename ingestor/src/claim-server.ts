@@ -19,6 +19,7 @@ import { WalletHistory } from "./wallet-history";
 import { botWallet } from "./auto-close";
 import { pg } from "./db";
 import { traceWallet } from "./wallet-trace";
+import { buildDustClose, listDust } from "./dust";
 
 const MAX_POSITIONS = 20;
 let history: WalletHistory | null = null;
@@ -847,6 +848,25 @@ export function startClaimServer(port = config.claimPort, allowed = config.dashb
       }
       return send(res, 200, { creators }, origin);
     }
+    if (req.method === "GET" && url.pathname === "/dust") {
+      // Every token account of the wallet with the rent a close would return, priced where Jupiter knows the coin.
+      const owner = url.searchParams.get("owner") ?? "";
+      if (!BASE58.test(owner)) return send(res, 400, { detail: "alamat wallet tidak valid" }, origin);
+      try {
+        const [accounts, wallet] = await Promise.all([serial(() => listDust(rpc(), owner)), walletTokens(owner).catch(() => null)]);
+        const price = new Map((wallet?.tokens ?? []).map((t) => [t.mint, t]));
+        return send(res, 200, {
+          owner,
+          accounts: accounts.map((a) => ({
+            ...a,
+            symbol: price.get(a.mint)?.symbol ?? null,
+            value_usd: a.amount === 0 ? 0 : (price.get(a.mint)?.value_usd ?? null),
+          })),
+        }, origin);
+      } catch (err) {
+        return send(res, 502, { detail: err instanceof Error ? err.message : "gagal membaca akun token" }, origin);
+      }
+    }
     if (req.method === "GET" && url.pathname === "/wallet-trace") {
       // Funders and SOL counterparties of one wallet (the danger-wallet network). Slow: a few hundred RPC calls.
       const wallet = url.searchParams.get("wallet") ?? "";
@@ -987,6 +1007,16 @@ export function startClaimServer(port = config.claimPort, allowed = config.dashb
         return send(res, 200, { ok: true }, origin);
       } catch (err) {
         return send(res, 400, { detail: err instanceof Error ? err.message : "gagal" }, origin);
+      }
+    }
+    if (req.method === "POST" && url.pathname === "/dust/close") {
+      try {
+        const body = (await readJson(req)) as { owner?: string; accounts?: string[] };
+        if (!BASE58.test(body.owner ?? "")) throw new Error("alamat wallet tidak valid");
+        const accounts = (body.accounts ?? []).filter((a) => BASE58.test(a)).slice(0, 120);
+        return send(res, 200, await serial(() => buildDustClose(rpc(), body.owner!, accounts)), origin);
+      } catch (err) {
+        return send(res, 400, { detail: err instanceof Error ? err.message : "gagal menyusun transaksi" }, origin);
       }
     }
     if (req.method === "POST" && (url.pathname === "/close" || url.pathname === "/close/sell")) {

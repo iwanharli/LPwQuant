@@ -14,6 +14,7 @@ import TopBar from "../top-bar";
 import { StatusDot } from "../ui";
 import WalletButton from "../wallet-button";
 import PortfolioHeader from "./portfolio-header";
+import DustCleaner from "./dust-cleaner";
 import SwapSuggestions from "./swap-suggestions";
 
 const REFRESH_MS = 30_000;
@@ -222,7 +223,7 @@ export default function WalletPage() {
   const connected = useConnectedWallet();
   useWalletParam(connected);
   const signer = canSign(connected, useWalletOptions());
-  const { data, error } = useWallet(connected?.address);
+  const { data, error, reload } = useWallet(connected?.address);
   const [showDust, setShowDust] = useState(false);
   const [query, setQuery] = useState("");
 
@@ -337,6 +338,7 @@ export default function WalletPage() {
             </div>
 
             {connected && data && <SwapSuggestions owner={connected.address} dustCount={dust.length} canSign={signer} />}
+            {connected && data && <DustCleaner owner={connected.address} canSign={signer} onDone={reload} />}
 
             <section className="overflow-hidden rounded-2xl border border-white/[0.06] bg-panel shadow-[0_14px_42px_rgba(0,0,0,0.20)] backdrop-blur-sm">
               <div className="flex flex-wrap items-center gap-3 border-b border-line bg-white/[0.02] px-4 py-3">
