@@ -198,13 +198,21 @@ async def days(db, wallet: str, sol_usd: float, n: int = 14) -> list[dict[str, A
         last[k] = s["total_usd"]
     out = []
     prev_close = None
+    prev_day = None
     for k in sorted(last):
         start = prev_close if prev_close is not None else first[k]
         change = last[k] - start
-        new_money = dep.get(k, 0.0) + wd.get(k, 0.0)
-        lp = lp_by_day.get(k, 0.0)
-        g = gacha.get(k, 0.0)
+        # Days without a snapshot (the engine was down) fold into the next day that has one, all columns alike.
+        span = [d for d in sorted(set(lp_by_day) | set(dep) | set(wd) | set(gacha)) if (prev_day is None or d > prev_day) and d <= k]
+        if prev_day is None:
+            span = [k]
+        new_money = sum(dep.get(d, 0.0) + wd.get(d, 0.0) for d in span)
+        lp = sum(lp_by_day.get(d, 0.0) for d in span)
+        g = sum(gacha.get(d, 0.0) for d in span)
+        covers = [d for d in span if d != k]
+        prev_day = k
         out.append({
+            "since": min(covers) if covers else None,
             "day": k,
             "networth": last[k],
             "change": change,

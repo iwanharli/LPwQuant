@@ -9,7 +9,7 @@ import CapitalButtons, { type Capital } from "./capital-card";
 import PortfolioHeader from "./portfolio-header";
 import PortfolioTabs from "./portfolio-tabs";
 
-type Day = { day: string; networth: number; change: number; new_money: number; lp: number; gacha: number; trading: number; partial: boolean };
+type Day = { day: string; networth: number; change: number; new_money: number; lp: number; gacha: number; trading: number; partial: boolean; since?: string | null };
 type Ledger = {
   fx: { usd_idr: number };
   capital: Capital;
@@ -255,6 +255,11 @@ function Days({ days }: { days: Day[] }) {
               <td className="px-4 py-2.5 text-ink-2">
                 {new Intl.DateTimeFormat("id-ID", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" }).format(new Date(`${d.day}T00:00:00Z`))}
                 {d.partial && <span className="ml-1 text-[10px] text-ink-3">(sebagian)</span>}
+                {d.since && (
+                  <span className="ml-1 text-[10px] text-ink-3" title="Hari-hari tanpa catatan kekayaan digabung ke baris ini">
+                    (+ sejak {new Intl.DateTimeFormat("id-ID", { day: "numeric", month: "short", timeZone: "UTC" }).format(new Date(`${d.since}T00:00:00Z`))})
+                  </span>
+                )}
               </td>
               <td className={`px-3 py-2.5 text-right ${tone(d.lp)}`}>{signedUsd(d.lp)}</td>
               <td className={`px-3 py-2.5 text-right ${tone(d.trading)}`}>{signedUsd(d.trading)}</td>
