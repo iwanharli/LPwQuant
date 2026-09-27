@@ -148,6 +148,8 @@ function PositionCard({ p, pool, cost, net }: { p: ClosedPosition; pool?: string
   const pct = net != null && basis > 0 ? (net / basis) * 100 : null;
   const exit = p.exit_side ? EXIT[p.exit_side] : null;
   const positive = (net ?? 0) >= 0;
+  // What the position itself returned (out + fees - in); the rest of the net is costs and the token swaps around it.
+  const inPosition = p.withdrawn_usd == null ? null : p.withdrawn_usd + p.claimed_usd - basis;
   return (
     <div
       className={`relative flex flex-col overflow-hidden rounded-2xl border p-4 shadow-[0_18px_44px_rgba(0,0,0,0.35)] ${
@@ -189,6 +191,15 @@ function PositionCard({ p, pool, cost, net }: { p: ClosedPosition; pool?: string
               </span>
             )}
           </div>
+          {net != null && inPosition != null && Math.abs(net - inPosition) >= 0.01 && (
+            <div
+              className="mt-1.5 text-[11px] tabular-nums text-ink-3"
+              title="Hasil bersih dihitung dari arus SOL/USDC wallet: selain isi posisi, ikut dihitung biaya dan bagian posisi ini dari swap token yang sama sebelum/sesudahnya (membeli token untuk dimasukkan, menjual sisa token)."
+            >
+              di posisi <span className={tone(inPosition)}>{signed(inPosition)}</span> · biaya & swap token{" "}
+              <span className={tone(net - inPosition)}>{signed(net - inPosition)}</span>
+            </div>
+          )}
         </div>
         <span className={`shrink-0 whitespace-nowrap rounded-full border px-2.5 py-1 text-[11px] font-medium ${exit ? exit.chip : "border-line bg-raised/40 text-ink-3"}`}>
           {exit ? exit.label : "akhir tidak diketahui"}
