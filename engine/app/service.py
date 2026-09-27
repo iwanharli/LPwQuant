@@ -200,6 +200,7 @@ class Engine:
         if config.PAPER_ENABLED:
             # Pool-creator paper test stopped 2026-09-26: creation rent (~$20 a pool) left v2 at -$580 over 33 pools.
             self._tasks.append(asyncio.create_task(SolGrid(self.db).run(), name="sol_grid"))
+            self._tasks.append(asyncio.create_task(SolGrid(self.db, "0.5").run(), name="sol_grid_half"))
             self._tasks.append(asyncio.create_task(
                 Brontosaurus(self.db, lambda: self.rows, lambda: self.sol_usd or config.SOL_USD_FALLBACK).run(),
                 name="brontosaurus"))

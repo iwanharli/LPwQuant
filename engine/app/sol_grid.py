@@ -25,16 +25,24 @@ log = logging.getLogger("sol_grid")
 POOL = "5rCf1DM8LjKTw4YqhnoLcngyZYeNnQqztScTogYHAS6"  # SOL-USDC, bin step 4, the deepest DLMM pool
 CAPITAL_USD = 1000.0
 LEVELS = 5
-STEP = 0.01
+STEP = 0.01  # the first grid; GRIDS below lists every grid and its step
 RECENTER_STEPS = 3
 TICK_S = 30
 TX_FEE_SOL = 0.00005
 EQUITY_EVERY_S = 900
 
 
+# Grids run side by side, each in its own tables: key -> (table prefix, step).
+GRIDS: dict[str, tuple[str, float]] = {
+    "1": ("paper_sol_grid", 0.01),
+    "0.5": ("paper_sol_grid_half", 0.005),
+}
+
+
 class SolGrid:
-    def __init__(self, db) -> None:
+    def __init__(self, db, key: str = "1") -> None:
         self.db = db
+        self.t, self.step_frac = GRIDS[key]
         self.last_equity = 0.0
 
     async def run(self) -> None:
@@ -52,19 +60,19 @@ class SolGrid:
         return float(pool.get("current_price") or 0)
 
     async def _place(self, price: float, now: datetime, kind: str) -> None:
-        """(Re)lay every level under `price`, all in USDC. Only when the grid holds no SOL."""
+        """(Re)lay every level under `price`, all in USDC. Only when the grid holds no SOL.f"""
         per = CAPITAL_USD / LEVELS if kind == "start" else None
-        rows = await self.db.fetch("select level, usd from paper_sol_grid order by level")
+        rows = await self.db.fetch(f"select level, usd from {self.t} order by level")
         usd = {r["level"]: r["usd"] for r in rows}
-        await self.db.execute("delete from paper_sol_grid")
+        await self.db.execute(f"delete from {self.t}")
         for i in range(1, LEVELS + 1):
-            buy = price * (1 - STEP * i)
+            buy = price * (1 - self.step_frac * i)
             money = per if per is not None else usd.get(i, CAPITAL_USD / LEVELS)
             money -= TX_FEE_SOL * price  # placing the order
             await self.db.execute(
-                "insert into paper_sol_grid values ($1, 'buy', $2, $3, $4, 0, $5)", i, buy, buy * (1 + STEP), money, now)
+                f"insert into {self.t} values ($1, 'buy', $2, $3, $4, 0, $5)", i, buy, buy * (1 + self.step_frac), money, now)
         await self.db.execute(
-            "insert into paper_sol_grid_fills (ts, level, side, price, sol, usd) values ($1, 0, $2, $3, 0, 0)",
+            f"insert into {self.t}_fills (ts, level, side, price, sol, usd) values ($1, 0, $2, $3, 0, 0)",
             now, "start" if kind == "start" else "recenter", price)
 
     async def step(self) -> None:
@@ -72,7 +80,7 @@ class SolGrid:
         price = await self._price()
         if price <= 0:
             return
-        levels = [dict(r) for r in await self.db.fetch("select * from paper_sol_grid order by level")]
+        levels = [dict(r) for r in await self.db.fetch(f"select * from {self.t} order by level")]
         if not levels:
             await self._place(price, now, "start")
             log.info("sol grid started at %.2f", price)
@@ -82,40 +90,41 @@ class SolGrid:
             if lv["state"] == "buy" and price <= lv["buy_price"]:
                 sol = (lv["usd"] - fee) / lv["buy_price"]
                 await self.db.execute(
-                    "update paper_sol_grid set state = 'sell', sol = $2, usd = 0, updated_at = $3 where level = $1",
+                    f"update {self.t} set state = 'sell', sol = $2, usd = 0, updated_at = $3 where level = $1",
                     lv["level"], sol, now)
                 await self.db.execute(
-                    "insert into paper_sol_grid_fills (ts, level, side, price, sol, usd) values ($1,$2,'buy',$3,$4,$5)",
+                    f"insert into {self.t}_fills (ts, level, side, price, sol, usd) values ($1,$2,'buy',$3,$4,$5)",
                     now, lv["level"], lv["buy_price"], sol, lv["usd"])
                 lv.update(state="sell", sol=sol, usd=0)
             elif lv["state"] == "sell" and price >= lv["sell_price"]:
                 usd = lv["sol"] * lv["sell_price"] - 2 * fee  # the fill, and placing the next buy
                 spent = await self.db.fetchval(
-                    "select usd from paper_sol_grid_fills where level = $1 and side = 'buy' order by ts desc limit 1",
+                    f"select usd from {self.t}_fills where level = $1 and side = 'buy' order by ts desc limit 1",
                     lv["level"])
                 await self.db.execute(
-                    "update paper_sol_grid set state = 'buy', sol = 0, usd = $2, updated_at = $3 where level = $1",
+                    f"update {self.t} set state = 'buy', sol = 0, usd = $2, updated_at = $3 where level = $1",
                     lv["level"], usd, now)
                 await self.db.execute(
-                    """insert into paper_sol_grid_fills (ts, level, side, price, sol, usd, profit_usd)
-                       values ($1,$2,'sell',$3,$4,$5,$6)""",
+                    f"""insert into {self.t}_fills (ts, level, side, price, sol, usd, profit_usd)
+                       values ($1,$2,'sell',$3,$4,$5,$6)f""",
                     now, lv["level"], lv["sell_price"], lv["sol"], usd, usd - (spent or usd))
                 lv.update(state="buy", sol=0, usd=usd)
         top = max(lv["buy_price"] for lv in levels)
-        if all(lv["state"] == "buy" for lv in levels) and price > top * (1 + STEP * (RECENTER_STEPS + 1)):
+        if all(lv["state"] == "buy" for lv in levels) and price > top * (1 + self.step_frac * (RECENTER_STEPS + 1)):
             await self._place(price, now, "recenter")
             log.info("sol grid moved up to %.2f", price)
         if (now.timestamp() - self.last_equity) >= EQUITY_EVERY_S:
             self.last_equity = now.timestamp()
             equity = sum(lv["usd"] + lv["sol"] * price for lv in levels)
             await self.db.execute(
-                "insert into paper_sol_grid_equity values ($1,$2,$3) on conflict do nothing", now, price, equity)
+                f"insert into {self.t}_equity values ($1,$2,$3) on conflict do nothing", now, price, equity)
 
 
-async def report(db) -> dict[str, Any]:
-    levels = [dict(r) for r in await db.fetch("select * from paper_sol_grid order by level")]
-    fills = [dict(r) for r in await db.fetch("select * from paper_sol_grid_fills order by ts desc limit 300")]
-    first = await db.fetchrow("select ts, price from paper_sol_grid_fills where side = 'start' order by ts limit 1")
+async def report(db, key: str = "1") -> dict[str, Any]:
+    t, step = GRIDS[key]
+    levels = [dict(r) for r in await db.fetch(f"select * from {t} order by level")]
+    fills = [dict(r) for r in await db.fetch(f"select * from {t}_fills order by ts desc limit 300")]
+    first = await db.fetchrow(f"select ts, price from {t}_fills where side = 'start' order by ts limit 1")
     try:
         price = float((await asyncio.to_thread(portfolio._get, f"/pools/{POOL}", {})).get("current_price") or 0)
     except Exception:
@@ -124,7 +133,7 @@ async def report(db) -> dict[str, Any]:
     sells = [f for f in fills if f["side"] == "sell"]
     ms = lambda t: int(t.timestamp() * 1000) if t else None  # noqa: E731
     return {
-        "params": {"pool": POOL, "capital_usd": CAPITAL_USD, "levels": LEVELS, "step_pct": STEP * 100,
+        "params": {"pool": POOL, "capital_usd": CAPITAL_USD, "levels": LEVELS, "step_pct": step * 100, "key": key,
                    "recenter_steps": RECENTER_STEPS, "tick_s": TICK_S},
         "started_at": ms(first["ts"]) if first else None,
         "start_price": first["price"] if first else None,
@@ -139,6 +148,6 @@ async def report(db) -> dict[str, Any]:
         "fills": [{**f, "ts": ms(f["ts"])} for f in fills],
         "equity": [
             {"ts": ms(r["ts"]), "equity_usd": r["equity_usd"], "price": r["price"]}
-            for r in await db.fetch("select * from paper_sol_grid_equity order by ts")
+            for r in await db.fetch(f"select * from {t}_equity order by ts")
         ],
     }

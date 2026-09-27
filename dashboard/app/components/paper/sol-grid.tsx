@@ -30,18 +30,46 @@ const tone = (n: number) => (n > 0.005 ? "text-emerald-300" : n < -0.005 ? "text
 const money = (n: number) => `${n >= 0 ? "+" : "−"}${usd.format(Math.abs(n))}`;
 
 
+const GRIDS = ["1", "0.5"] as const;
+
+/** Two grids run side by side (1% and 0.5% apart); the switch picks which one the tab shows. */
 export default function SolGrid() {
+  const [grid, setGrid] = useUrlState<(typeof GRIDS)[number]>("jarak", "1", GRIDS);
+  return (
+    <>
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-xs text-ink-3">Jarak antar order</span>
+        <div className="flex rounded-full border border-line bg-bg/40 p-0.5" role="group" aria-label="Jarak grid">
+          {GRIDS.map((g) => (
+            <button
+              key={g}
+              type="button"
+              aria-pressed={grid === g}
+              onClick={() => setGrid(g)}
+              className={`rounded-full px-3 py-1 text-xs font-medium ${grid === g ? "bg-white/[0.08] text-ink" : "text-ink-3 hover:text-ink-2"}`}
+            >
+              {g}%
+            </button>
+          ))}
+        </div>
+      </div>
+      <GridView key={grid} grid={grid} />
+    </>
+  );
+}
+
+function GridView({ grid }: { grid: string }) {
   const [r, setR] = useState<Report | null>(null);
   const [error, setError] = useState(false);
   const load = useCallback(() => {
-    fetch(`${ENGINE_URL}/api/paper/sol-grid`)
+    fetch(`${ENGINE_URL}/api/paper/sol-grid?grid=${grid}`)
       .then((x) => (x.ok ? x.json() : Promise.reject(x.status)))
       .then((b: Report) => {
         setR(b);
         setError(false);
       })
       .catch(() => setError(true));
-  }, []);
+  }, [grid]);
   useAutoRefresh(load, 30_000);
   useEffect(load, [load]);
   const [view, setView] = useUrlState<"berjalan" | "selesai" | "aturan" | "catatan">("grid", "berjalan", ["berjalan", "selesai", "aturan", "catatan"]);

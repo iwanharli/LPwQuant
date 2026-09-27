@@ -4,7 +4,7 @@ export type StrategyNote = { written: string; basis: string; pros: string[]; con
 
 export const STRATEGY_NOTES: Record<string, StrategyNote> = {
   satu_sisi: {
-    written: "26 Sep 2026",
+    written: "27 Sep 2026",
     basis: "28 posisi selesai sejak 16/09, +$35,86",
     pros: [
       "Rugi hampir tidak pernah besar: rata-rata menang +1,59%, rata-rata kalah hanya −0,16%. Satu kemenangan menutup ±10 kekalahan.",
@@ -21,7 +21,8 @@ export const STRATEGY_NOTES: Record<string, StrategyNote> = {
     ],
     next: [
       "Tetap jadi strategi andalan; nilai ulang saat posisi baru menggeser pengaruh AAVE.",
-      "Cari tahu kenapa belakangan tidak ada posisi baru: apakah ATR ≤ 2% terlalu ketat untuk pasar sekarang.",
+      "Sepi sejak 22/09 karena pasar, bukan kerusakan (cek 27/09): 25 kandidat teratas semuanya gagal gerbang fee, terbaik baru 0,39×; 14 juga gagal ATR ≤ 2%.",
+      "Diubah 27/09: fee dihitung selama masa pegang minimum 2 jam, bukan 1 jam (posisi selalu dipegang ≥ 2 jam, rata-rata 3,4 jam). Syarat 2× biaya tetap. Kembalikan ke 1 jam bila posisi yang masuk karena perubahan ini ternyata rugi.",
       "Bila mau dicoba nyata: ukuran kecil, hanya pool yang lolos checklist penuh.",
     ],
   },

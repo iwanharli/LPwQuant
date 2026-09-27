@@ -91,7 +91,9 @@ PROFILES: tuple[RiskProfile, ...] = (
         max_open_per_tier=5,
         size_mult=1.0,
         min_fee_cost_ratio=config.MIN_FEE_COST_RATIO,
-        fee_gate_hours=config.FEE_GATE_HOURS,
+        # Fees are counted over the minimum hold (2h), not 1h: every position is held at least that long (3.4h on
+        # average), so the 1h gate asked for twice the cover it meant to. Since 27 Sep 2026; the paper decides.
+        fee_gate_hours=config.MIN_HOLD_HOURS,
         min_hold_hours=config.MIN_HOLD_HOURS,
         stop_loss_mult=1.0,
         max_drawdown_pct=10.0,

@@ -657,3 +657,8 @@ create table if not exists danger_traces (
   error       text,
   traced_at   timestamptz not null
 );
+
+-- Second SOL-USDC grid, 0.5% apart (engine/app/sol_grid.py GRIDS), same layout as the 1% one.
+create table if not exists paper_sol_grid_half (like paper_sol_grid including all);
+create table if not exists paper_sol_grid_half_fills (like paper_sol_grid_fills including all);
+create table if not exists paper_sol_grid_half_equity (like paper_sol_grid_equity including all);

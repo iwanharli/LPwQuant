@@ -64,7 +64,7 @@ def _row(key: str, label: str, tab: str, trades: list[tuple[float, float]], open
 
 
 async def overview(db, papers: dict[str, Any], sol_usd: float, pools: dict[str, Any] | None = None) -> dict[str, Any]:
-    from . import panda as panda_mod, profile_screen
+    from . import sol_grid, panda as panda_mod, profile_screen
 
     pools = pools or {}
     rows: list[dict[str, Any]] = []
@@ -130,23 +130,25 @@ async def overview(db, papers: dict[str, Any], sol_usd: float, pools: dict[str, 
         recent_7d=sum(r["pnl_usd"] or 0 for r in copies if r["status"] == "closed" and r["recent"]), opened=len(copies),
         passing=5,
     ))
-    grid = await db.fetch("select profit_usd, ts > now() - interval '7 days' as recent from paper_sol_grid_fills where side = 'sell'")
-    grid_buys = await db.fetchval("select count(*) from paper_sol_grid_fills where side = 'buy'")
-    # A round trip lasts from a level's buy to the sell that follows it.
-    grid_holds = [float(r["h"]) for r in await db.fetch(
-        """select extract(epoch from s.ts - (select max(b.ts) from paper_sol_grid_fills b
-                                              where b.level = s.level and b.side = 'buy' and b.ts <= s.ts)) / 3600 as h
-           from paper_sol_grid_fills s where s.side = 'sell'""") if r["h"] is not None]
-    first = await db.fetchval("select min(ts) from paper_sol_grid_fills")
-    held = await db.fetch("select sol, buy_price from paper_sol_grid where state = 'sell'")
-    price = await db.fetchval("select price from paper_sol_grid_equity order by ts desc limit 1")
-    # SOL still held counts at today's price, so a falling market shows as a loss here and not only on the grid tab.
-    floating = [((price - h["buy_price"]) * h["sol"], 200.0) for h in held] if price else []
-    rows.append(_row(
-        "sol_grid", "Grid SOL-USDC", "sol",
-        [(r["profit_usd"] or 0, 200.0) for r in grid] + floating, len(held), first,
-        "5 limit order 1% di bawah harga, jual 1% di atasnya", holds=grid_holds,
-        passing=await db.fetchval("select count(*) from paper_sol_grid"),
-        recent_7d=sum(r["profit_usd"] or 0 for r in grid if r["recent"]), opened=grid_buys,
-    ))
+    for key, (t, step) in sol_grid.GRIDS.items():
+        pct = f"{step * 100:g}%"
+        grid = await db.fetch(f"select profit_usd, ts > now() - interval '7 days' as recent from {t}_fills where side = 'sell'")
+        grid_buys = await db.fetchval(f"select count(*) from {t}_fills where side = 'buy'")
+        # A round trip lasts from a level's buy to the sell that follows it.
+        grid_holds = [float(r["h"]) for r in await db.fetch(
+            f"""select extract(epoch from s.ts - (select max(b.ts) from {t}_fills b
+                                                  where b.level = s.level and b.side = 'buy' and b.ts <= s.ts)) / 3600 as h
+               from {t}_fills s where s.side = 'sell'""") if r["h"] is not None]
+        first = await db.fetchval(f"select min(ts) from {t}_fills")
+        held = await db.fetch(f"select sol, buy_price from {t} where state = 'sell'")
+        price = await db.fetchval(f"select price from {t}_equity order by ts desc limit 1")
+        # SOL still held counts at today's price, so a falling market shows as a loss here and not only on the grid tab.
+        floating = [((price - h["buy_price"]) * h["sol"], 200.0) for h in held] if price else []
+        rows.append(_row(
+            "sol_grid" if key == "1" else f"sol_grid_{key}", f"Grid SOL-USDC {pct}", "sol",
+            [(r["profit_usd"] or 0, 200.0) for r in grid] + floating, len(held), first,
+            f"5 limit order {pct} di bawah harga, jual {pct} di atasnya", holds=grid_holds,
+            passing=await db.fetchval(f"select count(*) from {t}"),
+            recent_7d=sum(r["profit_usd"] or 0 for r in grid if r["recent"]), opened=grid_buys,
+        ))
     return {"min_closed": MIN_CLOSED, "strategies": rows}

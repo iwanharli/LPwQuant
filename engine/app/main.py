@@ -526,11 +526,13 @@ async def get_paper_overview() -> dict:
 
 
 @app.get("/api/paper/sol-grid")
-async def get_sol_grid() -> dict:
+async def get_sol_grid(grid: str = "1") -> dict:
     """Paper grid of limit orders on SOL-USDC: levels, fills, equity against simply holding SOL."""
     if engine.db is None:
         raise HTTPException(status_code=503, detail="engine not ready")
-    return await sol_grid.report(engine.db)
+    if grid not in sol_grid.GRIDS:
+        raise HTTPException(status_code=400, detail="grid tidak dikenal")
+    return await sol_grid.report(engine.db, grid)
 
 
 @app.get("/api/panda/paper")
