@@ -646,6 +646,33 @@ export function StrategyNotes({ note }: { note: StrategyNote | undefined }) {
           </div>
         ))}
       </section>
+      {note.phases && (
+        <section className="grid gap-4 md:grid-cols-2">
+          {(
+            [
+              { title: "Fase 1 · sekarang", items: note.phases.now, cls: "border-white/[0.06] bg-panel", badge: "bg-white/[0.08] text-ink-2" },
+              { title: "Fase 2 · rencana update", items: note.phases.plan, cls: "border-accent/25 bg-accent/[0.05]", badge: "bg-accent/15 text-accent" },
+            ] as const
+          ).map((b) => (
+            <div key={b.title} className={`rounded-2xl border p-4 ${b.cls}`}>
+              <h3 className="text-base font-semibold text-ink">{b.title}</h3>
+              <ol className="mt-3 space-y-2 text-sm leading-6 text-ink-2">
+                {b.items.map((t, i) => (
+                  <li key={t} className="flex gap-3">
+                    <span className={`grid h-6 w-6 shrink-0 place-items-center rounded-full text-xs font-bold ${b.badge}`}>{i + 1}</span>
+                    <span>{t}</span>
+                  </li>
+                ))}
+              </ol>
+              {b.items === note.phases!.plan && (
+                <p className="mt-3 border-t border-line pt-2 text-xs text-ink-3">
+                  Kapan: {note.phases!.when} · ditulis {note.phases!.written}
+                </p>
+              )}
+            </div>
+          ))}
+        </section>
+      )}
       <section className="rounded-2xl border border-accent/25 bg-accent/[0.05] p-4">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <h3 className="text-base font-semibold text-ink">Saran update strategi</h3>
