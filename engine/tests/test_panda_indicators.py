@@ -98,9 +98,10 @@ def test_range_behaviour_reads_time_in_range_and_where_it_ended():
     class FakeDb:
         async def fetch(self, *_args):
             # closes: inside, inside, below the range
-            return [{"ts": 1000, "close": 10.0}, {"ts": 2000, "close": 11.0}, {"ts": 3000, "close": 4.0}]
+            h = 30 * 60_000  # stored 30m candles (old positions: no 5m fetch)
+            return [{"ts": t * h, "low": c, "high": c, "close": c} for t, c in ((1, 10.0), (2, 11.0), (3, 4.0))]
 
-    positions = [{"opened_at": 1000, "closed_at": 3000, "min_price": 9.0, "max_price": 12.0}]
+    positions = [{"opened_at": 30 * 60_000, "closed_at": 4 * 30 * 60_000, "min_price": 9.0, "max_price": 12.0}]
     asyncio.run(portfolio.range_behaviour(FakeDb(), "pool", positions))
     assert positions[0]["in_range_pct"] == 2 / 3 * 100
     assert positions[0]["exit_side"] == "below"
@@ -128,7 +129,7 @@ def test_range_behaviour_covers_a_position_shorter_than_one_candle():
 
     class FakeDb:
         async def fetch(self, *_args):
-            return [{"ts": 0, "close": 10.0}]  # one 30m candle opening before the position
+            return [{"ts": 0, "low": 10.0, "high": 10.0, "close": 10.0}]  # one 30m candle opening before the position
 
     positions = [{"opened_at": 60_000, "closed_at": 180_000, "min_price": 9.0, "max_price": 12.0}]
     asyncio.run(portfolio.range_behaviour(FakeDb(), "pool", positions))

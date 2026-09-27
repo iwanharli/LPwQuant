@@ -268,8 +268,8 @@ async def get_closed(wallet: str, pool: str | None = None, fresh: bool = False) 
     try:
         if pool:
             positions = await portfolio.closed_positions(engine.db, wallet, pool)
+            await portfolio.position_flows(engine.db, positions)  # first: the exit side is read from the flows
             await portfolio.range_behaviour(engine.db, pool, positions)
-            await portfolio.position_flows(engine.db, positions)
             return {"positions": positions}
         return {"pools": await portfolio.closed_pools(engine.db, wallet, fresh)}
     except Exception as err:

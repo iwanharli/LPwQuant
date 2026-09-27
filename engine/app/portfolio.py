@@ -710,7 +710,8 @@ async def position_flows(db, positions: list[dict[str, Any]]) -> None:
 _candle_cache: dict[tuple[str, int, int], list[tuple[int, float]]] = {}
 
 
-async def _fetched_candles(pool: str, start_ms: int, end_ms: int) -> list[tuple[int, float]]:
+async def _fetched_candles(pool: str, start_ms: int, end_ms: int) -> list[tuple[int, float, float, float]]:
+    """Meteora's 5m candles for a window, as (ts, low, high, close); cached."""
     key = (pool, start_ms // 300_000, end_ms // 300_000)
     if key in _candle_cache:
         return _candle_cache[key]
@@ -721,61 +722,89 @@ async def _fetched_candles(pool: str, start_ms: int, end_ms: int) -> list[tuple[
     except Exception as err:
         log.warning("candles for %s failed: %s", pool[:6], err)
         rows = []
-    out = [(int(r["ts"]), float(r["close"])) for r in rows]
+    out = [(int(r["ts"]), float(r["low"]), float(r["high"]), float(r["close"])) for r in rows]
     if len(_candle_cache) > 500:
         _candle_cache.clear()
     _candle_cache[key] = out
     return out
 
 
+def exit_side_from_flows(p: dict[str, Any]) -> str | None:
+    """Where the price sat at the close, read from what came out of the position (exact, unlike a candle): only the
+    token (X) means the price was below the range, only SOL/USDC (Y) above it, both means it was inside."""
+    x, y = p.get("amount_x_out"), p.get("amount_y_out")
+    if x is None or y is None or (x <= 0 and y <= 0):
+        return None
+    return "inside" if x > 0 and y > 0 else "below" if x > 0 else "above"
+
+
+def in_range_share(candles: list[tuple[int, float, float, float]], span_ms: int, opened: int, closed: int,
+                   lo: float, hi: float) -> tuple[float, float] | None:
+    """Share of the position's life the price was inside [lo, hi], and the last price seen. Each candle is weighted by
+    how much of it overlaps the position, and counts in proportion to how much of its low-high swing lay inside the
+    range (a candle that only touched the range counts a little, not fully in or out)."""
+    total = inside = 0.0
+    last = None
+    for ts, low, high, close in candles:
+        t = min(closed, ts + span_ms) - max(opened, ts)
+        if t <= 0:
+            continue
+        if high <= low:
+            frac = 1.0 if lo <= close <= hi else 0.0
+        else:
+            frac = max(0.0, min(high, hi) - max(low, lo)) / (high - low)
+        total += t
+        inside += t * frac
+        last = close
+    return (inside / total * 100, last) if total > 0 and last is not None else None
+
+
 async def range_behaviour(db, pool: str, positions: list[dict[str, Any]]) -> None:
-    """Fill in how each position actually behaved inside its range, from the 30m candles this app stores.
+    """Fill in how each position actually behaved inside its range.
 
     Meteora reports the result but not the story: a position can be green because it was closed early, or red
     because the price walked out the bottom hours before it was closed. `in_range_pct` says how much of its life
     the price was inside the range (fees only accrue there), and `exit_side` says where the price sat at the end.
-    Candles are kept for about a week, so older positions simply get None.
+
+    Candles: Meteora's 5m for the last week (a 30m candle is longer than many positions, and its close comes after
+    they end), the stored 30m ones before that. The exit side comes from the tokens that left the position when
+    they are known, and from the last candle otherwise.
     """
     if db is None or not positions:
         return
     spans = [(p["opened_at"], p["closed_at"]) for p in positions if p.get("opened_at") and p.get("closed_at")]
     if not spans:
         return
-    rows = await db.fetch(
-        """select (extract(epoch from ts) * 1000)::bigint as ts, close
-           from candles where address = $1 and timeframe = '30m'
-             and ts between to_timestamp($2 / 1000.0) and to_timestamp($3 / 1000.0)
-           order by ts""",
-        pool, min(a for a, _ in spans), max(b for _, b in spans),
-    )
-    candles = [(r["ts"], float(r["close"])) for r in rows]
-    span_ms = 30 * 60_000  # stored candles are 30m
-    # Pools the ingestor does not track have no stored candles -- often exactly the new pools a position was just
-    # opened in. Fetch the window from Meteora once (5m candles, cached) so recent positions still get their range
-    # story. Only for the last week, to keep this to a handful of calls.
+    start, end = min(a for a, _ in spans), max(b for _, b in spans)
     week_ago = (time.time() - 7 * 86_400) * 1000
-    if not candles and max(b for _, b in spans) >= week_ago:
-        candles = await _fetched_candles(pool, min(a for a, _ in spans), max(b for _, b in spans))
-        span_ms = 5 * 60_000
+    candles: list[tuple[int, float, float, float]] = []
+    if end >= week_ago:
+        candles = await _fetched_candles(pool, max(start, int(week_ago) - 3_600_000), end)
+    if not candles or start < week_ago:
+        rows = await db.fetch(
+            """select (extract(epoch from ts) * 1000)::bigint as ts, low, high, close
+               from candles where address = $1 and timeframe = '30m'
+                 and ts between to_timestamp($2 / 1000.0) and to_timestamp($3 / 1000.0)
+               order by ts""",
+            pool, start - 30 * 60_000, end,
+        )
+        stored = [(r["ts"], float(r["low"]), float(r["high"]), float(r["close"])) for r in rows]
+    else:
+        stored = []
     for p in positions:
         opened, closed = p.get("opened_at"), p.get("closed_at")
         lo, hi = p.get("min_price") or 0.0, p.get("max_price") or 0.0
-        # A candle counts when its interval overlaps the position, not only when it opens inside it: a position that
-        # lived two minutes sits inside one 5m candle and would otherwise match none.
-        window = (
-            [c for ts, c in candles if opened and closed and ts <= closed and ts + span_ms >= opened]
-            if lo and hi else []
-        )
-        if not window:
-            p["in_range_pct"] = None
-            p["exit_side"] = None
-            p["last_price"] = None
-            continue
-        inside = sum(1 for c in window if lo <= c <= hi)
-        last = window[-1]
-        p["in_range_pct"] = inside / len(window) * 100
-        p["last_price"] = last
-        p["exit_side"] = "below" if last < lo else "above" if last > hi else "inside"
+        got = None
+        if opened and closed and lo and hi:
+            got = in_range_share(candles, 5 * 60_000, opened, closed, lo, hi) if candles else None
+            if got is None and stored:
+                got = in_range_share(stored, 30 * 60_000, opened, closed, lo, hi)
+        p["in_range_pct"] = got[0] if got else None
+        p["last_price"] = got[1] if got else None
+        side = exit_side_from_flows(p)
+        if side is None and got and lo and hi:
+            side = "below" if got[1] < lo else "above" if got[1] > hi else "inside"
+        p["exit_side"] = side
 
 
 async def closed_positions(db, wallet: str, pool: str) -> list[dict[str, Any]]:
