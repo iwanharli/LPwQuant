@@ -129,6 +129,31 @@ async def _latest_networth(db, wallet: str) -> dict[str, Any] | None:
     return dict(r) if r else None
 
 
+def _lp_by_day(snaps: list[dict[str, Any]], closed: list[dict[str, Any]]) -> dict[str, float]:
+    """LP result per WIB day: the net (after swaps, rent and fees, from the cost accounting) of every position closed
+    that day, plus how the open positions' PnL moved from the previous day's close to this day's. A position spanning
+    midnight has its open PnL booked on the days it was open and taken back on the day it closes, where its whole
+    net is booked, so over its life it counts exactly its net. Meteora's own PnL leaves out rent and swap costs,
+    which then showed up as 'trading'; it is still used for a closed position whose net is not computed yet."""
+    out: dict[str, float] = {}
+    for c in closed:
+        k = c["closed_at"].astimezone(_zone).date().isoformat()
+        v = c["net_usd"] if c["net_usd"] is not None else (c["meteora_pnl_usd"] or 0.0)
+        out[k] = out.get(k, 0.0) + v
+    last: dict[str, float] = {}
+    first: dict[str, float] = {}
+    for r in snaps:
+        k = r["ts"].astimezone(_zone).date().isoformat()
+        first.setdefault(k, r["open_pnl_usd"] or 0.0)
+        last[k] = r["open_pnl_usd"] or 0.0
+    prev = None
+    for k in sorted(last):
+        start = prev if prev is not None else first[k]
+        out[k] = out.get(k, 0.0) + last[k] - start
+        prev = last[k]
+    return out
+
+
 async def days(db, wallet: str, sol_usd: float, n: int = 14) -> list[dict[str, Any]]:
     """Per WIB day since snapshots began: how net worth moved, and how much of it was new money, LP, gacha, and
     everything else (trading)."""
@@ -147,7 +172,10 @@ async def days(db, wallet: str, sol_usd: float, n: int = 14) -> list[dict[str, A
             wallet, n + 1,
         )
     ]
-    lp_by_day = {d["day"]: d["pnl_usd"] for d in portfolio.daily_pnl(lp_rows)}
+    lp_by_day = _lp_by_day(lp_rows, [dict(r) for r in await db.fetch(
+        """select closed_at, net_usd, meteora_pnl_usd from portfolio_positions_index
+           where wallet = $1 and status = 'closed' and closed_at >= now() - make_interval(days => $2)""",
+        wallet, n + 2)])
     flows = await _flows(db, wallet, sol_usd)
 
     tracked_from = snaps[0]["ts"]
@@ -215,7 +243,12 @@ async def summary(db, wallet: str) -> dict[str, Any]:
     nw = await _latest_networth(db, wallet)
     networth = nw["total_usd"] if nw else pf["summary"]["value_usd"]
     total = networth - capital_usd
-    lp = pf["summary"]["open_pnl_usd"] + pf["summary"]["closed_pnl_usd"]
+    # LP since the start: each closed position's net after swaps and rent (Meteora's PnL where not computed yet),
+    # plus the open positions' PnL now. Meteora's lifetime PnL alone leaves rent and swap costs to 'trading'.
+    closed_net = await db.fetchval(
+        """select coalesce(sum(coalesce(net_usd, meteora_pnl_usd, 0)), 0) from portfolio_positions_index
+           where wallet = $1 and status = 'closed'""", wallet)
+    lp = float(closed_net) + pf["summary"]["open_pnl_usd"]
     gacha = sum(usd for _, usd in flows["gacha"])
     return {
         "fx": {"usd_idr": rate},
