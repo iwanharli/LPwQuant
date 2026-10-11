@@ -845,9 +845,9 @@ async def range_behaviour(db, pool: str, positions: list[dict[str, Any]]) -> Non
         p["exit_side"] = side
 
 
-async def closed_positions(db, wallet: str, pool: str) -> list[dict[str, Any]]:
+async def closed_positions(db, wallet: str, pool: str, fresh: bool = False) -> list[dict[str, Any]]:
     try:
-        return await asyncio.to_thread(_cached, f"cpp:{wallet}:{pool}", False, lambda: _closed_positions(wallet, pool))
+        return await asyncio.to_thread(_cached, f"cpp:{wallet}:{pool}", fresh, lambda: _closed_positions(wallet, pool))
     finally:
         await _record_usage(db, 1, 0)
 

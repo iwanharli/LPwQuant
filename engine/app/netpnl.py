@@ -45,10 +45,11 @@ _cache: dict[str, tuple[float, dict[str, Any]]] = {}
 
 # ---- Positions and their events (Meteora), cached in the database ----------------------------------------------
 
-async def sync_positions(db, wallet: str) -> None:
+async def sync_positions(db, wallet: str, fresh: bool = False) -> None:
     """Index every position (closed and open) with its pool's mints, and fetch the events of positions whose events
-    are missing or still changing (open, or closed after the last fetch)."""
-    closed_pools = await portfolio.closed_pools(db, wallet)
+    are missing or still changing (open, or closed after the last fetch). `fresh` skips the one-minute cache of
+    Meteora's closed lists, so a position closed seconds ago is indexed now."""
+    closed_pools = await portfolio.closed_pools(db, wallet, fresh)
     open_pf = await portfolio.fetch_portfolio(db, wallet)
     now = datetime.now(timezone.utc)
     positions: list[tuple] = []
@@ -75,7 +76,7 @@ async def sync_positions(db, wallet: str) -> None:
     for p in closed_pools:
         if p.get("closed_at") and known.get(p["address"], 0) >= p["closed_at"] and p["address"] not in incomplete:
             continue
-        for q in await portfolio.closed_positions(db, wallet, p["address"]):
+        for q in await portfolio.closed_positions(db, wallet, p["address"], fresh):
             positions.append((q["address"], p["address"], p.get("mint_x"), p.get("mint_y"), p.get("token_x"), p.get("token_y"),
                               q["opened_at"], q["closed_at"], "closed", q["pnl_usd"], q["fees_usd"], q["deposit_usd"],
                               q.get("min_price"), q.get("max_price")))
@@ -174,6 +175,7 @@ async def _data_version(db, wallet: str) -> tuple:
 
 NET_REFRESH_S = 120  # a full recompute takes ~3s now, so two minutes costs little and keeps new closes fresh
 _soon: dict[str, asyncio.Task] = {}
+_again: set[str] = set()
 
 
 def refresh_soon(db, wallet: str) -> None:
@@ -181,8 +183,17 @@ def refresh_soon(db, wallet: str) -> None:
     the accounting has not reached yet, so they fill in within seconds instead of at the next scheduled round."""
     task = _soon.get(wallet)
     if task and not task.done():
+        _again.add(wallet)  # a run is going: do one more after it, or this transaction waits for the 2-minute round
         return
-    _soon[wallet] = asyncio.create_task(compute(db, wallet, fresh=True))
+
+    async def run() -> None:
+        while True:
+            _again.discard(wallet)
+            await compute(db, wallet, fresh=True)
+            if wallet not in _again:
+                return
+
+    _soon[wallet] = asyncio.create_task(run())
 
 
 WATCH_S = 10
@@ -240,7 +251,7 @@ async def compute(db, wallet: str, fresh: bool = False) -> dict[str, Any]:
     hit = _cache.get(wallet)
     if hit and not fresh and time.time() - hit[0] < CACHE_S and hit[1].get("_version") == version:
         return hit[1]
-    await sync_positions(db, wallet)
+    await sync_positions(db, wallet, fresh)
 
     idx = {r["position"]: dict(r) for r in await db.fetch("select * from portfolio_positions_index where wallet = $1", wallet)}
     ev_rows = await db.fetch(
