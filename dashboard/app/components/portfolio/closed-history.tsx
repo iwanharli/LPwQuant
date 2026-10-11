@@ -428,6 +428,14 @@ export function ClosedPositions({ wallet }: { wallet: string }) {
   // Page number belongs to one filter combination: changing any filter goes back to page 1.
   const filterKey = `${period}|${result}|${exit}|${sort}|${query}`;
   const [pager, setPager] = useState({ key: "", n: 0 });
+  // Pages come 60 at a time, newest first: keep loading until the oldest loaded close is before the period starts,
+  // so the period's totals count every position in it, not only the first page.
+  const oldest = positions.at(-1)?.closed_at ?? null;
+  useEffect(() => {
+    const d = PERIOD_DAYS[period];
+    if (d == null || done || loading || error || oldest == null) return;
+    if (oldest >= midnightWib(d)) loadMore();
+  }, [period, done, loading, error, oldest, loadMore]);
 
   if (error && positions.length === 0)
     return <p className="rounded-2xl border border-white/[0.06] bg-panel px-4 py-8 text-sm text-ink-3">Gagal memuat riwayat posisi.</p>;
@@ -465,7 +473,7 @@ export function ClosedPositions({ wallet }: { wallet: string }) {
   const deposits = all.reduce((n, p) => n + (p.deposited_usd ?? p.deposit_usd), 0);
   const fees = all.reduce((n, p) => n + p.fees_usd, 0);
   // Older positions are only loaded on demand, so a long period may still be filling.
-  const partial = !done && days == null;
+  const partial = !done && (days == null || (positions.at(-1)?.closed_at ?? 0) >= since);
 
   return (
     <div className="space-y-4">
