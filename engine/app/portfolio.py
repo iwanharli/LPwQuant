@@ -670,7 +670,8 @@ async def recent_closed_positions(db, wallet: str, limit: int = 20, before: int 
     closing time."""
     rows = await db.fetch(
         """select position, pool, symbol_x, symbol_y, opened_at, closed_at, meteora_pnl_usd, fees_usd, deposit_usd,
-                  min_price, max_price, cost_lp, cost_swaps, cost_rent, cost_tax, net_usd, net_at
+                  min_price, max_price, cost_lp, cost_swaps, cost_rent, cost_tax, net_usd, net_at, mint_y,
+                  sold_qty, sold_usd, bought_qty, bought_usd
            from portfolio_positions_index
            where wallet = $1 and status = 'closed' and closed_at is not null
              and ($3::timestamptz is null or closed_at < $3)
@@ -699,6 +700,9 @@ async def recent_closed_positions(db, wallet: str, limit: int = 20, before: int 
             },
             "net_usd": float(r["net_usd"]) if r["net_usd"] is not None else None,
             "net_at": ms(r["net_at"]),
+            "mint_y": r["mint_y"],
+            "sold_qty": float(r["sold_qty"] or 0), "sold_usd": float(r["sold_usd"] or 0),
+            "bought_qty": float(r["bought_qty"] or 0), "bought_usd": float(r["bought_usd"] or 0),
         }
         for r in rows
     ]
@@ -729,6 +733,32 @@ async def position_flows(db, positions: list[dict[str, Any]]) -> None:
         p["amount_y_in"] = float(add_row["amount_y"]) if add_row else None
         p["amount_x_out"] = float(remove_row["amount_x"]) if remove_row else None
         p["amount_y_out"] = float(remove_row["amount_y"]) if remove_row else None
+    await _swap_vs_pool(db, positions)
+
+
+async def _swap_vs_pool(db, positions: list[dict[str, Any]]) -> None:
+    """What the tokens sold after a position fetched, next to what the pool valued them at when they came out (and
+    the same for tokens bought before it, at entry). The gap is the slippage that makes the real result smaller than
+    Meteora's: the token's pool price is the withdrawal's dollars minus its SOL/USDC part, per token."""
+    from .netpnl import USDC, _price_at, _sol_prices  # local: netpnl imports this module
+
+    times, closes = await _sol_prices(db)
+
+    def token_px(usd: float | None, amount_x: float | None, amount_y: float | None, mint_y: str | None, ts: int | None):
+        if not usd or not amount_x or amount_x <= 0 or ts is None:
+            return None
+        y_px = 1.0 if mint_y == USDC else _price_at(ts / 1000, times, closes, 0.0)
+        if mint_y != USDC and not y_px:
+            return None
+        px = (usd - (amount_y or 0.0) * y_px) / amount_x
+        return px if px > 0 else None
+
+    for p in positions:
+        exit_px = token_px(p.get("withdrawn_usd"), p.get("amount_x_out"), p.get("amount_y_out"), p.get("mint_y"), p.get("closed_at"))
+        entry_px = token_px(p.get("deposited_usd"), p.get("amount_x_in"), p.get("amount_y_in"), p.get("mint_y"), p.get("opened_at"))
+        sold, bought = p.get("sold_qty") or 0.0, p.get("bought_qty") or 0.0
+        p["sold_pool_usd"] = sold * exit_px if sold and exit_px else None
+        p["bought_pool_usd"] = bought * entry_px if bought and entry_px else None
 
 
 CANDLE_CHUNK_S = 7 * 3600  # under the API limit of about 8 hours per request

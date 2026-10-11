@@ -520,6 +520,12 @@ alter table portfolio_positions_index add column if not exists cost_swaps double
 -- Shown in the cost breakdown only (already inside net_usd): bin-array rent the position opened, transfer tax paid.
 alter table portfolio_positions_index add column if not exists cost_rent double precision;
 alter table portfolio_positions_index add column if not exists cost_tax double precision;
+-- Tokens bought before / sold after the position (swaps the cost accounting assigns to it): quantity and dollars,
+-- compared on the card with the pool's own valuation of those tokens at entry / exit (the slippage).
+alter table portfolio_positions_index add column if not exists sold_qty double precision;
+alter table portfolio_positions_index add column if not exists sold_usd double precision;
+alter table portfolio_positions_index add column if not exists bought_qty double precision;
+alter table portfolio_positions_index add column if not exists bought_usd double precision;
 alter table portfolio_positions_index add column if not exists net_usd double precision;
 alter table portfolio_positions_index add column if not exists net_at timestamptz;
 

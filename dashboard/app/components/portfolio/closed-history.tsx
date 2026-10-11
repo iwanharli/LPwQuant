@@ -28,6 +28,11 @@ type ClosedPosition = {
   withdrawn_usd: number | null;
   claimed_usd: number;
   tx_count: number;
+  /** Tokens bought before / sold after the position, in real dollars, and what the pool valued them at. */
+  bought_usd?: number;
+  sold_usd?: number;
+  bought_pool_usd?: number | null;
+  sold_pool_usd?: number | null;
 };
 type ClosedOrder = {
   address: string;
@@ -89,13 +94,49 @@ function Stat({ label, value, hint, cls = "text-ink" }: { label: string; value: 
 
 /** Every tile is the same height whatever it holds: one line of label, one of value, one of hint. Cards sit side
  * by side in a grid, so a tile that wraps would push its neighbours' rows out of line. */
-function Tile({ label, value, hint, cls }: { label: string; value: React.ReactNode; hint?: string; cls?: string }) {
+function Tile({
+  label,
+  value,
+  hint,
+  cls,
+  note,
+}: {
+  label: string;
+  value: React.ReactNode;
+  hint?: string;
+  cls?: string;
+  /** A second hint line; pass it to both tiles of a row (even empty) so the row keeps one height. */
+  note?: React.ReactNode;
+}) {
   return (
     <div className="rounded-xl border border-white/[0.07] bg-[#1b222c] px-3 py-2.5 transition-colors hover:border-white/[0.14] hover:bg-[#222a36]">
       <div className="truncate text-[10px] font-medium uppercase tracking-[0.08em] text-ink-3">{label}</div>
       <div className={`mt-1.5 truncate text-[18px] font-semibold leading-none tabular-nums ${cls ?? "text-ink"}`}>{value}</div>
       <div className="mt-1.5 h-4 truncate text-[11px] leading-4 text-ink-3">{hint ?? ""}</div>
+      {note !== undefined && <div className="h-4 truncate text-[11px] leading-4 text-ink-3">{note}</div>}
     </div>
+  );
+}
+
+/** Real dollars of a token swap next to the pool's own value of those tokens: "token dijual $14.70 · −$1.34". */
+function SwapNote({ verb, real, pool, sell }: { verb: string; real: number; pool: number | null | undefined; sell: boolean }) {
+  if (!real) return <>{sell ? "token tidak dijual" : "tanpa beli token"}</>;
+  // Selling for less than the pool's value, or buying for more, is a loss.
+  const gap = pool == null ? null : sell ? real - pool : pool - real;
+  return (
+    <span title="Dibanding harga pool saat token masuk/keluar posisi. Selisih ini (slippage) yang membuat hasil bersih lebih kecil dari angka Meteora.">
+      token {verb} {usd.format(real)}
+      {gap != null && (
+        <>
+          {" · "}
+          <span className={gap < 0 ? "text-rose-300" : "text-emerald-300"}>
+            {gap < 0 ? "−" : "+"}
+            {usd.format(Math.abs(gap))}
+          </span>{" "}
+          vs harga pool
+        </>
+      )}
+    </span>
   );
 }
 
@@ -209,11 +250,17 @@ function PositionCard({ p, pool, cost, net }: { p: ClosedPosition; pool?: string
       <RangeBar min={p.min_price} max={p.max_price} last={p.last_price} positive={positive} />
 
       <div className="mt-3 grid grid-cols-2 gap-2.5">
-        <Tile label="Modal masuk" value={usd.format(basis)} hint={p.tx_count ? `${p.tx_count} transaksi` : "–"} />
+        <Tile
+          label="Modal masuk"
+          value={usd.format(basis)}
+          hint={p.tx_count ? `${p.tx_count} transaksi` : "–"}
+          note={p.bought_usd === undefined ? undefined : <SwapNote verb="dibeli" real={p.bought_usd} pool={p.bought_pool_usd} sell={false} />}
+        />
         <Tile
           label="Ditarik keluar"
           value={p.withdrawn_usd == null ? "–" : usd.format(p.withdrawn_usd)}
           hint={p.claimed_usd > 0 ? `+ ${usd.format(p.claimed_usd)} fee diklaim` : "saat posisi ditutup"}
+          note={p.sold_usd === undefined ? undefined : <SwapNote verb="dijual" real={p.sold_usd} pool={p.sold_pool_usd} sell />}
         />
         <Tile label="Fee terkumpul" value={usd.format(p.fees_usd)} cls="text-emerald-300" hint="menurut Meteora" />
         <Tile

@@ -405,7 +405,8 @@ async def compute(db, wallet: str, fresh: bool = False) -> dict[str, Any]:
         c["net"] = c["cash"] + held
         c["positions"] = _split_positions(c, [i for i in idx.values() if i["mint_x"] == c["mint"]])
         stored.extend(
-            (p["position"], p["cost_lp"], p["cost_swaps"], p["net"], p["cost_rent"], p["cost_tax"]) for p in c["positions"]
+            (p["position"], p["cost_lp"], p["cost_swaps"], p["net"], p["cost_rent"], p["cost_tax"],
+             p["sold_qty"], p["sold_usd"], p["bought_qty"], p["bought_usd"]) for p in c["positions"]
         )
         c.pop("txs")
         out_coins.append(c)
@@ -416,7 +417,8 @@ async def compute(db, wallet: str, fresh: bool = False) -> dict[str, Any]:
     if stored:
         await db.executemany(
             """update portfolio_positions_index set cost_lp = $2, cost_swaps = $3, net_usd = $4, net_at = now(),
-                 cost_rent = $5, cost_tax = $6 where position = $1""",
+                 cost_rent = $5, cost_tax = $6, sold_qty = $7, sold_usd = $8, bought_qty = $9, bought_usd = $10
+               where position = $1""",
             stored,
         )
 
@@ -471,6 +473,10 @@ def _split_positions(c: dict[str, Any], positions: list[dict[str, Any]]) -> list
     cost_swaps = {p["position"]: 0.0 for p in ps}
     rent = {p["position"]: 0.0 for p in ps}
     tax = {p["position"]: 0.0 for p in ps}
+    # Tokens bought before / sold after each position, as [quantity, dollars]: compared with what the pool valued
+    # them at, this is the slippage the card shows next to Meteora's figures.
+    sold = {p["position"]: [0.0, 0.0] for p in ps}
+    bought = {p["position"]: [0.0, 0.0] for p in ps}
     for t in c["txs"]:
         target = t["position"] if t.get("position") in cost_lp else _nearest(ps, t["ts"])
         rent[target] += t.get("rent", 0.0)
@@ -483,6 +489,12 @@ def _split_positions(c: dict[str, Any], positions: list[dict[str, Any]]) -> list
             continue
         volume[target] += abs(t["cash"])
         count[target] += 1
+        qty = t.get("qty") or 0.0
+        if not qty:
+            continue
+        side = sold if qty < 0 else bought
+        side[target][0] += abs(qty)
+        side[target][1] += abs(t["cash"])
     meteora_total = sum(p["meteora_pnl_usd"] or 0.0 for p in ps)
     outside = c["net"] - meteora_total
     total_volume = sum(volume.values())
@@ -512,6 +524,8 @@ def _split_positions(c: dict[str, Any], positions: list[dict[str, Any]]) -> list
             "cost_swaps": cost_swaps[p["position"]],
             "cost_rent": rent[p["position"]],
             "cost_tax": tax[p["position"]],
+            "sold_qty": sold[p["position"]][0], "sold_usd": sold[p["position"]][1],
+            "bought_qty": bought[p["position"]][0], "bought_usd": bought[p["position"]][1],
             "net": (p["meteora_pnl_usd"] or 0.0) + share,
         })
     return out
