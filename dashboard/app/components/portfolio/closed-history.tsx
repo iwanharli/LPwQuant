@@ -312,6 +312,7 @@ type RecentPosition = ClosedPosition & {
 /** Closed positions as one stream, newest first. Grouping by pool hid the thing that matters most -- what you did
  * last -- behind a click, and most pools here hold a single position anyway. */
 const PAGE_SIZE = 60;
+const MORE_SIZE = 500; // later pages: one request per 500 instead of one per 60 (each request costs seconds)
 const CARDS_PER_PAGE = 9;
 
 /** The shape of the page while the first rows are still coming, so the layout does not jump when they land. */
@@ -364,12 +365,12 @@ function useClosedPositions(wallet: string) {
   useEffect(() => {
     let cancelled = false;
     let again: ReturnType<typeof setTimeout> | undefined;
-    const url = `${ENGINE_URL}/api/portfolio/positions/recent?wallet=${wallet}&limit=${PAGE_SIZE}${cursor ? `&before=${cursor}` : ""}`;
+    const url = `${ENGINE_URL}/api/portfolio/positions/recent?wallet=${wallet}&limit=${cursor ? MORE_SIZE : PAGE_SIZE}${cursor ? `&before=${cursor}` : ""}`;
     fetch(url)
       .then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
       .then((body: { positions: RecentPosition[] }) => {
         if (cancelled) return;
-        const page: Page = { positions: body.positions, done: body.positions.length < PAGE_SIZE };
+        const page: Page = { positions: body.positions, done: body.positions.length < (cursor ? MORE_SIZE : PAGE_SIZE) };
         setPages((old) => (cursor ? [...old, page] : [page]));
         setError(false);
         setLoading(false);
@@ -428,8 +429,8 @@ export function ClosedPositions({ wallet }: { wallet: string }) {
   // Page number belongs to one filter combination: changing any filter goes back to page 1.
   const filterKey = `${period}|${result}|${exit}|${sort}|${query}`;
   const [pager, setPager] = useState({ key: "", n: 0 });
-  // Pages come 60 at a time, newest first: keep loading until the oldest loaded close is before the period starts,
-  // so the period's totals count every position in it, not only the first page.
+  // The first page is 60, newest first: keep loading until the oldest loaded close is before the period starts
+  // ("Semua": until everything is in), so the period's totals count every position in it, not only the first page.
   const oldest = positions.at(-1)?.closed_at ?? null;
   // "Hari ini" shows the one today figure every page uses: what LP did since midnight, so a position opened
   // yesterday only counts its change today (its full net still shows on its own card).
@@ -444,8 +445,8 @@ export function ClosedPositions({ wallet }: { wallet: string }) {
   useAutoRefresh(refreshToday, 10_000);
   useEffect(() => {
     const d = PERIOD_DAYS[period];
-    if (d == null || done || loading || error || oldest == null) return;
-    if (oldest >= midnightWib(d)) loadMore();
+    if (done || loading || error || oldest == null) return;
+    if (d == null || oldest >= midnightWib(d)) loadMore();
   }, [period, done, loading, error, oldest, loadMore]);
 
   if (error && positions.length === 0)
