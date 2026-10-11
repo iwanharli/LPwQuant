@@ -731,6 +731,7 @@ async def position_flows(db, positions: list[dict[str, Any]]) -> None:
         p["amount_y_out"] = float(remove_row["amount_y"]) if remove_row else None
 
 
+CANDLE_CHUNK_S = 7 * 3600  # under the API limit of about 8 hours per request
 _candle_cache: dict[tuple[str, int, int], list[tuple[int, float]]] = {}
 
 
@@ -741,8 +742,21 @@ async def _fetched_candles(pool: str, start_ms: int, end_ms: int) -> list[tuple[
         return _candle_cache[key]
     from . import charts  # local: charts imports portfolio types
 
+    # Meteora answers "time range too large" past about 8 hours of 5m candles, so a longer window goes in chunks.
+    start_s, end_s = start_ms // 1000 - 300, end_ms // 1000 + 300
+    chunks = [(a, min(a + CANDLE_CHUNK_S, end_s)) for a in range(start_s, end_s, CANDLE_CHUNK_S)]
+
+    def fetch_all() -> list[dict[str, Any]]:
+        with ThreadPoolExecutor(max_workers=6) as ex:
+            parts = list(ex.map(lambda c: charts._fetch_window(pool, "5m", c[0], c[1]), chunks))
+        seen: dict[int, dict[str, Any]] = {}
+        for part in parts:
+            for r in part:
+                seen[r["ts"]] = r  # chunk edges overlap by a candle
+        return [seen[t] for t in sorted(seen)]
+
     try:
-        rows = await asyncio.to_thread(charts._fetch_window, pool, "5m", start_ms // 1000 - 300, end_ms // 1000 + 300)
+        rows = await asyncio.to_thread(fetch_all)
     except Exception as err:
         log.warning("candles for %s failed: %s", pool[:6], err)
         rows = []

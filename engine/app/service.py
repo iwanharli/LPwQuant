@@ -678,7 +678,10 @@ class Engine:
                     now_ms = int(time.time() * 1000)
                     updates = []
                     for address in pending:
-                        pool = self.pools[address]
+                        # A pool can leave the watch list between its tick and this broadcast; skipping it keeps
+                        # the address from failing every later loop (pending is only cleared after a full pass).
+                        if (pool := self.pools.get(address)) is None:
+                            continue
                         if (price := self.histories[address].last_price) is not None:
                             pool["price"] = price
                         self.rows[address] = self._build_row(pool, now_ms)
