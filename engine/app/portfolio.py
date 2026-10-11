@@ -14,10 +14,12 @@ import asyncio
 import json
 import logging
 import re
+import threading
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -27,10 +29,11 @@ from . import config
 log = logging.getLogger("portfolio")
 
 SNAPSHOT_EVERY_MS = 15 * 60_000
-CACHE_MS = 15_000  # the page polls every 20s; the cache only absorbs several open tabs
+CACHE_MS = 8_000  # the page polls every 10s; the cache only absorbs several open tabs
 MAX_POOLS = 60
 _WALLET = re.compile(r"^[1-9A-HJ-NP-Za-km-z]{32,44}$")  # base58 public key
 _cache: dict[str, tuple[int, dict[str, Any]]] = {}
+_locks: dict[str, asyncio.Lock] = {}
 
 
 def valid_wallet(address: str) -> bool:
@@ -47,7 +50,7 @@ def _f(value: Any) -> float:
 def _get(path: str, params: dict[str, Any]) -> Any:
     url = f"{config.METEORA_API_URL}{path}?{urllib.parse.urlencode(params)}"
     request = urllib.request.Request(url, headers={"Accept": "application/json", "User-Agent": "quant-engine"})
-    with urllib.request.urlopen(request, timeout=20) as response:
+    with urllib.request.urlopen(request, timeout=8) as response:
         return json.load(response)
 
 
@@ -106,26 +109,36 @@ def _position(p: dict[str, Any]) -> dict[str, Any]:
 def _fetch(wallet: str) -> tuple[dict[str, Any], int, int]:
     """Blocking: every call Meteora needs for one wallet. Returns (portfolio, calls, errors)."""
     calls = errors = 0
+    lock = threading.Lock()
 
     def get(path: str, params: dict[str, Any]) -> Any:
         nonlocal calls, errors
-        calls += 1
+        with lock:
+            calls += 1
         try:
             return _get(path, params)
         except (urllib.error.URLError, TimeoutError, ValueError):
-            errors += 1
+            with lock:
+                errors += 1
             raise
 
-    open_ = get("/portfolio/open", {"user": wallet, "page_size": MAX_POOLS})
-    total = get("/portfolio/total", {"user": wallet})
-    pools = []
-    for item in open_.get("pools") or []:
-        address = item.get("poolAddress")
+    def positions_of(address: str) -> list[dict[str, Any]]:
         try:
             detail = get(f"/positions/{address}/pnl", {"user": wallet, "status": "open", "page_size": 50})
-            positions = [_position(p) for p in detail.get("positions") or [] if not p.get("isClosed")]
+            return [_position(p) for p in detail.get("positions") or [] if not p.get("isClosed")]
         except (urllib.error.URLError, TimeoutError, ValueError):
-            positions = []  # the pool row still shows; only the per-position detail is missing
+            return []  # the pool row still shows; only the per-position detail is missing
+
+    # In parallel, so a wallet with many pools waits for the slowest call, not the sum of them.
+    with ThreadPoolExecutor(max_workers=8) as ex:
+        total_f = ex.submit(get, "/portfolio/total", {"user": wallet})
+        open_ = get("/portfolio/open", {"user": wallet, "page_size": MAX_POOLS})
+        items = open_.get("pools") or []
+        details = list(ex.map(positions_of, [item.get("poolAddress") for item in items]))
+        total = total_f.result()
+    pools = []
+    for item, positions in zip(items, details):
+        address = item.get("poolAddress")
         pools.append(
             {
                 "address": address,
@@ -171,18 +184,21 @@ def _fetch(wallet: str) -> tuple[dict[str, Any], int, int]:
 
 
 async def fetch_portfolio(db, wallet: str, fresh: bool = False) -> dict[str, Any]:
-    now = int(time.time() * 1000)
-    cached = _cache.get(wallet)
-    if cached and not fresh and now - cached[0] < CACHE_MS:
-        return cached[1]
-    calls = errors = 0
-    try:
-        data, calls, errors = await asyncio.to_thread(_fetch, wallet)
-    finally:
-        await _record_usage(db, calls or 1, errors if calls else 1)
-    data["fetched_at"] = now
-    _cache[wallet] = (now, data)
-    return data
+    requested = int(time.time() * 1000)
+    # One fetch per wallet at a time: the positions and summary pages polling together share it.
+    async with _locks.setdefault(wallet, asyncio.Lock()):
+        now = int(time.time() * 1000)
+        cached = _cache.get(wallet)
+        if cached and (cached[0] >= requested or (not fresh and now - cached[0] < CACHE_MS)):
+            return cached[1]
+        calls = errors = 0
+        try:
+            data, calls, errors = await asyncio.to_thread(_fetch, wallet)
+        finally:
+            await _record_usage(db, calls or 1, errors if calls else 1)
+        data["fetched_at"] = now
+        _cache[wallet] = (now, data)
+        return data
 
 
 async def add_wallet(db, wallet: str) -> None:
@@ -404,10 +420,11 @@ def _wallet_usd(wallet: str) -> float | None:
         return None
 
 
-async def snapshot_networth(db, wallet: str, data: dict[str, Any]) -> None:
+async def networth_now(db, wallet: str, data: dict[str, Any]) -> dict[str, float] | None:
+    """Wallet coins + LP (with unclaimed fees) + open limit orders, read now. None when the wallet read fails."""
     wallet_usd = await asyncio.to_thread(_wallet_usd, wallet)
     if wallet_usd is None:
-        return
+        return None
     s = data["summary"]
     lp = s["value_usd"] + s["unclaimed_fees_usd"]
     try:
@@ -416,11 +433,18 @@ async def snapshot_networth(db, wallet: str, data: dict[str, Any]) -> None:
             o["unfilled_usd"] + o["filled_output_usd"] + o["bonus_usd"] for pool in orders["pools"] for o in pool["orders"]
         )
     except Exception:
-        orders_usd = 0.0  # no limit orders is the common case; a failed read only understates this one snapshot
+        orders_usd = 0.0  # no limit orders is the common case; a failed read only understates this reading
+    return {"wallet_usd": wallet_usd, "lp_usd": lp, "orders_usd": orders_usd, "total_usd": wallet_usd + lp + orders_usd}
+
+
+async def snapshot_networth(db, wallet: str, data: dict[str, Any]) -> None:
+    nw = await networth_now(db, wallet, data)
+    if nw is None:
+        return
     await db.execute(
         """insert into portfolio_networth_snapshots (wallet, ts, wallet_usd, lp_usd, orders_usd, total_usd)
            values ($1, date_trunc('minute', now()), $2, $3, $4, $5) on conflict do nothing""",
-        wallet, wallet_usd, lp, orders_usd, wallet_usd + lp + orders_usd,
+        wallet, nw["wallet_usd"], nw["lp_usd"], nw["orders_usd"], nw["total_usd"],
     )
 
 

@@ -19,7 +19,7 @@ import PortfolioTabs from "./portfolio-tabs";
 import PositionFilters, { DEFAULT_FILTERS, applyFilters, statusCounts, type Filters } from "./position-filters";
 import { SkeletonCards, SkeletonChart } from "../skeleton";
 
-const REFRESH_MS = 20_000;
+const REFRESH_MS = 10_000;
 
 type Portfolio = {
   wallet: string;

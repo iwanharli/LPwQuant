@@ -20,7 +20,7 @@ import logging
 import time
 import urllib.error
 import urllib.request
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -248,7 +248,9 @@ async def summary(db, wallet: str) -> dict[str, Any]:
         capital_idr = sum(e["amount_idr"] for e in manual_idr) + (after + manual_usd_only) * rate
     else:
         capital_idr = capital_usd * rate
-    nw = await _latest_networth(db, wallet)
+    # Live, so it matches what a wallet app shows; the 15-minute snapshot only when the wallet read fails.
+    live = await portfolio.networth_now(db, wallet, pf)
+    nw = {**live, "ts": datetime.now(timezone.utc)} if live else await _latest_networth(db, wallet)
     networth = nw["total_usd"] if nw else pf["summary"]["value_usd"]
     total = networth - capital_usd
     # LP since the start: each closed position's net after swaps and rent (Meteora's PnL where not computed yet),
