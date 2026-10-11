@@ -154,6 +154,40 @@ def _lp_by_day(snaps: list[dict[str, Any]], closed: list[dict[str, Any]]) -> dic
     return out
 
 
+async def lp_today(db, wallet: str, open_pnl_now: float) -> float:
+    """LP result of today (WIB) only, live: the net of every position closed today plus how the open positions' PnL
+    moved since the last snapshot before midnight. The same rule as _lp_by_day, so a position opened yesterday counts
+    only what it did today. This is the one 'today' figure every page shows."""
+    midnight = datetime.now(_zone).replace(hour=0, minute=0, second=0, microsecond=0)
+    start = await db.fetchval(
+        """select open_pnl_usd from portfolio_snapshots where wallet = $1 and ts < $2 order by ts desc limit 1""",
+        wallet, midnight)
+    if start is None:  # first day tracked: from the first snapshot
+        start = await db.fetchval(
+            "select open_pnl_usd from portfolio_snapshots where wallet = $1 and ts >= $2 order by ts limit 1",
+            wallet, midnight)
+    closed = await db.fetchval(
+        """select coalesce(sum(coalesce(net_usd, meteora_pnl_usd, 0)), 0) from portfolio_positions_index
+           where wallet = $1 and status = 'closed' and closed_at >= $2""", wallet, midnight)
+    return float(closed) + open_pnl_now - float(start or 0.0)
+
+
+async def lp_days(db, wallet: str, n: int) -> dict[str, float]:
+    """LP result per WIB day over the last n days, by the one rule every page uses (see _lp_by_day)."""
+    lp_rows = [
+        dict(r)
+        for r in await db.fetch(
+            """select ts, open_pnl_usd from portfolio_snapshots
+               where wallet = $1 and ts >= now() - make_interval(days => $2) order by ts""",
+            wallet, n + 1,
+        )
+    ]
+    return _lp_by_day(lp_rows, [dict(r) for r in await db.fetch(
+        """select closed_at, net_usd, meteora_pnl_usd from portfolio_positions_index
+           where wallet = $1 and status = 'closed' and closed_at >= now() - make_interval(days => $2)""",
+        wallet, n + 2)])
+
+
 async def days(db, wallet: str, sol_usd: float, n: int = 14) -> list[dict[str, Any]]:
     """Per WIB day since snapshots began: how net worth moved, and how much of it was new money, LP, gacha, and
     everything else (trading)."""
@@ -164,18 +198,7 @@ async def days(db, wallet: str, sol_usd: float, n: int = 14) -> list[dict[str, A
     )
     if not snaps:
         return []
-    lp_rows = [
-        dict(r)
-        for r in await db.fetch(
-            """select ts, value_usd, open_pnl_usd, open_pnl_sol, closed_pnl_usd, closed_pnl_sol from portfolio_snapshots
-               where wallet = $1 and ts >= now() - make_interval(days => $2) order by ts""",
-            wallet, n + 1,
-        )
-    ]
-    lp_by_day = _lp_by_day(lp_rows, [dict(r) for r in await db.fetch(
-        """select closed_at, net_usd, meteora_pnl_usd from portfolio_positions_index
-           where wallet = $1 and status = 'closed' and closed_at >= now() - make_interval(days => $2)""",
-        wallet, n + 2)])
+    lp_by_day = await lp_days(db, wallet, n)
     flows = await _flows(db, wallet, sol_usd)
 
     tracked_from = snaps[0]["ts"]
@@ -272,8 +295,22 @@ async def summary(db, wallet: str) -> dict[str, Any]:
         "breakdown": {"lp": lp, "gacha": gacha, "trading": total - lp - gacha},
         # Rupiah P/L minus the dollar P/L at today's rate: what the exchange rate alone did since the top-ups.
         "fx_idr": (networth * rate - capital_idr) - total * rate,
-        "days": await days(db, wallet, sol_usd),
+        "days": await _live_today(db, wallet, sol_usd, networth, pf["summary"]["open_pnl_usd"]),
     }
+
+
+async def _live_today(db, wallet: str, sol_usd: float, networth: float, open_pnl_now: float) -> list[dict[str, Any]]:
+    """The day rows, with today's row brought up to now (net worth and LP read live), so 'today' matches the
+    positions page instead of trailing it by up to one snapshot."""
+    rows = await days(db, wallet, sol_usd)
+    today = datetime.now(_zone).date().isoformat()
+    if rows and rows[-1]["day"] == today:
+        d = rows[-1]
+        start = d["networth"] - d["change"]
+        d["networth"], d["change"] = networth, networth - start
+        d["lp"] = await lp_today(db, wallet, open_pnl_now)
+        d["trading"] = d["change"] - d["new_money"] - d["lp"] - d["gacha"]
+    return rows
 
 
 # ---- Guard: Telegram when a day turns red outside LP ------------------------------------------------------------

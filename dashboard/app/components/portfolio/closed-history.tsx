@@ -431,6 +431,17 @@ export function ClosedPositions({ wallet }: { wallet: string }) {
   // Pages come 60 at a time, newest first: keep loading until the oldest loaded close is before the period starts,
   // so the period's totals count every position in it, not only the first page.
   const oldest = positions.at(-1)?.closed_at ?? null;
+  // "Hari ini" shows the one today figure every page uses: what LP did since midnight, so a position opened
+  // yesterday only counts its change today (its full net still shows on its own card).
+  const [todayLp, setTodayLp] = useState<number | null>(null);
+  const refreshToday = useCallback(() => {
+    fetch(`${ENGINE_URL}/api/portfolio/today?wallet=${wallet}`)
+      .then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
+      .then((b: { lp_usd: number }) => setTodayLp(b.lp_usd))
+      .catch(() => undefined);
+  }, [wallet]);
+  useEffect(refreshToday, [refreshToday]);
+  useAutoRefresh(refreshToday, 15_000);
   useEffect(() => {
     const d = PERIOD_DAYS[period];
     if (d == null || done || loading || error || oldest == null) return;
@@ -468,7 +479,8 @@ export function ClosedPositions({ wallet }: { wallet: string }) {
 
   const nets = all.map((p) => p.net_usd).filter((n): n is number => n != null);
   const pending = all.length - nets.length; // positions the cost accounting has not reached yet
-  const netAll = all.length === 0 ? 0 : nets.length ? nets.reduce((a, b) => a + b, 0) : null;
+  const netClosed = all.length === 0 ? 0 : nets.length ? nets.reduce((a, b) => a + b, 0) : null;
+  const netAll = period === "1d" ? todayLp : netClosed;
   const wins = nets.filter((n) => n > 0).length;
   const deposits = all.reduce((n, p) => n + (p.deposited_usd ?? p.deposit_usd), 0);
   const fees = all.reduce((n, p) => n + p.fees_usd, 0);
@@ -483,7 +495,9 @@ export function ClosedPositions({ wallet }: { wallet: string }) {
           value={netAll == null ? "…" : signed(netAll)}
           cls={netAll == null ? "text-ink-3" : tone(netAll)}
           hint={
-            all.length === 0
+            period === "1d"
+              ? "Sejak 00.00 WIB, setelah swap dan biaya"
+              : all.length === 0
               ? `Tidak ada posisi ditutup ${PERIOD_HINT[period]}`
               : pending > 0
                 ? `${pending} posisi masih dihitung`

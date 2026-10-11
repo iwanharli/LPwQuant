@@ -650,7 +650,7 @@ export default function PortfolioPage() {
               <Tile
                 label="Keuntungan hari ini"
                 value={today ? <span className={tone(today.pnl_usd)}>{signedUsd(today.pnl_usd)}</span> : "–"}
-                hint={today?.partial ? "Dihitung sejak mulai dipantau hari ini" : "Sejak tutup hari kemarin (WIB)"}
+                hint={today?.partial ? "Dihitung sejak mulai dipantau hari ini" : "Sejak 00.00 WIB, setelah swap dan biaya"}
               />
               <Tile
                 label="PnL posisi terbuka"

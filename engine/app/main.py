@@ -182,7 +182,24 @@ async def get_portfolio(wallet: str, fresh: bool = False, days: int = Query(30, 
     if not hist["series"]:
         await portfolio.snapshot(engine.db, data)  # first visit: start the history now, not in 15 minutes
         hist = await portfolio.history(engine.db, wallet, days)
-    return {**data, **hist}
+    # Each day's profit by the same rule as the summary page (net after swaps and rent), today read live.
+    today_lp = await ledger.lp_today(engine.db, wallet, data["summary"]["open_pnl_usd"])
+    by_day = await ledger.lp_days(engine.db, wallet, days)
+    today = datetime.now(_tz).date().isoformat()
+    for d in hist["daily"]:
+        d["pnl_usd"] = today_lp if d["day"] == today else by_day.get(d["day"], d["pnl_usd"])
+    return {**data, **hist, "today_lp_usd": today_lp}
+
+
+@app.get("/api/portfolio/today")
+async def get_today(wallet: str) -> dict:
+    """Today's LP result (WIB), the same figure the positions and summary pages show."""
+    _wallet_or_400(wallet)
+    try:
+        data = await portfolio.fetch_portfolio(engine.db, wallet)
+    except Exception as err:
+        raise HTTPException(status_code=502, detail=f"Meteora API gagal: {err}") from err
+    return {"lp_usd": await ledger.lp_today(engine.db, wallet, data["summary"]["open_pnl_usd"])}
 
 
 @app.get("/api/portfolio/orders")
