@@ -20,6 +20,7 @@ from .portfolio import snapshot_loop as portfolio_snapshot_loop
 from .position_alerts import PositionAlerts
 from . import danger_wallets, lp_leaders, web_push
 from .sol_grid import SolGrid
+from . import paper_phases
 from .brontosaurus import Brontosaurus
 from .copy_paper import CopyPaper
 from .indicators import Candle, compute_indicators, flow_features, merge_market
@@ -168,6 +169,7 @@ class Engine:
         )
         async with self.db.acquire() as conn:
             await conn.execute(config.SCHEMA_PATH.read_text())
+        await paper_phases.ensure(self.db)  # before any paper test loads: each reads its phase's start
         self.alerter = Alerter(self.db)
         # Limit-order paper test stopped 2026-09-26: stops lost 1.11 SOL against 0.62 SOL of targets over 64 orders.
         self.paper_lo = None

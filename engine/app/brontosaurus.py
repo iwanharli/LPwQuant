@@ -9,7 +9,9 @@ Every TICK_S:
   * fees: our liquidity in the active bin over the pool's in that bin (on-chain depth, else TVL over 70 bins), times
     the pool's fees since the last tick, only while the price is in range;
   * exit like the wallet: from TARGET_HOLD_H on, close once in net profit; keep a losing position until it recovers,
-    until MAX_HOLD_H, or until the pool's liquidity is pulled. No stop-loss.
+    until MAX_HOLD_H, or until the pool's liquidity is pulled. Phase 1 had no stop-loss, and 64 of 137 positions
+    rode a rug down to the pulled-liquidity exit (-$2,863, price -72..-82%). Phase 2 also closes as soon as the price
+    falls under the range ("below_range"): all the capital is the token by then, so waiting only adds to the loss.
 
 Costs: half the capital is swapped into the token at entry and what token is left is sold at exit (the pool's fee
 plus 0.3% impact each way), network fees, and bin-array rent for arrays under the range that do not exist yet.
@@ -23,7 +25,7 @@ import urllib.request
 from datetime import datetime, timezone
 from typing import Any, Callable
 
-from . import config, portfolio
+from . import config, paper_phases, portfolio
 from .backtest import LpPosition
 from .scoring import RISKY_FLAGS
 
@@ -152,6 +154,8 @@ class Brontosaurus:
         net = self._net(r, price)
         if peak > 0 and tvl < peak * PULLED_FRAC:
             await self._close(r, now, price, "pulled")
+        elif paper_phases.current("bronto") >= 2 and price < r["entry_price"] and not lp.in_range(price):
+            await self._close(r, now, price, "below_range")
         elif held_h >= TARGET_HOLD_H and net > 0:
             await self._close(r, now, price, "target")
         elif held_h >= MAX_HOLD_H:
@@ -210,7 +214,9 @@ class Brontosaurus:
 
 
 async def report(db, rows: dict[str, dict[str, Any]] | None = None) -> dict[str, Any]:
-    runs = [dict(r) for r in await db.fetch("select * from paper_bronto_runs order by opened_at desc limit 300")]
+    since = paper_phases.since("bronto") or datetime.min.replace(tzinfo=timezone.utc)
+    runs = [dict(r) for r in await db.fetch(
+        "select * from paper_bronto_runs where opened_at >= $1 order by opened_at desc limit 300", since)]
     ms = lambda t: int(t.timestamp() * 1000) if t else None  # noqa: E731
     closed = [r for r in runs if r["status"] == "closed"]
     funnel: dict[str, int] = {}
@@ -256,6 +262,7 @@ async def report(db, rows: dict[str, dict[str, Any]] | None = None) -> dict[str,
                    "min_bin_step": MIN_BIN_STEP, "min_volume_24h": MIN_VOLUME_24H, "min_fee_tvl_24h": MIN_FEE_TVL_24H,
                    "min_tvl": MIN_TVL, "target_hold_h": TARGET_HOLD_H, "max_hold_h": MAX_HOLD_H, "tick_s": TICK_S},
         "counts": {"open": len(runs) - len(closed), "closed": len(closed)},
+        "phases": paper_phases.info("bronto"),
         "pnl_usd": sum(r["pnl_usd"] or 0 for r in closed),
         "fees_usd": sum(r["fees_usd"] for r in closed),
         "win_rate": sum((r["pnl_usd"] or 0) > 0 for r in closed) / len(closed) if closed else None,

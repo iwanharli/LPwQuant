@@ -21,7 +21,7 @@ import time
 from datetime import datetime, timezone
 from typing import Any, Callable
 
-from . import lp_leaders, portfolio
+from . import lp_leaders, paper_phases, portfolio
 
 log = logging.getLogger("copy_paper")
 
@@ -31,6 +31,12 @@ SIZE_USD = 100.0
 FRESH_MIN = 30
 TX_FEE_SOL = 0.0006  # open, add, remove, close
 EXIT_SWAP_PCT = 0.3  # selling the token part left at exit, as % of the position
+# Phase 2: copy a wallet only while copying it pays. Phase 1 made +$659 before costs and lost -$611 after them:
+# fixed costs on positions held minutes (one wallet opened 2,036 positions). Judged on the wallet's last
+# TRACK_N closed copies; a wallet with fewer than TRACK_MIN is still tried, so new leaders get a chance.
+TRACK_N = 30
+TRACK_MIN = 10
+MIN_MEDIAN_HOLD_H = 2.0
 
 
 def copy_return_pct(entry_pct: float | None, now_pct: float | None) -> float:
@@ -72,6 +78,25 @@ async def followed(db) -> list[dict[str, Any]]:
     return [l for l in rep["leaders"] if l["meets"]][:FOLLOW]
 
 
+async def eligible(db, wallet: str) -> tuple[bool, str]:
+    """Whether phase 2 copies this wallet: its last copies held long enough and did not lose, together."""
+    if paper_phases.current("copy") < 2:
+        return True, ""
+    rows = await db.fetch(
+        """select pnl_usd, extract(epoch from closed_at - opened_at) / 3600 as h from paper_copy_runs
+           where wallet = $1 and status = 'closed' order by closed_at desc limit $2""", wallet, TRACK_N)
+    if len(rows) < TRACK_MIN:
+        return True, "baru, masih dicoba"
+    holds = sorted(float(r["h"] or 0) for r in rows)
+    median = holds[len(holds) // 2]
+    if median < MIN_MEDIAN_HOLD_H:
+        return False, f"posisi terlalu pendek (median {median:.1f} jam)"
+    total = sum(r["pnl_usd"] or 0 for r in rows)
+    if total < 0:
+        return False, f"tiruan terakhir rugi (${total:,.2f})"
+    return True, ""
+
+
 class CopyPaper:
     def __init__(self, db, sol_usd: Callable[[], float]) -> None:
         self.db = db
@@ -97,6 +122,7 @@ class CopyPaper:
                 log.info("copy %s read failed: %s", w[:4], err)
                 continue
             first_look = not await self.db.fetchval("select 1 from paper_copy_seen where wallet = $1 limit 1", w)
+            copy_ok, _why = await eligible(self.db, w)
             live_ids = {q["address"] for q in live}
             for q in live:
                 if await self.db.fetchval("select 1 from paper_copy_seen where position = $1", q["address"]):
@@ -108,7 +134,7 @@ class CopyPaper:
                     "insert into paper_copy_seen (position, wallet, first_seen) values ($1, $2, $3) on conflict do nothing",
                     q["address"], w, now)
                 created = (q.get("created_at") or 0) / 1000
-                if first_look or time.time() - created > FRESH_MIN * 60:
+                if first_look or time.time() - created > FRESH_MIN * 60 or not copy_ok:
                     continue
                 if (q["pnl_pct"] or 0) <= -50:
                     continue  # already down half on arrival: a broken or emptied position, not one to copy
@@ -137,7 +163,9 @@ class CopyPaper:
 
 
 async def report(db, rows: dict[str, dict[str, Any]] | None = None) -> dict[str, Any]:
-    runs = [dict(r) for r in await db.fetch("select * from paper_copy_runs order by opened_at desc limit 300")]
+    since = paper_phases.since("copy") or datetime.min.replace(tzinfo=timezone.utc)
+    runs = [dict(r) for r in await db.fetch(
+        "select * from paper_copy_runs where opened_at >= $1 order by opened_at desc limit 300", since)]
     ms = lambda t: int(t.timestamp() * 1000) if t else None  # noqa: E731
     closed = [r for r in runs if r["status"] == "closed"]
     out = []
@@ -155,12 +183,23 @@ async def report(db, rows: dict[str, dict[str, Any]] | None = None) -> dict[str,
             "price": ((rows or {}).get(r["pool"]) or {}).get("price"),
             "opened_at": ms(r["opened_at"]), "closed_at": ms(r["closed_at"]), "checked_at": ms(r["checked_at"]),
         })
+    # Totals over the whole phase, not only the 300 rows listed.
+    agg = await db.fetchrow(
+        """select count(*) filter (where status = 'open') as open, count(*) filter (where status = 'closed') as closed,
+                  coalesce(sum(pnl_usd) filter (where status = 'closed'), 0) as pnl,
+                  count(*) filter (where status = 'closed' and pnl_usd > 0) as wins
+           from paper_copy_runs where opened_at >= $1""", since)
+    wallets = []
+    for w in await followed(db):
+        ok, why = await eligible(db, w["wallet"])
+        wallets.append({**w, "copied": ok, "copy_note": why})
     return {
         "params": {"follow": FOLLOW, "size_usd": SIZE_USD, "tick_s": TICK_S, "fresh_min": FRESH_MIN,
-                   "exit_swap_pct": EXIT_SWAP_PCT},
-        "wallets": await followed(db),
-        "counts": {"open": len(runs) - len(closed), "closed": len(closed)},
-        "pnl_usd": sum(r["pnl_usd"] or 0 for r in closed),
-        "win_rate": sum((r["pnl_usd"] or 0) > 0 for r in closed) / len(closed) if closed else None,
+                   "exit_swap_pct": EXIT_SWAP_PCT, "min_median_hold_h": MIN_MEDIAN_HOLD_H, "track_n": TRACK_N},
+        "wallets": wallets,
+        "phases": paper_phases.info("copy"),
+        "counts": {"open": agg["open"], "closed": agg["closed"]},
+        "pnl_usd": float(agg["pnl"]),
+        "win_rate": agg["wins"] / agg["closed"] if agg["closed"] else None,
         "runs": out,
     }

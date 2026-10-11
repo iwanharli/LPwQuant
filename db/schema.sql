@@ -668,3 +668,13 @@ create table if not exists danger_traces (
 create table if not exists paper_sol_grid_half (like paper_sol_grid including all);
 create table if not exists paper_sol_grid_half_fills (like paper_sol_grid_fills including all);
 create table if not exists paper_sol_grid_half_equity (like paper_sol_grid_equity including all);
+
+-- Phases of the paper tests (engine/app/paper_phases.py): when each strategy's current rules started. Trades opened
+-- from a phase's start belong to it; earlier phases stay, for comparison.
+create table if not exists paper_phases (
+  strategy    text not null,
+  phase       integer not null,
+  started_at  timestamptz not null default now(),
+  note        text,
+  primary key (strategy, phase)
+);

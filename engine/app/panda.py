@@ -22,7 +22,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Any, Callable
 
-from . import charts, config, indicators, portfolio
+from . import charts, config, indicators, paper_phases, portfolio
 from .netpnl import _get_json
 from .alerts import top10_pct
 from .indicators import Candle
@@ -33,7 +33,10 @@ log = logging.getLogger("panda")
 TICK_S = 300
 SIZE_USD = 100.0  # what the user is willing to risk per position while this is only a test
 MAX_OPEN = 6  # "diversifikasi ke >= 6 posisi"
-RANGE_LOW_PCT = -90.0  # the -86%..-94% band, at its middle
+# Phase 1 used -90% (the corpus' -86..-94% band): eight positions fell -55..-94% and were sold on a small bounce
+# (-$116 of the -$125). Phase 2 (plan of 26 Sep): a -40% range, cut once the price breaks under it, and the bounce
+# exit only in profit. Each position keeps the range it was opened with (range_low_pct).
+RANGE_LOW_PCT = -40.0
 BINS = 100
 # What a position really costs on Meteora, checked against the app's own cost dialog for a 100-bin position:
 # 0.06 SOL position rent + 0.02 SOL extension, both REFUNDED on close, plus the transaction fees. The 0.45-0.5 SOL
@@ -77,8 +80,8 @@ APPROXIMATIONS = [
     "Phishing % (GMGN) tidak selalu tersedia; yang dipakai flag keamanan engine dan RugCheck.",
     "Fee: hanya bin tempat harga berada yang dapat fee, jadi bagian kita = likuiditas kita per bin ÷ likuiditas pool di bin itu (dari data bin on-chain). Posisi yang dibuka sebelum 26/09 dihitung ulang dengan kedalaman pool saat ini.",
     "Sewa posisi 0,08 SOL dikunci saat posisi terbuka lalu dikembalikan, jadi tidak dihitung sebagai kerugian.",
-    "Sewa bin array: 0,0714 SOL per array (SDK Meteora) yang belum ada di range posisi, dicek on-chain saat posisi dibuka. Range sampai -90% hampir selalu butuh array baru, karena jarang ada yang memasang likuiditas sejauh itu.",
-    "Jumlah bin mengikuti bin step pool: sebanyak yang dibutuhkan untuk menjangkau -90% dari harga masuk.",
+    "Sewa bin array: 0,0714 SOL per array (SDK Meteora) yang belum ada di range posisi, dicek on-chain saat posisi dibuka. Range yang dalam (fase 1: -90%) hampir selalu butuh array baru, karena jarang ada yang memasang likuiditas sejauh itu.",
+    "Fase 2: range sampai -40% dari harga masuk (fase 1: -90%), keluar begitu harga tembus bawah range, dan keluar di pantulan hanya kalau posisi sudah untung.",
     "Pantau tiap 5 menit, lebih sering daripada ~30 menit di korpus; exit jadi lebih cepat tertangkap.",
 ]
 
@@ -228,12 +231,12 @@ def fee_share(size_usd: float, bins: int, row: dict[str, Any] | None, tvl: float
     return ours / (ours + pool_bin) if ours + pool_bin > 0 else 0.0
 
 
-def position_value(size: float, ratio: float) -> tuple[float, float]:
+def position_value(size: float, ratio: float, low_pct: float = RANGE_LOW_PCT) -> tuple[float, float]:
     """(quote value, token value) of a one-sided quote position, per the bins it was spread over.
 
     Every bin starts with the same amount of quote. A bin is untouched while the price is above it; once the price
     falls through it, that bin holds the token it bought there, worth ratio/bin_price of what it paid."""
-    low = 1 + RANGE_LOW_PCT / 100
+    low = 1 + low_pct / 100
     quote = token = 0.0
     for i in range(BINS):
         p = low + (1 - low) * (i + 0.5) / BINS  # bin prices as a fraction of the entry price
@@ -336,10 +339,11 @@ class PandaPaper:
             await self._close(r, now, r["last_price"] or r["entry_price"], "vanished")
             return
         ratio = price / r["entry_price"]
-        quote_usd, token_usd = position_value(r["size_usd"], ratio)
+        quote_usd, token_usd = position_value(r["size_usd"], ratio, r["range_low_pct"] or RANGE_LOW_PCT)
         value = quote_usd + token_usd
         # The range runs from the entry price down: above the entry (a pump) or under its floor it earns nothing.
-        in_range = 1 + RANGE_LOW_PCT / 100 <= ratio <= 1.0
+        low = 1 + (r["range_low_pct"] or RANGE_LOW_PCT) / 100
+        in_range = low <= ratio <= 1.0
         share = fee_share(r["size_usd"], r["bins"] or BINS, row, tvl)
         earned = (cum - r["last_cum_fees"]) * share if in_range and cum > r["last_cum_fees"] else 0.0
         await self.db.execute(
@@ -354,16 +358,27 @@ class PandaPaper:
         c15 = await self._candles_15m(r["pool"])
         dropped = (1 - min(r["min_ratio"], ratio)) * 100 >= MIN_DROP_BEFORE_EXIT_PCT
         ready = dropped or held_h * 60 >= MIN_HOLD_MIN
-        if ready and c15 and (reason := exit_signal(c15)):
+        phase2 = paper_phases.current("panda") >= 2
+        if phase2 and ratio < low:
+            await self._close(r, now, price, "below_range")  # all token now: waiting only deepens the loss
+        elif ready and c15 and (reason := exit_signal(c15)) and (not phase2 or self._pnl(r, price) > 0):
             await self._close(r, now, price, reason)
         elif volume_24h < DEAD_VOLUME_USD:
             await self._close(r, now, price, "flatline")  # "if it flatlines, it means you're too late"
         elif held_h >= MAX_HOLD_H:
             await self._close(r, now, price, "time")
 
+    def _pnl(self, r: dict[str, Any], price: float) -> float:
+        """Result if closed at `price`: value + fees - capital - selling the token - transaction fee - new-array rent."""
+        ratio = price / r["entry_price"] if r["entry_price"] else 0.0
+        quote_usd, token_usd = position_value(r["size_usd"], ratio, r["range_low_pct"] or RANGE_LOW_PCT)
+        costs = token_usd * EXIT_SWAP_COST_PCT / 100 + TX_FEE_SOL * r["sol_usd"]
+        rent = (r["new_arrays"] or 0) * NEW_BIN_ARRAY_SOL * r["sol_usd"]
+        return quote_usd + token_usd + r["fees_usd"] - r["size_usd"] - costs - rent
+
     async def _close(self, r: dict[str, Any], now: datetime, price: float, reason: str) -> None:
         ratio = price / r["entry_price"] if r["entry_price"] else 0.0
-        quote_usd, token_usd = position_value(r["size_usd"], ratio)
+        quote_usd, token_usd = position_value(r["size_usd"], ratio, r["range_low_pct"] or RANGE_LOW_PCT)
         sol_usd = r["sol_usd"]
         costs = token_usd * EXIT_SWAP_COST_PCT / 100 + TX_FEE_SOL * sol_usd
         rent = (r["new_arrays"] or 0) * NEW_BIN_ARRAY_SOL * sol_usd  # 0 when the bins were already open
@@ -445,7 +460,9 @@ class PandaPaper:
 
 
 async def report(db, rows: dict[str, dict[str, Any]] | None = None) -> dict[str, Any]:
-    runs = [dict(r) for r in await db.fetch("select * from paper_panda_runs order by opened_at desc limit 300")]
+    since = paper_phases.since("panda") or datetime.min.replace(tzinfo=timezone.utc)
+    runs = [dict(r) for r in await db.fetch(
+        "select * from paper_panda_runs where opened_at >= $1 order by opened_at desc limit 300", since)]
     closed = [r for r in runs if r["status"] == "closed"]
     ms = lambda t: int(t.timestamp() * 1000) if t else None  # noqa: E731
     reasons: dict[str, int] = {}
@@ -466,7 +483,7 @@ async def report(db, rows: dict[str, dict[str, Any]] | None = None) -> dict[str,
     out = []
     for r in runs:
         ratio = (r["last_price"] or r["entry_price"]) / r["entry_price"] if r["entry_price"] else 1.0
-        quote_usd, token_usd = position_value(r["size_usd"], ratio)
+        quote_usd, token_usd = position_value(r["size_usd"], ratio, r["range_low_pct"] or RANGE_LOW_PCT)
         out.append({
             "id": r["id"], "pool": r["pool"], "name": r["name"], "quote": r["quote"], "status": r["status"],
             "exit_reason": r["exit_reason"], "size_usd": r["size_usd"], "fees_usd": r["fees_usd"],
@@ -481,6 +498,7 @@ async def report(db, rows: dict[str, dict[str, Any]] | None = None) -> dict[str,
             "checked_at": ms(r["checked_at"]),
         })
     return {
+        "phases": paper_phases.info("panda"),
         "params": {
             "size_usd": SIZE_USD, "max_open": MAX_OPEN, "range_low_pct": RANGE_LOW_PCT, "bins": BINS,
             "position_rent_sol": POSITION_RENT_SOL, "new_bin_array_sol": NEW_BIN_ARRAY_SOL,

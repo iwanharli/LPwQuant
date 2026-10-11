@@ -23,7 +23,7 @@ from typing import Any, Iterable
 
 import asyncpg
 
-from . import config
+from . import config, paper_phases
 from .backtest import LpPosition, summarize
 from .costs import BINS_PER_BIN_ARRAY, CostModel, entry_costs, exit_cost, resized_cost_pct, round_trip_cost_pct, swap_cost_fraction  # noqa: F401
 from .depth import realization_factor
@@ -98,6 +98,8 @@ class PaperConfig:
     min_reversal_rate: float | None = None
     # Which plan the profile trades: "base" (two-sided, as the engine recommends) or "single" (quote only).
     plan_variant: str = "base"
+    # Minutes out of range before closing, overriding the plan's (None = the plan's).
+    out_of_range_minutes: float | None = None
 
 
 PAUSE_HOURS = 24  # after a drawdown pause, entries resume this much later with a fresh peak
@@ -370,6 +372,8 @@ def profile_plan(
     if rules.get("stop_loss_pct") is not None:
         scaled = rules["stop_loss_pct"] * cfg.stop_loss_mult
         rules["stop_loss_pct"] = round(min(max(2.0, scaled), cfg.max_stop_loss_pct), 1)
+    if cfg.out_of_range_minutes is not None:
+        rules["out_of_range_minutes"] = cfg.out_of_range_minutes
     if cfg.min_hold_hours is not None:
         rules["min_hold_hours"] = cfg.min_hold_hours
         rules["max_hold_hours"] = max(rules.get("max_hold_hours") or 0.0, cfg.min_hold_hours)
@@ -512,23 +516,32 @@ class PaperTrader:
                 self.cfg.profile,
             )
             self.last_closed_mints = {r["base_mint"]: _ms(r["last_exit"]) for r in closed_mints}
+            # Balance counts from the start of the profile's current phase (paper_phases): a new phase starts again
+            # from start_equity_usd, and earlier phases stay in the table for the overview's comparison.
+            self.phase_since = paper_phases.since(f"lp:{self.cfg.profile}")
             self.realized_usd = float(await conn.fetchval(
-                "select coalesce(sum(capital_usd * pnl_pct / 100), 0) from paper_positions where status = 'closed' and profile = $1",
-                self.cfg.profile,
+                """select coalesce(sum(capital_usd * pnl_pct / 100), 0) from paper_positions
+                   where status = 'closed' and profile = $1 and ($2::timestamptz is null or entry_ts >= $2)""",
+                self.cfg.profile, self.phase_since,
             ))
             self.closed_count = int(await conn.fetchval(
-                "select count(*) from paper_positions where status = 'closed' and profile = $1", self.cfg.profile,
+                """select count(*) from paper_positions where status = 'closed' and profile = $1
+                     and ($2::timestamptz is null or entry_ts >= $2)""", self.cfg.profile, self.phase_since,
             ))
-            self.started_at = _ms(await conn.fetchval("select min(entry_ts) from paper_positions where profile = $1", self.cfg.profile))
+            self.started_at = _ms(self.phase_since or await conn.fetchval(
+                "select min(entry_ts) from paper_positions where profile = $1", self.cfg.profile))
             last = await conn.fetchrow(
                 "select resume_at from paper_pauses where profile = $1 order by paused_at desc limit 1", self.cfg.profile)
             self.resume_at = last["resume_at"] if last else None
+            if self.phase_since and self.resume_at and self.resume_at < self.phase_since:
+                self.resume_at = None  # a pause from the previous phase does not carry over
+            peak_from = max((t for t in (self.resume_at, self.phase_since) if t), default=None)
             # The peak counts only from the last resume: a pause resets it, so the profile trades again afterwards.
             self.peak_equity_usd = max(
                 self.cfg.start_equity_usd if self.resume_at is None else 0.0,
                 float(await conn.fetchval(
                     "select coalesce(max(equity_usd), 0) from paper_equity where profile = $1 and ($2::timestamptz is null or ts >= $2)",
-                    self.cfg.profile, self.resume_at,
+                    self.cfg.profile, peak_from,
                 )),
             )
         log.info("paper[%s]: %d open positions, realized %.2f USD", self.cfg.profile, len(self.open), self.realized_usd)
@@ -692,8 +705,9 @@ class PaperTrader:
             pos.id, pos.value_y, pos.fees_y, pos.last_price, _dt(now_ms), pnl, pos.fee_pct(), pos.il_pct(), reason,
             pos.cost_exit_y, pos.cost_pct(), pos.gross_pnl_pct(),
         )
-        self.realized_usd += pos.capital_usd * pnl / 100
-        self.closed_count += 1
+        if self._in_phase(pos.entry_ts):  # a position left from the previous phase closes into that phase
+            self.realized_usd += pos.capital_usd * pnl / 100
+            self.closed_count += 1
         self.last_closed[pos.address] = now_ms
         if pos.base_mint:
             self.last_closed_mints[pos.base_mint] = now_ms
@@ -703,8 +717,12 @@ class PaperTrader:
     def equity_usd(self) -> float:
         return self.cfg.start_equity_usd + self.realized_usd + self._unrealized_usd()
 
+    def _in_phase(self, entry_ms: int | None) -> bool:
+        since = getattr(self, "phase_since", None)
+        return since is None or (entry_ms or 0) >= int(since.timestamp() * 1000)
+
     def _unrealized_usd(self) -> float:
-        return sum(p.capital_usd * p.pnl_pct() / 100 for p in self.open.values())
+        return sum(p.capital_usd * p.pnl_pct() / 100 for p in self.open.values() if self._in_phase(p.entry_ts))
 
     async def _record_equity(self, now_ms: int) -> None:
         unrealized = self._unrealized_usd()
@@ -745,8 +763,8 @@ class PaperTrader:
         max_dd = await self.db.fetchval(
             """select coalesce(max((peak - equity_usd) / nullif(peak, 0) * 100), 0) from (
                    select equity_usd, max(equity_usd) over (order by ts) as peak
-                   from paper_equity where profile = $1) t""",
-            self.cfg.profile,
+                   from paper_equity where profile = $1 and ($2::timestamptz is null or ts >= $2)) t""",
+            self.cfg.profile, getattr(self, "phase_since", None),
         )
         return _clean({
             **self.profile_info(),
@@ -768,8 +786,9 @@ class PaperTrader:
         rows = await self.db.fetch(
             """select address, tier, strategy, exit_reason, pnl_pct, fee_pct, il_pct, cost_pct,
                       coalesce(gross_pnl_pct, pnl_pct) as gross_pnl_pct, capital_usd, entry_ts, exit_ts
-               from paper_positions where status = 'closed' and profile = $1""",
-            self.cfg.profile,
+               from paper_positions where status = 'closed' and profile = $1
+                 and ($2::timestamptz is null or entry_ts >= $2)""",
+            self.cfg.profile, getattr(self, "phase_since", None),
         )
         trades = [
             {
@@ -834,8 +853,9 @@ class PaperTrader:
     async def positions(self, status: str, limit: int, now_ms: int) -> list[dict[str, Any]]:
         rows = await self.db.fetch(
             """select * from paper_positions where status = $1 and profile = $3
+                 and ($4::timestamptz is null or entry_ts >= $4 or status = 'open')
                order by coalesce(exit_ts, entry_ts) desc limit $2""",
-            status, limit, self.cfg.profile,
+            status, limit, self.cfg.profile, getattr(self, "phase_since", None),
         )
         out = []
         for r in rows:
@@ -867,8 +887,9 @@ class PaperTrader:
     async def equity(self, hours: float) -> dict[str, Any]:
         rows = await self.db.fetch(
             """select (extract(epoch from ts) * 1000)::bigint as ts, equity_usd, open_count
-               from paper_equity where profile = $2 and ts > now() - make_interval(secs => $1) order by ts""",
-            hours * 3600, self.cfg.profile,
+               from paper_equity where profile = $2 and ts > now() - make_interval(secs => $1)
+                 and ($3::timestamptz is null or ts >= $3) order by ts""",
+            hours * 3600, self.cfg.profile, getattr(self, "phase_since", None),
         )
         step = max(1, math.ceil(len(rows) / MAX_EQUITY_POINTS))
         points = [dict(r) for r in rows[::step]]

@@ -37,6 +37,7 @@ class RiskProfile:
     max_atr_pct: float | None = None  # only enter pools calmer than this 30m ATR
     plan_variant: str = "base"  # "single" trades the quote-only version of the plan
     min_reversal_rate: float | None = None  # only pools whose price keeps turning back
+    out_of_range_minutes: float | None = None  # wait this long out of range before closing (None = the plan's)
 
 
 PROFILES: tuple[RiskProfile, ...] = (
@@ -121,7 +122,7 @@ PROFILES: tuple[RiskProfile, ...] = (
     RiskProfile(
         key="satu_sisi_sering",
         label="Velociraptor",
-        description="Seperti Ankylosaurus tapi fee cukup 1x biaya: lebih cepat dan sering masuk, untuk menguji apakah gerbang fee terlalu ketat",
+        description="Seperti Ankylosaurus tapi fee cukup 1x biaya, dan menunggu 60 menit saat harga naik melewati range sebelum keluar",
         tiers=("low", "medium", "high"),
         max_open_per_tier=5,
         size_mult=1.0,
@@ -134,6 +135,10 @@ PROFILES: tuple[RiskProfile, ...] = (
         # quickly. Halving the fee gate should roughly double the entries at the same entry shape.
         max_atr_pct=2.0,
         plan_variant="single",
+        # Phase 2 (paper_phases): 43 of its 62 phase-1 positions left 20 minutes after the price ran over the range,
+        # ~1h in, with 0.12% in fees. A quote-only position over its range holds only SOL/USDC (no price risk), so
+        # waiting an hour for the price to come back costs nothing but time.
+        out_of_range_minutes=60.0,
     ),
     RiskProfile(
         key="bolak_balik",
@@ -221,6 +226,7 @@ def paper_config(profile: RiskProfile) -> PaperConfig:
         max_atr_pct=profile.max_atr_pct,
         plan_variant=profile.plan_variant,
         min_reversal_rate=profile.min_reversal_rate,
+        out_of_range_minutes=profile.out_of_range_minutes,
     )
 
 

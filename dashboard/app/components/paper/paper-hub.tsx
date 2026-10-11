@@ -46,6 +46,11 @@ type Strategy = {
   avg_hold_hours?: number | null;
   total_hold_hours?: number | null;
   verdict: Verdict;
+  /** Rules change only at a new phase; each phase is counted from zero. Earlier phases ride along for comparison. */
+  phase?: number;
+  phase_note?: string | null;
+  phase_started_at?: number | null;
+  phases?: Strategy[];
 };
 type Overview = { min_closed: number; strategies: Strategy[] };
 
@@ -204,7 +209,10 @@ function Summary({ data, error, onOpen }: { data: Overview | null; error: boolea
                           {kind}
                         </span>
                       </div>
-                      <div className="text-[11px] text-ink-3">{s.started_at ? `sejak ${fmtDateTime(s.started_at)}` : "belum mulai"}</div>
+                      <div className="text-[11px] text-ink-3" title={s.phase_note ?? undefined}>
+                        {s.phase && s.phase > 1 ? <span className="mr-1 rounded bg-white/[0.08] px-1 py-px text-ink-2">Fase {s.phase}</span> : null}
+                        {s.started_at ? `sejak ${fmtDateTime(s.started_at)}` : "belum mulai"}
+                      </div>
                     </td>
                     <td className="px-3 py-3">
                       <span
@@ -219,6 +227,15 @@ function Summary({ data, error, onOpen }: { data: Overview | null; error: boolea
                     <td className="px-3 py-3 text-right">
                       <div className={`font-semibold ${tone(s.closed ? s.pnl_usd : null)}`}>{s.closed ? money(s.pnl_usd) : "–"}</div>
                       <div className={`text-[11px] ${tone(s.return_pct)}`}>{s.return_pct == null ? "" : `${pct(s.return_pct)} dari modal`}</div>
+                      {(s.phases ?? []).filter((p) => p.phase !== s.phase).map((p) => (
+                        <div
+                          key={p.phase}
+                          className="mt-0.5 whitespace-nowrap text-[11px] text-ink-3"
+                          title={`Fase ${p.phase}: ${p.phase_note ?? ""}${p.without_best3_usd != null ? ` · tanpa 3 terbaik ${money(p.without_best3_usd)}` : ""}`}
+                        >
+                          fase {p.phase}: <span className={tone(p.closed ? p.pnl_usd : null)}>{p.closed ? money(p.pnl_usd) : "–"}</span> · {p.closed} trade
+                        </div>
+                      ))}
                       {!!s.odd_fee_count && s.pnl_without_odd_usd != null && (
                         <div
                           className="mt-0.5 text-[11px] text-amber-300"

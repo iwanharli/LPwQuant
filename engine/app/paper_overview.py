@@ -63,92 +63,115 @@ def _row(key: str, label: str, tab: str, trades: list[tuple[float, float]], open
     }
 
 
+def _cut(key: str, ts_col: str) -> list[tuple[int, str, list[Any]]]:
+    """(phase, SQL condition on ts_col, its arguments) for every phase of a strategy, newest first."""
+    from . import paper_phases
+
+    out = []
+    for n, a, b in reversed(paper_phases.windows(key)):
+        out.append((n, f"(($1::timestamptz is null or {ts_col} >= $1) and ($2::timestamptz is null or {ts_col} < $2))", [a, b]))
+    return out
+
+
+def _phased(rows: list[dict[str, Any]], key: str) -> dict[str, Any]:
+    """The current phase's row, with the earlier phases' rows under 'phases' (newest first) for comparison."""
+    from . import paper_phases
+
+    by_phase = {r["phase"]: r for r in rows}
+    current = by_phase[max(by_phase)]
+    info = {p["phase"]: p for p in paper_phases.info(key)}
+    for r in rows:
+        r.update(phase_started_at=info.get(r["phase"], {}).get("started_at"), phase_note=info.get(r["phase"], {}).get("note"))
+    return {**current, "phases": sorted(rows, key=lambda r: -r["phase"])}
+
+
 async def overview(db, papers: dict[str, Any], sol_usd: float, pools: dict[str, Any] | None = None) -> dict[str, Any]:
     from . import sol_grid, panda as panda_mod, profile_screen
+    from . import brontosaurus as bronto_mod
 
     pools = pools or {}
-    rows: list[dict[str, Any]] = []
+    out: list[dict[str, Any]] = []
     for key, trader in papers.items():
-        closed = await db.fetch(
-            """select capital_usd, pnl_pct, fee_pct, extract(epoch from exit_ts - entry_ts) / 3600 as hold_h,
-                      exit_ts > now() - interval '7 days' as recent
-               from paper_positions where profile = $1 and status = 'closed'""", key)
-        agg = await db.fetchrow(
-            "select count(*) filter (where status = 'open') as open, count(*) as n, min(entry_ts) as started from paper_positions where profile = $1",
-            key)
-        rows.append(_row(
-            f"lp:{key}", trader.cfg.label, "lp",
-            [(r["capital_usd"] * r["pnl_pct"] / 100, r["capital_usd"]) for r in closed],
-            agg["open"], agg["started"], "Profil LP dari rencana screener", profile=key,
-            holds=[float(r["hold_h"]) for r in closed if r["hold_h"] is not None],
-            passing=profile_screen.screen(pools, trader)["funnel"].get("lolos", 0) if pools else None,
-            recent_7d=sum(r["capital_usd"] * r["pnl_pct"] / 100 for r in closed if r["recent"]), opened=agg["n"],
-            odd=[r["capital_usd"] * r["pnl_pct"] / 100 for r in closed
-                 if (r["fee_pct"] or 0) / max(float(r["hold_h"] or 0), 1.0) >= ODD_FEE_PCT_PER_HOUR],
-        ))
+        rows = []
+        for n, cond, args in _cut(f"lp:{key}", "entry_ts"):
+            closed = await db.fetch(
+                f"""select capital_usd, pnl_pct, fee_pct, extract(epoch from exit_ts - entry_ts) / 3600 as hold_h,
+                          exit_ts > now() - interval '7 days' as recent
+                   from paper_positions where {cond} and profile = $3 and status = 'closed'""", *args, key)
+            agg = await db.fetchrow(
+                f"""select count(*) filter (where status = 'open') as open, count(*) as n, min(entry_ts) as started
+                   from paper_positions where {cond} and profile = $3""", *args, key)
+            rows.append({**_row(
+                f"lp:{key}", trader.cfg.label, "lp",
+                [(r["capital_usd"] * r["pnl_pct"] / 100, r["capital_usd"]) for r in closed],
+                agg["open"], args[0] or agg["started"], "Profil LP dari rencana screener", profile=key,
+                holds=[float(r["hold_h"]) for r in closed if r["hold_h"] is not None],
+                passing=profile_screen.screen(pools, trader)["funnel"].get("lolos", 0) if pools else None,
+                recent_7d=sum(r["capital_usd"] * r["pnl_pct"] / 100 for r in closed if r["recent"]), opened=agg["n"],
+                odd=[r["capital_usd"] * r["pnl_pct"] / 100 for r in closed
+                     if (r["fee_pct"] or 0) / max(float(r["hold_h"] or 0), 1.0) >= ODD_FEE_PCT_PER_HOUR],
+            ), "phase": n})
+        out.append(_phased(rows, f"lp:{key}"))
 
-    panda = await db.fetch(
-        """select status, size_usd, pnl_usd, fees_usd, opened_at, extract(epoch from closed_at - opened_at) / 3600 as hold_h,
-                  closed_at > now() - interval '7 days' as recent
-           from paper_panda_runs""")
-    rows.append(_row(
-        "panda", "Panda Strat", "panda",
-        [(r["pnl_usd"] or 0, r["size_usd"]) for r in panda if r["status"] == "closed"],
-        sum(r["status"] == "open" for r in panda), min((r["opened_at"] for r in panda), default=None),
-        "Range lebar satu sisi, keluar di pantulan pertama",
-        holds=[float(r["hold_h"]) for r in panda if r["status"] == "closed" and r["hold_h"] is not None],
-        passing=sum(1 for row in pools.values() if panda_mod.screen(row)[0]) if pools else None,
-        recent_7d=sum(r["pnl_usd"] or 0 for r in panda if r["status"] == "closed" and r["recent"]), opened=len(panda),
-        odd=[r["pnl_usd"] or 0 for r in panda if r["status"] == "closed"
-             and (r["fees_usd"] or 0) / r["size_usd"] * 100 / max(float(r["hold_h"] or 0), 1.0) >= ODD_FEE_PCT_PER_HOUR],
-    ))
+    runs_specs = [
+        ("panda", "Panda Strat", "paper_panda_runs", "Range lebar satu sisi, keluar di pantulan pertama",
+         (lambda: sum(1 for row in pools.values() if panda_mod.screen(row)[0]) if pools else None), True),
+        ("bronto", "Brontosaurus", "paper_bronto_runs",
+         "Gaya pemanen fee: range lebar di memecoin ber-fee tinggi, dipegang ±12 jam",
+         (lambda: sum(1 for row in pools.values() if bronto_mod.screen(row)[0]) if pools else None), False),
+        ("copy", "Copy LP", "paper_copy_runs", "Meniru posisi wallet LP teratas, $100 per posisi", (lambda: 5), False),
+    ]
+    for key, label, table, note, passing, with_odd in runs_specs:
+        rows = []
+        for n, cond, args in _cut(key, "opened_at"):
+            fees = "fees_usd" if table != "paper_copy_runs" else "0::float8 as fees_usd"
+            runs = await db.fetch(
+                f"""select status, size_usd, pnl_usd, {fees}, opened_at,
+                          extract(epoch from closed_at - opened_at) / 3600 as hold_h,
+                          closed_at > now() - interval '7 days' as recent
+                   from {table} where {cond}""", *args)
+            closed = [r for r in runs if r["status"] == "closed"]
+            rows.append({**_row(
+                key, label, key if key != "bronto" else "bronto", [(r["pnl_usd"] or 0, r["size_usd"]) for r in closed],
+                sum(r["status"] == "open" for r in runs), args[0] or min((r["opened_at"] for r in runs), default=None),
+                note, holds=[float(r["hold_h"]) for r in closed if r["hold_h"] is not None],
+                passing=passing(), recent_7d=sum(r["pnl_usd"] or 0 for r in closed if r["recent"]), opened=len(runs),
+                odd=[r["pnl_usd"] or 0 for r in closed
+                     if (r["fees_usd"] or 0) / r["size_usd"] * 100 / max(float(r["hold_h"] or 0), 1.0) >= ODD_FEE_PCT_PER_HOUR]
+                if with_odd else None,
+            ), "phase": n})
+        out.append(_phased(rows, key))
 
-    bronto = await db.fetch(
-        """select status, size_usd, pnl_usd, fees_usd, opened_at, extract(epoch from closed_at - opened_at) / 3600 as hold_h,
-                  closed_at > now() - interval '7 days' as recent
-           from paper_bronto_runs""")
-    from . import brontosaurus as bronto_mod
-    rows.append(_row(
-        "bronto", "Brontosaurus", "bronto",
-        [(r["pnl_usd"] or 0, r["size_usd"]) for r in bronto if r["status"] == "closed"],
-        sum(r["status"] == "open" for r in bronto), min((r["opened_at"] for r in bronto), default=None),
-        "Gaya pemanen fee: range lebar di memecoin ber-fee tinggi, dipegang ±12 jam",
-        holds=[float(r["hold_h"]) for r in bronto if r["status"] == "closed" and r["hold_h"] is not None],
-        recent_7d=sum(r["pnl_usd"] or 0 for r in bronto if r["status"] == "closed" and r["recent"]), opened=len(bronto),
-        passing=sum(1 for row in pools.values() if bronto_mod.screen(row)[0]) if pools else None,
-    ))
-    copies = await db.fetch(
-        """select status, size_usd, pnl_usd, opened_at, extract(epoch from closed_at - opened_at) / 3600 as hold_h,
-                  closed_at > now() - interval '7 days' as recent
-           from paper_copy_runs""")
-    rows.append(_row(
-        "copy", "Copy LP", "copy",
-        [(r["pnl_usd"] or 0, r["size_usd"]) for r in copies if r["status"] == "closed"],
-        sum(r["status"] == "open" for r in copies), min((r["opened_at"] for r in copies), default=None),
-        "Meniru posisi 5 wallet LP teratas, $100 per posisi",
-        holds=[float(r["hold_h"]) for r in copies if r["status"] == "closed" and r["hold_h"] is not None],
-        recent_7d=sum(r["pnl_usd"] or 0 for r in copies if r["status"] == "closed" and r["recent"]), opened=len(copies),
-        passing=5,
-    ))
-    for key, (t, step) in sol_grid.GRIDS.items():
+    for gkey, (t, step) in sol_grid.GRIDS.items():
+        key = "sol_grid" if gkey == "1" else f"sol_grid_{gkey}"
         pct = f"{step * 100:g}%"
-        grid = await db.fetch(f"select profit_usd, ts > now() - interval '7 days' as recent from {t}_fills where side = 'sell'")
-        grid_buys = await db.fetchval(f"select count(*) from {t}_fills where side = 'buy'")
-        # A round trip lasts from a level's buy to the sell that follows it.
-        grid_holds = [float(r["h"]) for r in await db.fetch(
-            f"""select extract(epoch from s.ts - (select max(b.ts) from {t}_fills b
-                                                  where b.level = s.level and b.side = 'buy' and b.ts <= s.ts)) / 3600 as h
-               from {t}_fills s where s.side = 'sell'""") if r["h"] is not None]
-        first = await db.fetchval(f"select min(ts) from {t}_fills")
-        held = await db.fetch(f"select sol, buy_price from {t} where state = 'sell'")
-        price = await db.fetchval(f"select price from {t}_equity order by ts desc limit 1")
-        # SOL still held counts at today's price, so a falling market shows as a loss here and not only on the grid tab.
-        floating = [((price - h["buy_price"]) * h["sol"], 200.0) for h in held] if price else []
-        rows.append(_row(
-            "sol_grid" if key == "1" else f"sol_grid_{key}", f"Grid SOL-USDC {pct}", "sol",
-            [(r["profit_usd"] or 0, 200.0) for r in grid] + floating, len(held), first,
-            f"5 limit order {pct} di bawah harga, jual {pct} di atasnya", holds=grid_holds,
-            passing=await db.fetchval(f"select count(*) from {t}"),
-            recent_7d=sum(r["profit_usd"] or 0 for r in grid if r["recent"]), opened=grid_buys,
-        ))
-    return {"min_closed": MIN_CLOSED, "strategies": rows}
+        rows = []
+        cuts = _cut(key, "ts")
+        for i, (n, cond, args) in enumerate(cuts):
+            grid = await db.fetch(
+                f"select profit_usd, ts > now() - interval '7 days' as recent from {t}_fills where {cond} and side = 'sell'", *args)
+            grid_buys = await db.fetchval(f"select count(*) from {t}_fills where {cond} and side = 'buy'", *args)
+            # A round trip lasts from a level's buy to the sell that follows it.
+            grid_holds = [float(r["h"]) for r in await db.fetch(
+                f"""select extract(epoch from s.ts - (select max(b.ts) from {t}_fills b
+                                                      where b.level = s.level and b.side = 'buy' and b.ts <= s.ts)) / 3600 as h
+                   from {t}_fills s where {cond.replace(" ts ", " s.ts ").replace("(ts ", "(s.ts ")} and s.side = 'sell'""",
+                *args) if r["h"] is not None]
+            first = await db.fetchval(f"select min(ts) from {t}_fills where {cond}", *args)
+            floating: list[tuple[float, float]] = []
+            held_n = 0
+            if i == 0:  # only the current grid still holds SOL; an earlier phase was sold off when it ended
+                held = await db.fetch(f"select sol, buy_price from {t} where state = 'sell'")
+                price = await db.fetchval(f"select price from {t}_equity order by ts desc limit 1")
+                # SOL still held counts at today's price, so a falling market shows as a loss here too.
+                floating = [((price - h["buy_price"]) * h["sol"], 200.0) for h in held] if price else []
+                held_n = len(held)
+            rows.append({**_row(
+                key, f"Grid SOL-USDC {pct}", "sol",
+                [(r["profit_usd"] or 0, 200.0) for r in grid] + floating, held_n, args[0] or first,
+                f"5 limit order {pct} di bawah harga, jual {pct} di atasnya", holds=grid_holds,
+                passing=await db.fetchval(f"select count(*) from {t}") if i == 0 else None,
+                recent_7d=sum(r["profit_usd"] or 0 for r in grid if r["recent"]), opened=grid_buys,
+            ), "phase": n})
+        out.append(_phased(rows, key))
+    return {"min_closed": MIN_CLOSED, "strategies": out}

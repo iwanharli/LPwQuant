@@ -15,10 +15,10 @@ left out, so results err low. Network fees: TX_FEE_SOL per placed and per filled
 
 import asyncio
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from . import portfolio
+from . import paper_phases, portfolio
 
 log = logging.getLogger("sol_grid")
 
@@ -30,6 +30,9 @@ RECENTER_STEPS = 3
 TICK_S = 30
 TX_FEE_SOL = 0.00005
 EQUITY_EVERY_S = 900
+# Phase 2: no new buys while SOL trades under its average of the last TREND_DAYS (from the grid's own 15-minute
+# equity marks). Phase 1 kept buying all the way down a falling month.
+TREND_DAYS = 7
 
 
 # Grids run side by side, each in its own tables: key -> (table prefix, step).
@@ -43,7 +46,37 @@ class SolGrid:
     def __init__(self, db, key: str = "1") -> None:
         self.db = db
         self.t, self.step_frac = GRIDS[key]
+        self.phase_key = "sol_grid" if key == "1" else f"sol_grid_{key}"
         self.last_equity = 0.0
+
+    async def _new_phase(self, price: float, now: datetime) -> bool:
+        """At the start of a new phase, sell what the old grid still holds at today's price (its final result) and
+        lay a fresh grid with the full capital, so the phase starts from zero like the others."""
+        since = paper_phases.since(self.phase_key)
+        if since is None:
+            return False
+        started = await self.db.fetchval(f"select max(ts) from {self.t}_fills where side = 'start'")
+        if started is not None and started >= since:
+            return False
+        for lv in await self.db.fetch(f"select * from {self.t} where state = 'sell'"):
+            spent = await self.db.fetchval(
+                f"select usd from {self.t}_fills where level = $1 and side = 'buy' order by ts desc limit 1", lv["level"])
+            usd = lv["sol"] * price
+            await self.db.execute(
+                f"""insert into {self.t}_fills (ts, level, side, price, sol, usd, profit_usd)
+                   values ($1,$2,'sell',$3,$4,$5,$6)""",
+                since - timedelta(milliseconds=1), lv["level"], price, lv["sol"], usd, usd - (spent or usd))
+        await self.db.execute(f"delete from {self.t}")
+        await self._place(price, now, "start")
+        log.info("sol grid %s: new phase, closed out at %.2f and restarted", self.phase_key, price)
+        return True
+
+    async def _below_trend(self, price: float) -> bool:
+        if paper_phases.current(self.phase_key) < 2:
+            return False
+        avg = await self.db.fetchval(
+            f"select avg(price) from {self.t}_equity where ts > now() - make_interval(days => $1)", TREND_DAYS)
+        return avg is not None and price < avg
 
     async def run(self) -> None:
         while True:
@@ -80,14 +113,17 @@ class SolGrid:
         price = await self._price()
         if price <= 0:
             return
+        if await self._new_phase(price, now):
+            return
         levels = [dict(r) for r in await self.db.fetch(f"select * from {self.t} order by level")]
         if not levels:
             await self._place(price, now, "start")
             log.info("sol grid started at %.2f", price)
             return
         fee = TX_FEE_SOL * price
+        no_buys = await self._below_trend(price)
         for lv in levels:
-            if lv["state"] == "buy" and price <= lv["buy_price"]:
+            if lv["state"] == "buy" and price <= lv["buy_price"] and not no_buys:
                 sol = (lv["usd"] - fee) / lv["buy_price"]
                 await self.db.execute(
                     f"update {self.t} set state = 'sell', sol = $2, usd = 0, updated_at = $3 where level = $1",
@@ -123,8 +159,10 @@ class SolGrid:
 async def report(db, key: str = "1") -> dict[str, Any]:
     t, step = GRIDS[key]
     levels = [dict(r) for r in await db.fetch(f"select * from {t} order by level")]
-    fills = [dict(r) for r in await db.fetch(f"select * from {t}_fills order by ts desc limit 300")]
-    first = await db.fetchrow(f"select ts, price from {t}_fills where side = 'start' order by ts limit 1")
+    # The current phase: its grid was laid at the latest 'start' (a phase restarts the grid).
+    first = await db.fetchrow(f"select ts, price from {t}_fills where side = 'start' order by ts desc limit 1")
+    fills = [dict(r) for r in await db.fetch(
+        f"select * from {t}_fills where ts >= $1 order by ts desc limit 300", first["ts"] if first else datetime.min.replace(tzinfo=timezone.utc))]
     try:
         price = float((await asyncio.to_thread(portfolio._get, f"/pools/{POOL}", {})).get("current_price") or 0)
     except Exception:
@@ -148,6 +186,6 @@ async def report(db, key: str = "1") -> dict[str, Any]:
         "fills": [{**f, "ts": ms(f["ts"])} for f in fills],
         "equity": [
             {"ts": ms(r["ts"]), "equity_usd": r["equity_usd"], "price": r["price"]}
-            for r in await db.fetch(f"select * from {t}_equity order by ts")
+            for r in await db.fetch(f"select * from {t}_equity where ts >= $1 order by ts", first["ts"] if first else datetime.min.replace(tzinfo=timezone.utc))
         ],
     }
