@@ -368,6 +368,8 @@ async def compute(db, wallet: str, fresh: bool = False) -> dict[str, Any]:
                          "cost": network + pool_fee, "rent": rent,
                          "qty": sum(d["amount"] for d in tokens if d["mint"] == mint)})
 
+    flows = await _position_token_flows(db, wallet, times, closes, sol_now)
+
     # Held value today: wallet tokens, open positions, open limit orders.
     wallet_now = await asyncio.to_thread(_get_json, f"{config.CLAIM_SERVER_URL}/wallet?{urllib.parse.urlencode({'owner': wallet})}")
     held_wallet = {t["mint"]: (t.get("value_usd") or 0.0, t.get("symbol")) for t in (wallet_now or {}).get("tokens", [])}
@@ -403,7 +405,7 @@ async def compute(db, wallet: str, fresh: bool = False) -> dict[str, Any]:
         held = c.get("held_wallet", 0.0) + c.get("held_lp", 0.0) + c.get("held_orders", 0.0)
         c["held"] = held
         c["net"] = c["cash"] + held
-        c["positions"] = _split_positions(c, [i for i in idx.values() if i["mint_x"] == c["mint"]])
+        c["positions"] = _split_positions(c, [{**i, **flows.get(i["position"], {})} for i in idx.values() if i["mint_x"] == c["mint"]])
         stored.extend(
             (p["position"], p["cost_lp"], p["cost_swaps"], p["net"], p["cost_rent"], p["cost_tax"],
              p["sold_qty"], p["sold_usd"], p["bought_qty"], p["bought_usd"]) for p in c["positions"]
@@ -443,6 +445,38 @@ async def compute(db, wallet: str, fresh: bool = False) -> dict[str, Any]:
     return result
 
 
+async def _position_token_flows(db, wallet: str, times: list[float], closes: list[float], sol_now: float) -> dict[str, dict[str, float]]:
+    """Per position: tokens (X) put in and taken out (claimed fee tokens count as taken out), and the pool's dollar
+    price of one token at entry and at exit (the event's dollars minus its SOL/USDC part, per token)."""
+    rows = await db.fetch(
+        """select e.position, e.event_type, sum(e.amount_x) as x, sum(e.amount_y) as y, sum(e.usd) as usd, min(e.ts) as ts,
+                  max(i.mint_y) as mint_y
+           from portfolio_position_events e join portfolio_positions_index i on i.position = e.position
+           where i.wallet = $1 group by e.position, e.event_type""",
+        wallet,
+    )
+    out: dict[str, dict[str, float]] = {}
+
+    def px(r) -> float | None:
+        x = float(r["x"] or 0)
+        if x <= 0 or r["usd"] is None:
+            return None
+        y_px = 1.0 if r["mint_y"] == USDC else _price_at(r["ts"].timestamp(), times, closes, sol_now)
+        v = (float(r["usd"]) - float(r["y"] or 0) * y_px) / x
+        return v if v > 0 else None
+
+    for r in rows:
+        f = out.setdefault(r["position"], {"in_x": 0.0, "out_x": 0.0})
+        if r["event_type"] == "add":
+            f["in_x"] += float(r["x"] or 0)
+            f["entry_px"] = px(r)
+        elif r["event_type"] in ("remove", "claim_fee"):
+            f["out_x"] += float(r["x"] or 0)
+            if r["event_type"] == "remove":
+                f["exit_px"] = px(r)
+    return out
+
+
 def _nearest(ps: list[dict[str, Any]], ts: float) -> str:
     """The position a swap at `ts` belongs to: the one open at that moment, else the one whose open or close is
     closest in time (a buy just before opening, a sell just after closing). Positions opened back to back no longer
@@ -461,9 +495,10 @@ def _split_positions(c: dict[str, Any], positions: list[dict[str, Any]]) -> list
 
     Splitting cash by position misleads when tokens roll from one position into the next (a rebalance moves GP out
     of one position and into another without selling it): the first looks like a big loss, the last like a big gain.
-    So each position starts from Meteora's own PnL, which values tokens at the moment they enter and leave the
-    position, and the coin's result outside LP (coin net - sum of Meteora PnL: swap costs, tokens that lost value
-    after leaving, what is still held) is shared out by the swap volume around each position (see _nearest). Positions add up to the coin exactly."""
+    So each position starts from its own cash with the tokens it took from or left in the wallet valued at the pool's
+    price as they changed hands (Meteora's PnL where that price is unknown), and what is left of the coin (tokens
+    that moved in value while waiting in the wallet, what is still held) is shared out by the swap volume around
+    each position (see _nearest). Positions add up to the coin exactly."""
     if not positions:
         return []
     ps = sorted(positions, key=lambda p: (p["closed_at"] or datetime.max.replace(tzinfo=timezone.utc)))
@@ -495,8 +530,26 @@ def _split_positions(c: dict[str, Any], positions: list[dict[str, Any]]) -> list
         side = sold if qty < 0 else bought
         side[target][0] += abs(qty)
         side[target][1] += abs(t["cash"])
-    meteora_total = sum(p["meteora_pnl_usd"] or 0.0 for p in ps)
-    outside = c["net"] - meteora_total
+    # A position's own result: the SOL/USDC of its own transactions and the swaps around it, plus the tokens it
+    # took from or left in the wallet at the pool's price (tokens bought but not put in, or brought in from an
+    # earlier position, at entry; tokens taken out but not sold, at exit). A plain buy -> LP -> sell is then exactly
+    # its own cash, and a token rolled into the next position is counted once at the price it changed hands.
+    # Positions without those prices (still open, events missing) fall back to Meteora's PnL. Whatever is left of
+    # the coin (tokens that moved in value while waiting in the wallet, what is still held) is shared out below.
+    cash = {p["position"]: 0.0 for p in ps}
+    for t in c["txs"]:
+        target = t["position"] if t.get("position") in cash else _nearest(ps, t["ts"])
+        cash[target] += t["cash"]
+    base: dict[str, float] = {}
+    for p in ps:
+        pid = p["position"]
+        entry, exit_ = p.get("entry_px"), p.get("exit_px")
+        if p.get("status") == "closed" and entry and exit_:
+            base[pid] = (cash[pid] + (bought[pid][0] - p.get("in_x", 0.0)) * entry
+                         + (p.get("out_x", 0.0) - sold[pid][0]) * exit_)
+        else:
+            base[pid] = p["meteora_pnl_usd"] or 0.0
+    outside = c["net"] - sum(base.values())
     total_volume = sum(volume.values())
     deposits = sum(max(p["deposit_usd"] or 0.0, 0.0) for p in ps)
     out = []
@@ -526,6 +579,6 @@ def _split_positions(c: dict[str, Any], positions: list[dict[str, Any]]) -> list
             "cost_tax": tax[p["position"]],
             "sold_qty": sold[p["position"]][0], "sold_usd": sold[p["position"]][1],
             "bought_qty": bought[p["position"]][0], "bought_usd": bought[p["position"]][1],
-            "net": (p["meteora_pnl_usd"] or 0.0) + share,
+            "net": base[p["position"]] + share,
         })
     return out
