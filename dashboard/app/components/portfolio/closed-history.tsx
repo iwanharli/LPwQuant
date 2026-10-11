@@ -232,7 +232,8 @@ function PositionCard({ p, pool, cost, net }: { p: ClosedPosition; pool?: string
               </span>
             )}
           </div>
-          {net != null && inPosition != null && Math.abs(net - inPosition) >= 0.01 && (
+          {/* Always shown, even at $0.00 apart: the cards' rows stay aligned and every card reads the same way. */}
+          {net != null && inPosition != null && (
             <div
               className="mt-1.5 text-[11px] tabular-nums text-ink-3"
               title="Hasil bersih dihitung dari arus SOL/USDC wallet: selain isi posisi, ikut dihitung biaya dan bagian posisi ini dari swap token yang sama sebelum/sesudahnya (membeli token untuk dimasukkan, menjual sisa token)."
