@@ -232,16 +232,19 @@ function PositionCard({ p, pool, cost, net }: { p: ClosedPosition; pool?: string
               </span>
             )}
           </div>
-          {/* Always shown, even at $0.00 apart: the cards' rows stay aligned and every card reads the same way. */}
-          {net != null && inPosition != null && (
-            <div
-              className="mt-1.5 text-[11px] tabular-nums text-ink-3"
-              title="Hasil bersih dihitung dari arus SOL/USDC wallet: selain isi posisi, ikut dihitung biaya dan bagian posisi ini dari swap token yang sama sebelum/sesudahnya (membeli token untuk dimasukkan, menjual sisa token)."
-            >
-              di posisi <span className={tone(inPosition)}>{signed(inPosition)}</span> · biaya & swap token{" "}
-              <span className={tone(net - inPosition)}>{signed(net - inPosition)}</span>
-            </div>
-          )}
+          {/* One line of fixed height on every card, even at $0.00 apart or while the net is still being computed,
+              so the range bar and tiles below sit at the same height in every card. */}
+          <div
+            className="mt-1.5 h-4 truncate text-[11px] leading-4 tabular-nums text-ink-3"
+            title="Hasil bersih dihitung dari arus SOL/USDC wallet: selain isi posisi, ikut dihitung biaya dan bagian posisi ini dari swap token yang sama sebelum/sesudahnya (membeli token untuk dimasukkan, menjual sisa token)."
+          >
+            {net != null && inPosition != null && (
+              <>
+                di posisi <span className={tone(inPosition)}>{signed(inPosition)}</span> · biaya & swap token{" "}
+                <span className={tone(net - inPosition)}>{signed(net - inPosition)}</span>
+              </>
+            )}
+          </div>
         </div>
         <span className={`shrink-0 whitespace-nowrap rounded-full border px-2.5 py-1 text-[11px] font-medium ${exit ? exit.chip : "border-line bg-raised/40 text-ink-3"}`}>
           {exit ? exit.label : "akhir tidak diketahui"}
