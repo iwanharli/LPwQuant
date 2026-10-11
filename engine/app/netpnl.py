@@ -185,11 +185,11 @@ def refresh_soon(db, wallet: str) -> None:
     _soon[wallet] = asyncio.create_task(compute(db, wallet, fresh=True))
 
 
-WATCH_S = 15
+WATCH_S = 10
 
 
 async def watch_new_transactions(db) -> None:
-    """Every 15s, ask the ingestor for the wallets' newest transactions (one cheap RPC call when nothing changed) and
+    """Every 10s, ask the ingestor for the wallets' newest transactions (one cheap RPC call when nothing changed) and
     recompute at once when any arrived, so a position closed seconds ago reaches the history without waiting for
     the two-minute round."""
     while True:

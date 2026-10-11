@@ -403,7 +403,7 @@ function useClosedPositions(wallet: string) {
       })
       .catch(() => {});
   }, [wallet]);
-  useAutoRefresh(refreshHead, 15_000);
+  useAutoRefresh(refreshHead, 10_000);
 
   const positions = pages.flatMap((p) => p.positions);
   return {
@@ -441,7 +441,7 @@ export function ClosedPositions({ wallet }: { wallet: string }) {
       .catch(() => undefined);
   }, [wallet]);
   useEffect(refreshToday, [refreshToday]);
-  useAutoRefresh(refreshToday, 15_000);
+  useAutoRefresh(refreshToday, 10_000);
   useEffect(() => {
     const d = PERIOD_DAYS[period];
     if (d == null || done || loading || error || oldest == null) return;
