@@ -39,7 +39,9 @@ def screen(rows: dict[str, dict[str, Any]], trader) -> dict[str, Any]:
                 "entry_ok": False, "held": False, "rejected": True,
             })
             continue
-        # Passed the safety and plan screen: the entry checklist.
+        # Passed the safety and plan screen: the entry checklist. A pool the profile already holds can have no plan
+        # (it stopped recommending an entry): its checklist reads from an empty plan instead of failing the page.
+        plan = plan or {}
         atr = (row.get("market") or {}).get("atr_pct")
         fee_day = plan.get("fee_for_position_pct_day") or row.get("fee_for_position_pct_day") or 0.0
         need = (plan.get("round_trip_cost_pct") or 0.0) * (cfg.min_fee_cost_ratio or 1.0)
