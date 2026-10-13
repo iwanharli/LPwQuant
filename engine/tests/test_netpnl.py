@@ -69,3 +69,20 @@ def test_tokens_rolled_into_the_next_position_count_once():
     assert abs(ps[0]["net"] - 2.0) < 1e-9   # -10 bought, tokens out worth 12
     assert abs(ps[1]["net"] - 1.0) < 1e-9   # tokens in worth 12, sold for 13
     assert abs(sum(p["net"] for p in ps) - coin["net"]) < 1e-9
+
+
+def test_open_position_rent_is_not_a_loss_for_the_closed_ones():
+    """Rent locked in an open position comes back on close: the closed position keeps its own result."""
+    # closed a: +2 own cash; open b: paid 33.5 for a 29 deposit (4.5 rent), still worth 29. Coin: cash -31.5 + held 29.
+    coin = {"net": -2.5, "txs": [
+        {"kind": "swap", "ts": _t(1), "cash": -10.0, "qty": 100.0},
+        {"kind": "add_liquidity", "ts": _t(2), "cash": -5.0, "qty": -100.0, "position": "a"},
+        {"kind": "remove_liquidity", "ts": _t(3), "cash": 5.0, "qty": 100.0, "position": "a"},
+        {"kind": "swap", "ts": _t(3), "cash": 12.0, "qty": -100.0},
+        {"kind": "add_liquidity", "ts": _t(5), "cash": -33.5, "qty": 0.0, "position": "b"},
+    ]}
+    a = {**_pos("a", 2, 3, 2.0), "in_x": 100.0, "out_x": 100.0, "entry_px": 0.1, "exit_px": 0.1}
+    b = {**_pos("b", 5, None, 0.0, dep=29.0)}
+    ps = netpnl._split_positions(coin, [a, b])
+    assert abs(ps[0]["net"] - 2.0) < 1e-9
+    assert abs(coin["held_rent"] - 4.5) < 1e-9

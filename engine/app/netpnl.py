@@ -12,9 +12,10 @@ still held. Here every transaction is assigned to one coin and its SOL/USDC move
   * Network fees and account rent are inside each transaction's SOL change, so they are counted where they occur.
   * Held value: tokens in the wallet, open positions and open limit orders, at today's prices.
 
-Per position: Meteora's PnL of the position (tokens valued as they enter and leave it, so tokens rolled from one
-position into the next do not distort it) plus a share of the coin's result outside LP, split by the swap volume
-around each position. The coin totals are exact; the per-position split of the outside part is a rule and says so.
+Per position: the position's own cash (its transactions and the swaps around it), with tokens it took from or left in
+the wallet valued at the pool's price as they changed hands (Meteora's PnL where that price is unknown), plus a share
+of what is left of the coin, split by the swap volume around each position. Rent locked in a still-open position is
+counted as held (it comes back on close). The coin totals are exact; the split of the remainder is a rule.
 
 The result is reconciled with the ledger's total (net worth now - capital): coins + gacha + SOL/USDC conversions +
 unassigned = total, and whatever is left is the effect of the SOL price on SOL held, shown as its own line.
@@ -549,6 +550,17 @@ def _split_positions(c: dict[str, Any], positions: list[dict[str, Any]]) -> list
                          + (p.get("out_x", 0.0) - sold[pid][0]) * exit_)
         else:
             base[pid] = p["meteora_pnl_usd"] or 0.0
+    # An open position's rent (position account, ~0.04-0.06 SOL) left the wallet with its deposit but comes back on
+    # close: it is the user's money, not a loss. Counted as held, or it would be shared out as a loss over the coin's
+    # closed positions (a -$2.13 card on a position that made +$0.80).
+    locked = 0.0
+    for p in ps:
+        if p.get("status") != "closed":
+            rent_in = -cash[p["position"]] - (p.get("deposit_usd") or 0.0)
+            if 0 < rent_in < 0.25 * (p.get("deposit_usd") or 0.0):
+                locked += rent_in
+    c["net"] += locked
+    c["held_rent"] = locked
     outside = c["net"] - sum(base.values())
     total_volume = sum(volume.values())
     deposits = sum(max(p["deposit_usd"] or 0.0, 0.0) for p in ps)
