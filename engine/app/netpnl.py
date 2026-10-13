@@ -283,6 +283,9 @@ async def compute(db, wallet: str, fresh: bool = False) -> dict[str, Any]:
         )
     }
     gacha_times = [a["ts"] for a in acts if a["kind"] == "gacha"]
+    # Positions by opening / closing time, for the transactions Meteora's events do not list (see _orphan_position).
+    opens = sorted((i["opened_at"].timestamp(), pid) for pid, i in idx.items() if i["opened_at"] and i["mint_x"])
+    closes_at = sorted((i["closed_at"].timestamp(), pid) for pid, i in idx.items() if i["closed_at"] and i["mint_x"])
     coins: dict[str, dict[str, Any]] = {}
     buckets = {"capital": 0.0, "gacha": 0.0, "conversion": 0.0, "unassigned": 0.0}
     unassigned_count = multi = 0
@@ -327,7 +330,7 @@ async def compute(db, wallet: str, fresh: bool = False) -> dict[str, Any]:
         totals["pool_fees"] += pool_fee
         totals["other_dex_swaps"] += bool(a["other_dex_swap"])
         totals["costs_known_txs"] += a["network_fee_lamports"] is not None
-        pos = sig_pos.get(a["signature"])
+        pos = sig_pos.get(a["signature"]) or _orphan_position(a, tokens, opens, closes_at)
         if pos and idx[pos]["mint_x"]:
             mint, symbol = idx[pos]["mint_x"], idx[pos]["symbol_x"] or "?"
         elif tokens:
@@ -341,8 +344,10 @@ async def compute(db, wallet: str, fresh: bool = False) -> dict[str, Any]:
                 buckets["capital"] += cash
             elif a["kind"] == "gacha" or ledger.gacha_related(a["ts"], cash, gacha_times):
                 buckets["gacha"] += cash
-            elif a["kind"] == "swap":
-                buckets["conversion"] += cash  # SOL <-> USDC: only the cost of converting stays
+            elif a["kind"] in ("swap", "limit_order_place", "limit_order_cancel"):
+                # SOL <-> USDC, by swap or by a SOL-USDC limit order (USDC in, SOL back on cancel): only the cost of
+                # converting stays.
+                buckets["conversion"] += cash
             else:
                 buckets["unassigned"] += cash
                 unassigned_count += 1
@@ -476,6 +481,29 @@ async def _position_token_flows(db, wallet: str, times: list[float], closes: lis
             if r["event_type"] == "remove":
                 f["exit_px"] = px(r)
     return out
+
+
+ORPHAN_WINDOW_S = 120
+
+
+def _orphan_position(a: Any, tokens: list[dict[str, Any]], opens: list[tuple[float, str]],
+                     closes: list[tuple[float, str]]) -> str | None:
+    """The position a SOL-only LP transaction belongs to when Meteora's events do not list it: the position-account
+    rent paid in its own transaction just before the deposit (InitializePosition), or a withdrawal whose event is
+    missing. Without this the rent left as "unassigned" while its refund on close landed in the position, which then
+    looked ~0.04-0.06 SOL better than it was. Matched by time: the position opened (closed) closest after (around) it,
+    within ORPHAN_WINDOW_S."""
+    if tokens:
+        return None
+    ts = a["ts"].timestamp()
+    ins = a["instructions"] or []
+    if a["kind"] == "add_liquidity" and "InitializePosition" in ins:
+        later = [(t - ts, pid) for t, pid in opens if 0 <= t - ts <= ORPHAN_WINDOW_S]
+        return min(later)[1] if later else None
+    if a["kind"] == "remove_liquidity":
+        near = [(abs(t - ts), pid) for t, pid in closes if abs(t - ts) <= ORPHAN_WINDOW_S]
+        return min(near)[1] if near else None
+    return None
 
 
 def _nearest(ps: list[dict[str, Any]], ts: float) -> str:

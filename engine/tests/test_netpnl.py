@@ -86,3 +86,19 @@ def test_open_position_rent_is_not_a_loss_for_the_closed_ones():
     ps = netpnl._split_positions(coin, [a, b])
     assert abs(ps[0]["net"] - 2.0) < 1e-9
     assert abs(coin["held_rent"] - 4.5) < 1e-9
+
+
+def test_orphan_rent_and_withdrawal_find_their_position():
+    from datetime import timedelta
+
+    t0 = datetime(2026, 10, 1, 12, tzinfo=timezone.utc)
+    opens = [(t0.timestamp() + 5, "a"), (t0.timestamp() + 600, "b")]
+    closes = [(t0.timestamp() + 3600, "a")]
+    rent = {"ts": t0, "kind": "add_liquidity", "instructions": ["InitializePosition"]}
+    assert netpnl._orphan_position(rent, [], opens, closes) == "a"  # the position opened just after
+    late = {"ts": t0 + timedelta(seconds=300), "kind": "add_liquidity", "instructions": ["InitializePosition"]}
+    assert netpnl._orphan_position(late, [], opens, closes) is None  # nothing opened within two minutes
+    out = {"ts": t0 + timedelta(seconds=3601), "kind": "remove_liquidity", "instructions": []}
+    assert netpnl._orphan_position(out, [], opens, closes) == "a"
+    with_token = {"ts": t0, "kind": "add_liquidity", "instructions": ["InitializePosition"]}
+    assert netpnl._orphan_position(with_token, [{"mint": "X", "amount": 1.0}], opens, closes) is None
