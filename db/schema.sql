@@ -690,3 +690,8 @@ create table if not exists paper_phases (
 
 -- Copy LP phase 3: why a copy closed -- "follow" (the wallet closed it) or "stop" (our -15% cut).
 alter table paper_copy_runs add column if not exists exit_reason text;
+
+-- Copy LP Kecil (engine/app/copy_paper.py, variant "small"): the same test on small-capital, wide-margin, long-hold
+-- wallets, in its own tables so the two compare side by side.
+create table if not exists paper_copy_small_seen (like paper_copy_seen including all);
+create table if not exists paper_copy_small_runs (like paper_copy_runs including all);

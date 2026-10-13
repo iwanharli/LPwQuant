@@ -491,11 +491,11 @@ async def get_brontosaurus() -> dict:
 
 
 @app.get("/api/paper/copy")
-async def get_copy_paper() -> dict:
-    """Paper copies of the followed LP wallets' positions, $100 each."""
+async def get_copy_paper(variant: str = Query("top", pattern="^(top|small)$")) -> dict:
+    """Paper copies of the followed LP wallets' positions, $100 each: the top wallets, or the small-capital ones."""
     if engine.db is None:
         raise HTTPException(status_code=503, detail="engine not ready")
-    return await copy_paper.report(engine.db, engine.rows)
+    return await copy_paper.report(engine.db, engine.rows, variant)
 
 
 @app.get("/api/danger-wallets")

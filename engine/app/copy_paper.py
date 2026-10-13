@@ -41,6 +41,15 @@ MIN_MEDIAN_HOLD_H = 2.0
 TRACK_MIN_P3 = 5
 STOP_PCT = -15.0
 
+# Two copy tests side by side, each in its own tables: "top" follows the leaderboard's top wallets by dollars made in
+# 7 days (big, frequent traders); "small" follows small-capital wallets that make a wide margin per position and hold
+# for hours, where a $100 copy's fixed costs (~$0.37) are a small part of the result. variant -> (table prefix, phase key).
+VARIANTS: dict[str, tuple[str, str]] = {"top": ("paper_copy", "copy"), "small": ("paper_copy_small", "copy_small")}
+SMALL_FOLLOW = 10
+SMALL_MAX_DEPOSIT = 300.0
+SMALL_MIN_MEDIAN_PCT = 1.0
+SMALL_MIN_HOLD_H = 6.0
+
 
 def copy_return_pct(entry_pct: float | None, now_pct: float | None) -> float:
     """What a copier made from the moment it joined: (1 + now) / (1 + entry) - 1, in %. A wallet mark at or below
@@ -76,14 +85,30 @@ def _final_pnl_pct(wallet: str, pool: str, position: str) -> float | None:
     return None
 
 
-async def followed(db) -> list[dict[str, Any]]:
+def small_fit(l: dict[str, Any]) -> bool:
+    """A small-capital wallet worth copying with $100: small positions, a wide median margin, long holds, profitable
+    without its three best positions and over its lifetime, and still active this week."""
+    return ((l.get("deposit_median_usd") or 1e9) <= SMALL_MAX_DEPOSIT
+            and (l.get("median_pct") or 0) >= SMALL_MIN_MEDIAN_PCT
+            and (l.get("hold_median_h") or 0) >= SMALL_MIN_HOLD_H
+            and (l.get("without_best3_usd") or 0) > 0
+            and (l.get("lifetime_pnl_usd") or 0) > 0
+            and (l.get("positions_7d") or 0) > 0)
+
+
+async def followed(db, variant: str = "top") -> list[dict[str, Any]]:
     rep = await lp_leaders.report(db)
+    if variant == "small":
+        picks = [l for l in rep["leaders"] if small_fit(l)]
+        picks.sort(key=lambda l: -(l.get("median_pct") or 0))
+        return picks[:SMALL_FOLLOW]
     return [l for l in rep["leaders"] if l["meets"]][:FOLLOW]
 
 
-async def eligible(db, wallet: str) -> tuple[bool, str]:
-    """Whether phase 2 copies this wallet: its last copies held long enough and did not lose, together."""
-    if paper_phases.current("copy") < 2:
+async def eligible(db, wallet: str, variant: str = "top") -> tuple[bool, str]:
+    """Whether the top-wallet test copies this wallet (phase 2 on): its last copies held long enough and did not lose.
+    The small-wallet test is chosen on those terms already, so it copies every wallet it follows."""
+    if variant == "small" or paper_phases.current("copy") < 2:
         return True, ""
     rows = await db.fetch(
         """select pnl_usd, extract(epoch from closed_at - opened_at) / 3600 as h from paper_copy_runs
@@ -101,9 +126,14 @@ async def eligible(db, wallet: str) -> tuple[bool, str]:
 
 
 class CopyPaper:
-    def __init__(self, db, sol_usd: Callable[[], float]) -> None:
+    def __init__(self, db, sol_usd: Callable[[], float], variant: str = "top") -> None:
         self.db = db
         self.sol_usd = sol_usd
+        self.variant = variant
+        self.t, self.phase_key = VARIANTS[variant]
+
+    def _stops(self) -> bool:
+        return self.variant == "small" or paper_phases.current("copy") >= 3
 
     async def run(self) -> None:
         while True:
@@ -117,29 +147,29 @@ class CopyPaper:
 
     async def step(self) -> None:
         now = datetime.now(timezone.utc)
-        wallets = [l["wallet"] for l in await followed(self.db)]
+        wallets = [l["wallet"] for l in await followed(self.db, self.variant)]
         for w in wallets:
             try:
                 live = await asyncio.to_thread(_open_positions, w)
             except Exception as err:
-                log.info("copy %s read failed: %s", w[:4], err)
+                log.info(f"copy[{self.variant}] %s read failed: %s", w[:4], err)
                 continue
-            first_look = not await self.db.fetchval("select 1 from paper_copy_seen where wallet = $1 limit 1", w)
-            copy_ok, _why = await eligible(self.db, w)
+            first_look = not await self.db.fetchval(f"select 1 from {self.t}_seen where wallet = $1 limit 1", w)
+            copy_ok, _why = await eligible(self.db, w, self.variant)
             live_ids = {q["address"] for q in live}
             for q in live:
-                if await self.db.fetchval("select 1 from paper_copy_seen where position = $1", q["address"]):
+                if await self.db.fetchval(f"select 1 from {self.t}_seen where position = $1", q["address"]):
                     await self.db.execute(
-                        "update paper_copy_runs set last_pnl_pct = $2, checked_at = $3 where position = $1 and status = 'open'",
+                        f"update {self.t}_runs set last_pnl_pct = $2, checked_at = $3 where position = $1 and status = 'open'",
                         q["address"], q["pnl_pct"], now)
-                    if paper_phases.current("copy") >= 3:
+                    if self._stops():
                         r = await self.db.fetchrow(
-                            "select * from paper_copy_runs where position = $1 and status = 'open'", q["address"])
+                            f"select * from {self.t}_runs where position = $1 and status = 'open'", q["address"])
                         if r and copy_return_pct(r["entry_pnl_pct"], q["pnl_pct"]) <= STOP_PCT:
                             await self._close(dict(r), now, q["pnl_pct"], "stop")
                     continue
                 await self.db.execute(
-                    "insert into paper_copy_seen (position, wallet, first_seen) values ($1, $2, $3) on conflict do nothing",
+                    f"insert into {self.t}_seen (position, wallet, first_seen) values ($1, $2, $3) on conflict do nothing",
                     q["address"], w, now)
                 created = (q.get("created_at") or 0) / 1000
                 if first_look or time.time() - created > FRESH_MIN * 60 or not copy_ok:
@@ -147,14 +177,14 @@ class CopyPaper:
                 if (q["pnl_pct"] or 0) <= -50:
                     continue  # already down half on arrival: a broken or emptied position, not one to copy
                 await self.db.execute(
-                    """insert into paper_copy_runs (wallet, position, pool, pair, their_created_at, opened_at, status,
+                    f"""insert into {self.t}_runs (wallet, position, pool, pair, their_created_at, opened_at, status,
                          size_usd, entry_pnl_pct, last_pnl_pct, their_deposit_usd, min_price, max_price, checked_at)
                        values ($1,$2,$3,$4,to_timestamp($5),$6,'open',$7,$8,$8,$9,$10,$11,$6)""",
                     w, q["address"], q["pool"], q["pair"], created, now, SIZE_USD, q["pnl_pct"] or 0.0,
                     q.get("deposit_usd"), q.get("min_price"), q.get("max_price"))
-                log.info("copy %s: %s %s (seen %.0fs after they opened)", w[:4], q["pair"], q["address"][:6], time.time() - created)
+                log.info(f"copy[{self.variant}] %s: %s %s (seen %.0fs after they opened)", w[:4], q["pair"], q["address"][:6], time.time() - created)
             # Copies whose position left the wallet's open list: close at the wallet's final result.
-            for r in await self.db.fetch("select * from paper_copy_runs where wallet = $1 and status = 'open'", w):
+            for r in await self.db.fetch(f"select * from {self.t}_runs where wallet = $1 and status = 'open'", w):
                 if r["position"] in live_ids:
                     continue
                 final = await asyncio.to_thread(_final_pnl_pct, w, r["pool"], r["position"])
@@ -168,16 +198,17 @@ class CopyPaper:
         costs = TX_FEE_SOL * self.sol_usd() + r["size_usd"] * EXIT_SWAP_PCT / 100
         pnl = r["size_usd"] * result_pct / 100 - costs
         await self.db.execute(
-            """update paper_copy_runs set status = 'closed', closed_at = $2, exit_pnl_pct = $3, result_pct = $4,
+            f"""update {self.t}_runs set status = 'closed', closed_at = $2, exit_pnl_pct = $3, result_pct = $4,
                  costs_usd = $5, pnl_usd = $6, exit_reason = $7 where id = $1""",
             r["id"], now, final, result_pct, costs, pnl, reason)
-        log.info("copy %s closed %s (%s): %+.2f USD", r["wallet"][:4], r["pair"], reason, pnl)
+        log.info(f"copy[{self.variant}] %s closed %s (%s): %+.2f USD", r["wallet"][:4], r["pair"], reason, pnl)
 
 
-async def report(db, rows: dict[str, dict[str, Any]] | None = None) -> dict[str, Any]:
-    since = paper_phases.since("copy") or datetime.min.replace(tzinfo=timezone.utc)
+async def report(db, rows: dict[str, dict[str, Any]] | None = None, variant: str = "top") -> dict[str, Any]:
+    t, phase_key = VARIANTS[variant]
+    since = paper_phases.since(phase_key) or datetime.min.replace(tzinfo=timezone.utc)
     runs = [dict(r) for r in await db.fetch(
-        "select * from paper_copy_runs where opened_at >= $1 order by opened_at desc limit 300", since)]
+        f"select * from {t}_runs where opened_at >= $1 order by opened_at desc limit 300", since)]
     ms = lambda t: int(t.timestamp() * 1000) if t else None  # noqa: E731
     closed = [r for r in runs if r["status"] == "closed"]
     out = []
@@ -198,19 +229,22 @@ async def report(db, rows: dict[str, dict[str, Any]] | None = None) -> dict[str,
         })
     # Totals over the whole phase, not only the 300 rows listed.
     agg = await db.fetchrow(
-        """select count(*) filter (where status = 'open') as open, count(*) filter (where status = 'closed') as closed,
+        f"""select count(*) filter (where status = 'open') as open, count(*) filter (where status = 'closed') as closed,
                   coalesce(sum(pnl_usd) filter (where status = 'closed'), 0) as pnl,
                   count(*) filter (where status = 'closed' and pnl_usd > 0) as wins
-           from paper_copy_runs where opened_at >= $1""", since)
+           from {t}_runs where opened_at >= $1""", since)
     wallets = []
-    for w in await followed(db):
-        ok, why = await eligible(db, w["wallet"])
+    for w in await followed(db, variant):
+        ok, why = await eligible(db, w["wallet"], variant)
         wallets.append({**w, "copied": ok, "copy_note": why})
     return {
-        "params": {"follow": FOLLOW, "size_usd": SIZE_USD, "tick_s": TICK_S, "fresh_min": FRESH_MIN,
+        "variant": variant,
+        "params": {"follow": SMALL_FOLLOW if variant == "small" else FOLLOW, "size_usd": SIZE_USD, "tick_s": TICK_S, "fresh_min": FRESH_MIN,
                    "exit_swap_pct": EXIT_SWAP_PCT, "min_median_hold_h": MIN_MEDIAN_HOLD_H, "track_n": TRACK_N},
         "wallets": wallets,
-        "phases": paper_phases.info("copy"),
+        "phases": paper_phases.info(phase_key),
+        "criteria": {"max_deposit_usd": SMALL_MAX_DEPOSIT, "min_median_pct": SMALL_MIN_MEDIAN_PCT,
+                     "min_hold_h": SMALL_MIN_HOLD_H, "stop_pct": STOP_PCT} if variant == "small" else None,
         "counts": {"open": agg["open"], "closed": agg["closed"]},
         "pnl_usd": float(agg["pnl"]),
         "win_rate": agg["wins"] / agg["closed"] if agg["closed"] else None,

@@ -33,6 +33,11 @@ PHASES: dict[str, dict[int, str]] = {
         3: "Sama, tapi wallet baru sudah dinilai setelah 5 tiruan (bukan 10), dan tiruan ditutup kalau sudah -15%. "
            "Fase 2: wallet baru dengan posisi 0,3-1 jam tetap ditiru 10 kali; satu tiruan jatuh -31% (SEALS).",
     },
+    "copy_small": {
+        1: "Meniru wallet LP bermodal kecil (median ≤$300 per posisi) yang untung lebar per posisi (median ≥+1%), "
+           "memegang ≥6 jam, untung tanpa 3 posisi terbaik dan sepanjang masa, dan masih aktif minggu ini; 10 "
+           "teratas menurut median %. $100 per posisi, tiruan ditutup di -15%.",
+    },
     "panda": {
         1: "SOL satu sisi sampai −90% di bawah harga; keluar di pantulan pertama (RSI(2) + Bollinger/MACD).",
         2: "Range sampai −40%; keluar kalau harga tembus bawah range; keluar di pantulan hanya kalau sudah untung "

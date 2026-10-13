@@ -120,11 +120,13 @@ async def overview(db, papers: dict[str, Any], sol_usd: float, pools: dict[str, 
          "Gaya pemanen fee: range lebar di memecoin ber-fee tinggi, dipegang ±12 jam",
          (lambda: sum(1 for row in pools.values() if bronto_mod.screen(row)[0]) if pools else None), False),
         ("copy", "Copy LP", "paper_copy_runs", "Meniru posisi wallet LP teratas, $100 per posisi", (lambda: 5), False),
+        ("copy_small", "Copy LP Kecil", "paper_copy_small_runs",
+         "Meniru wallet LP bermodal kecil yang untung lebar per posisi dan sabar, $100 per posisi", (lambda: None), False),
     ]
     for key, label, table, note, passing, with_odd in runs_specs:
         rows = []
         for n, cond, args in _cut(key, "opened_at"):
-            fees = "fees_usd" if table != "paper_copy_runs" else "0::float8 as fees_usd"
+            fees = "fees_usd" if not table.startswith("paper_copy") else "0::float8 as fees_usd"
             runs = await db.fetch(
                 f"""select status, size_usd, pnl_usd, {fees}, opened_at,
                           extract(epoch from closed_at - opened_at) / 3600 as hold_h,
@@ -132,7 +134,7 @@ async def overview(db, papers: dict[str, Any], sol_usd: float, pools: dict[str, 
                    from {table} where {cond}""", *args)
             closed = [r for r in runs if r["status"] == "closed"]
             rows.append({**_row(
-                key, label, key if key != "bronto" else "bronto", [(r["pnl_usd"] or 0, r["size_usd"]) for r in closed],
+                key, label, "copy" if key.startswith("copy") else key, [(r["pnl_usd"] or 0, r["size_usd"]) for r in closed],
                 sum(r["status"] == "open" for r in runs), args[0] or min((r["opened_at"] for r in runs), default=None),
                 note, holds=[float(r["hold_h"]) for r in closed if r["hold_h"] is not None],
                 passing=passing(), recent_7d=sum(r["pnl_usd"] or 0 for r in closed if r["recent"]), opened=len(runs),

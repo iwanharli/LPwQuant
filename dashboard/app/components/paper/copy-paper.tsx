@@ -159,7 +159,13 @@ type Report = {
   pnl_usd: number;
   win_rate: number | null;
   runs: Run[];
+  variant?: Variant;
+  criteria?: { max_deposit_usd: number; min_median_pct: number; min_hold_h: number; stop_pct: number } | null;
 };
+
+type Variant = "top" | "small";
+const VARIANTS = ["top", "small"] as const;
+const VARIANT_LABEL: Record<Variant, string> = { top: "Wallet teratas", small: "Modal kecil" };
 
 const money = (n: number | null | undefined) => (n == null ? "–" : `${n >= 0 ? "+" : "−"}${usd.format(Math.abs(n))}`);
 const tone = (n: number | null | undefined) => (n == null ? "text-ink-3" : n > 0.005 ? "text-emerald-300" : n < -0.005 ? "text-rose-300" : "text-ink-2");
@@ -376,18 +382,50 @@ function Grouped({ runs, empty, noun }: { runs: Run[]; empty: string; noun: stri
   );
 }
 
+/** Which copy test: the leaderboard's top wallets, or the small-capital, wide-margin, patient ones. */
+function VariantSwitch({ value, onChange }: { value: Variant; onChange: (v: Variant) => void }) {
+  return (
+    <div className="flex gap-1 rounded-xl border border-white/[0.06] bg-panel p-1" role="tablist" aria-label="Uji copy LP">
+      {VARIANTS.map((v) => (
+        <button
+          key={v}
+          type="button"
+          role="tab"
+          aria-selected={value === v}
+          onClick={() => onChange(v)}
+          className={`rounded-lg px-3.5 py-1.5 text-sm font-medium transition-colors ${
+            value === v ? "bg-accent/15 text-accent" : "text-ink-2 hover:bg-raised/50 hover:text-ink"
+          }`}
+        >
+          {VARIANT_LABEL[v]}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export default function CopyPaper() {
+  const [variant, setVariant] = useUrlState<Variant>("uji", "top", VARIANTS);
+  return (
+    <>
+      <VariantSwitch value={variant} onChange={setVariant} />
+      <CopyReport key={variant} variant={variant} />
+    </>
+  );
+}
+
+function CopyReport({ variant }: { variant: Variant }) {
   const [r, setR] = useState<Report | null>(null);
   const [error, setError] = useState(false);
   const load = useCallback(() => {
-    fetch(`${ENGINE_URL}/api/paper/copy`)
+    fetch(`${ENGINE_URL}/api/paper/copy?variant=${variant}`)
       .then((x) => (x.ok ? x.json() : Promise.reject(x.status)))
       .then((b: Report) => {
         setR(b);
         setError(false);
       })
       .catch(() => setError(true));
-  }, []);
+  }, [variant]);
   useAutoRefresh(load, 30_000);
   useEffect(load, [load]);
   const [view, setView] = useUrlState<View>("copy", "berjalan", VIEWS);
@@ -406,8 +444,17 @@ export default function CopyPaper() {
   const done = r.runs.filter((x) => x.status === "closed");
   const avg = done.length ? done.reduce((n, x) => n + x.result_pct, 0) / done.length : null;
 
+  const c = r.criteria;
   return (
     <>
+      {c && (
+        <p className="rounded-2xl border border-white/[0.06] bg-panel px-4 py-3 text-xs leading-5 text-ink-3">
+          Meniru wallet dengan modal median ≤{usd.format(c.max_deposit_usd)} per posisi, untung median ≥+{fmtNum(c.min_median_pct, 1)}% per
+          posisi, memegang ≥{fmtNum(c.min_hold_h, 0)} jam, untung tanpa 3 posisi terbaik dan sepanjang masa, dan masih aktif minggu ini;
+          diurutkan menurut median %. Tiruan ditutup kalau sudah {fmtNum(c.stop_pct, 0)}%.
+          {r.wallets.length === 0 && <span className="text-amber-300"> Saat ini tidak ada wallet yang memenuhi.</span>}
+        </p>
+      )}
       <section className="overflow-hidden rounded-2xl border border-white/[0.06] bg-panel">
         <div className="grid grid-cols-2 gap-px bg-line/40 sm:grid-cols-4">
           <Kpi label="Hasil bersih" value={done.length ? money(r.pnl_usd) : "–"} cls={done.length ? tone(r.pnl_usd) : undefined} hint={`${done.length} tiruan selesai`} />

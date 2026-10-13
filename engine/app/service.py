@@ -208,6 +208,8 @@ class Engine:
                 name="brontosaurus"))
             self._tasks.append(asyncio.create_task(
                 CopyPaper(self.db, lambda: self.sol_usd or config.SOL_USD_FALLBACK).run(), name="copy_paper"))
+            self._tasks.append(asyncio.create_task(
+                CopyPaper(self.db, lambda: self.sol_usd or config.SOL_USD_FALLBACK, "small").run(), name="copy_paper_small"))
             panda = PandaPaper(self.db, lambda: self.rows, lambda: self.sol_usd or config.SOL_USD_FALLBACK)
             self._tasks.append(asyncio.create_task(panda.run(), name="panda_paper"))
         if self.alerter.enabled:
