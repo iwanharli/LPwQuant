@@ -444,6 +444,15 @@ create table if not exists auto_close (
   created_at   timestamptz not null default now(),
   updated_at   timestamptz not null default now()
 );
+-- Auto close defaults per bot wallet: every new position of the wallet is armed with these (a position switched off
+-- by hand stays off). Defaults to on at +5%.
+create table if not exists auto_close_settings (
+  owner              text primary key,
+  default_on         boolean not null default true,
+  default_target_pct double precision not null default 5,
+  updated_at         timestamptz not null default now()
+);
+
 
 -- Passkey login for the dashboard (WebAuthn): the credential's public key only, never a password or a private key.
 create table if not exists auth_credentials (

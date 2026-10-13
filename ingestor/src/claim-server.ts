@@ -16,7 +16,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { config } from "./config";
 import { apiFetch, createFailoverFetch } from "./rpc";
 import { WalletHistory } from "./wallet-history";
-import { botWallet } from "./auto-close";
+import { botWallet, settings as autoCloseSettings } from "./auto-close";
 import { pg } from "./db";
 import { traceWallet } from "./wallet-trace";
 import { buildDustClose, listDust } from "./dust";
@@ -981,7 +981,28 @@ export function startClaimServer(port = config.claimPort, allowed = config.dashb
         `select position, pool, owner, enabled, target_pct, status, basis_usd, last_net_pct, last_checked_at, close_sigs,
                 sell_sig, result_usd, error from auto_close order by updated_at desc limit 200`,
       );
-      return send(res, 200, { bot_wallet: kp?.publicKey.toBase58() ?? null, positions: rows }, origin);
+      const defaults = kp ? await autoCloseSettings(kp.publicKey.toBase58()) : null;
+      return send(res, 200, { bot_wallet: kp?.publicKey.toBase58() ?? null, defaults, positions: rows }, origin);
+    }
+    if (url.pathname === "/auto-close/settings" && req.method === "POST") {
+      try {
+        const b = (await readJson(req)) as { default_on?: boolean; default_target_pct?: number };
+        const kp = botWallet();
+        if (!kp) throw new Error("wallet bot belum diatur (BOT_WALLET_SECRET di .env)");
+        const cur = await autoCloseSettings(kp.publicKey.toBase58());
+        const on = b.default_on ?? cur.default_on;
+        const target = Math.min(50, Math.max(0.5, Number(b.default_target_pct ?? cur.default_target_pct)));
+        if (!Number.isFinite(target)) throw new Error("target tidak valid");
+        await pg.query(
+          `insert into auto_close_settings (owner, default_on, default_target_pct) values ($1, $2, $3)
+           on conflict (owner) do update set default_on = excluded.default_on,
+             default_target_pct = excluded.default_target_pct, updated_at = now()`,
+          [kp.publicKey.toBase58(), on, target],
+        );
+        return send(res, 200, { ok: true, default_on: on, default_target_pct: target }, origin);
+      } catch (err) {
+        return send(res, 400, { detail: err instanceof Error ? err.message : "gagal" }, origin);
+      }
     }
     if (url.pathname === "/auto-close" && req.method === "POST") {
       try {
@@ -989,7 +1010,8 @@ export function startClaimServer(port = config.claimPort, allowed = config.dashb
         const kp = botWallet();
         if (!kp) throw new Error("wallet bot belum diatur (BOT_WALLET_SECRET di .env)");
         if (!BASE58.test(b?.position ?? "") || !BASE58.test(b?.pool ?? "")) throw new Error("alamat tidak valid");
-        const target = Math.min(20, Math.max(1, Number(b.target_pct ?? 4)));
+        const target = Math.min(50, Math.max(0.5, Number(b.target_pct ?? (kp ? (await autoCloseSettings(kp.publicKey.toBase58())).default_target_pct : 5))));
+        if (!Number.isFinite(target)) throw new Error("target tidak valid");
         if (b.enabled) {
           // Refuse positions the bot cannot close: it must own them.
           const dlmm = await serial(() => poolFor(b.pool));

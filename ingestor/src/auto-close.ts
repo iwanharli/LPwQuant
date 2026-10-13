@@ -147,6 +147,39 @@ async function execute(a: Armed, kp: Keypair, basisValue: number) {
   );
 }
 
+export type AutoCloseSettings = { default_on: boolean; default_target_pct: number };
+
+export async function settings(owner: string): Promise<AutoCloseSettings> {
+  const { rows } = await pg.query<AutoCloseSettings>(
+    "select default_on, default_target_pct from auto_close_settings where owner = $1",
+    [owner],
+  );
+  return rows[0] ?? { default_on: true, default_target_pct: 5 };
+}
+
+let lastArm = 0;
+/** Arm every open position of the bot wallet that has no auto-close row yet, with the wallet's defaults. A row the
+ * user switched off keeps its choice: only positions never seen are added. */
+async function armNew(owner: string) {
+  if (Date.now() - lastArm < BASIS_REFRESH_MS) return;
+  lastArm = Date.now();
+  const s = await settings(owner);
+  if (!s.default_on) return;
+  const res = await fetch(`${config.engineUrl}/api/portfolio?wallet=${owner}`, { signal: AbortSignal.timeout(20_000) });
+  if (!res.ok) return;
+  const body = (await res.json()) as { pools: { address: string; positions: { address: string }[] }[] };
+  for (const pool of body.pools ?? []) {
+    for (const p of pool.positions ?? []) {
+      const { rowCount } = await pg.query(
+        `insert into auto_close (position, pool, owner, enabled, target_pct, status)
+         values ($1, $2, $3, true, $4, 'armed') on conflict (position) do nothing`,
+        [p.address, pool.address, owner, s.default_target_pct],
+      );
+      if (rowCount) console.log(`[auto-close] armed new position ${p.address.slice(0, 6)}… at +${s.default_target_pct}%`);
+    }
+  }
+}
+
 async function checkOne(a: Armed, kp: Keypair) {
   const b = await basisUsd(a.owner, a.position);
   if (b == null || b <= 0) return;
@@ -166,6 +199,7 @@ export function startAutoClose() {
     if (running) return;
     running = true;
     try {
+      await armNew(kp.publicKey.toBase58()).catch((err) => console.warn(`[auto-close] arming new positions failed: ${err}`));
       const { rows } = await pg.query<Armed>(
         "select position, pool, owner, target_pct from auto_close where enabled and status = 'armed' and owner = $1",
         [kp.publicKey.toBase58()],

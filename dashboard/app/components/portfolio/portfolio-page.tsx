@@ -11,7 +11,7 @@ import WalletButton from "../wallet-button";
 import DailyPnlChart, { type DailyPnl } from "./daily-pnl-chart";
 import PoolCard, { type Pool } from "./pool-card";
 import { ClosedPositions } from "./closed-history";
-import AutoCloseToggle from "./auto-close";
+import AutoCloseToggle, { AutoCloseDefaults } from "./auto-close";
 import CloseSellButton from "./close-sell";
 import NetPnl from "./net-pnl";
 import PortfolioHeader from "./portfolio-header";
@@ -631,6 +631,7 @@ export default function PortfolioPage() {
               </p>
             )}
 
+            <AutoCloseDefaults owner={connected.address} />
             <ClaimResult state={claimState} />
             {(claimState.phase === "review" || claimState.phase === "building") && (
               <ClaimReview
