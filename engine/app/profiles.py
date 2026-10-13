@@ -38,6 +38,7 @@ class RiskProfile:
     plan_variant: str = "base"  # "single" trades the quote-only version of the plan
     min_reversal_rate: float | None = None  # only pools whose price keeps turning back
     out_of_range_minutes: float | None = None  # wait this long out of range before closing (None = the plan's)
+    fast_stop: bool = False  # check the stop-loss on every price tick (~10s), not only every refresh (60s)
 
 
 PROFILES: tuple[RiskProfile, ...] = (
@@ -102,6 +103,9 @@ PROFILES: tuple[RiskProfile, ...] = (
         # defaults, with IL -0.24% and costs 0.19%. Chosen on that same data, so paper decides it on fresh data.
         max_atr_pct=2.0,
         plan_variant="single",
+        # Phase 2 (paper_phases): phase 1's three stop-losses meant at -5.5..-10% landed at -11..-13% (-$36 against
+        # +$39 from the other 81) because the price was only read every 60s.
+        fast_stop=True,
     ),
     RiskProfile(
         key="satu_sisi_volatil",
@@ -227,6 +231,7 @@ def paper_config(profile: RiskProfile) -> PaperConfig:
         plan_variant=profile.plan_variant,
         min_reversal_rate=profile.min_reversal_rate,
         out_of_range_minutes=profile.out_of_range_minutes,
+        fast_stop=profile.fast_stop,
     )
 
 

@@ -45,6 +45,7 @@ MIN_TOKEN_AGE_H = 24.0
 TARGET_HOLD_H = 12.0
 MAX_HOLD_H = 72.0
 PULLED_FRAC = 0.3
+BELOW_RANGE_COOLDOWN_H = 24
 IMPACT_PCT = 0.3
 TX_FEE_SOL = 0.0006
 BIN_ARRAY_SOL = 0.07143744
@@ -186,6 +187,11 @@ class Brontosaurus:
         held = {r["pool"] for r in open_rows} | {r["mint"] for r in open_rows}
         recent = {r["pool"] for r in await self.db.fetch(
             "select pool from paper_bronto_runs where opened_at > now() - interval '12 hours'")}
+        if paper_phases.current("bronto") >= 3:
+            # Phase 3: a token that just fell under the range stays out for a day (phase 2 re-entered DOPE twice).
+            held |= {r["mint"] for r in await self.db.fetch(
+                """select mint from paper_bronto_runs where exit_reason = 'below_range'
+                   and closed_at > now() - make_interval(hours => $1)""", BELOW_RANGE_COOLDOWN_H)}
         picks = [row for row in rows.values() if screen(row)[0]
                  and row["address"] not in held and (row.get("base_mint") or "") not in held and row["address"] not in recent]
         picks.sort(key=lambda r: -(_f(r.get("fee_tvl_pct_24h")) or 0))

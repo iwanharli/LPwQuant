@@ -17,12 +17,21 @@ PHASES: dict[str, dict[int, str]] = {
            "ditarik, atau setelah 72 jam.",
         2: "Sama, plus keluar begitu harga jatuh di bawah range (fase 1: 64 posisi ikut tenggelam sampai likuiditas "
            "ditarik, −$2.863, harga −72..−82%).",
+        3: "Sama, plus token yang baru keluar di bawah range tidak dimasuki lagi selama 24 jam. Fase 2: DOPE dua "
+           "kali keluar di bawah range dalam 2 jam (-$37) lalu dibuka lagi.",
+    },
+    "lp:satu_sisi": {
+        1: "SOL/USDC satu sisi di bawah harga, pool tenang (ATR 30m <=2%), fee harus 2x biaya; harga dicek tiap 60 detik.",
+        2: "Sama, tapi stop-loss dicek di setiap harga baru (±10 detik), bukan tiap 60 detik. Fase 1: 3 stop-loss "
+           "yang seharusnya di -5,5..-10% tembus ke -11..-13% (-$36), sementara 81 posisi lainnya +$39.",
     },
     "copy": {
         1: "Meniru setiap posisi baru 5 wallet LP teratas, $100 per posisi.",
         2: "Hanya wallet yang tiruannya tidak rugi dan posisinya bertahan ≥2 jam (median 30 tiruan terakhir); wallet "
            "baru (<10 tiruan) tetap dicoba. Fase 1: untung +$659 sebelum biaya, tapi biaya $1.270 dari posisi "
            "pendek wallet yang sangat sering buka-tutup.",
+        3: "Sama, tapi wallet baru sudah dinilai setelah 5 tiruan (bukan 10), dan tiruan ditutup kalau sudah -15%. "
+           "Fase 2: wallet baru dengan posisi 0,3-1 jam tetap ditiru 10 kali; satu tiruan jatuh -31% (SEALS).",
     },
     "panda": {
         1: "SOL satu sisi sampai −90% di bawah harga; keluar di pantulan pertama (RSI(2) + Bollinger/MACD).",

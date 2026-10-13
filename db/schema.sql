@@ -687,3 +687,6 @@ create table if not exists paper_phases (
   note        text,
   primary key (strategy, phase)
 );
+
+-- Copy LP phase 3: why a copy closed -- "follow" (the wallet closed it) or "stop" (our -15% cut).
+alter table paper_copy_runs add column if not exists exit_reason text;

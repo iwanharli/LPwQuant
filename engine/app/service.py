@@ -688,6 +688,13 @@ class Engine:
                             pool["price"] = price
                         self.rows[address] = self._build_row(pool, now_ms)
                         updates.append(self.rows[address])
+                        if self.papers:
+                            async with self._paper_lock:
+                                for trader in self.papers.values():
+                                    try:
+                                        await trader.on_tick(address, pool, self.rows[address], now_ms)
+                                    except Exception:
+                                        log.exception("paper tick failed")
                     self._broadcast({"type": "update", "pools": updates})
                     pending.clear()
                     last_broadcast = time.monotonic()

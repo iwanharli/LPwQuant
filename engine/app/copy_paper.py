@@ -37,6 +37,9 @@ EXIT_SWAP_PCT = 0.3  # selling the token part left at exit, as % of the position
 TRACK_N = 30
 TRACK_MIN = 10
 MIN_MEDIAN_HOLD_H = 2.0
+# Phase 3: new wallets are judged after 5 copies, and a copy is cut at STOP_PCT (phase 2 had no stop: SEALS -31%).
+TRACK_MIN_P3 = 5
+STOP_PCT = -15.0
 
 
 def copy_return_pct(entry_pct: float | None, now_pct: float | None) -> float:
@@ -85,7 +88,7 @@ async def eligible(db, wallet: str) -> tuple[bool, str]:
     rows = await db.fetch(
         """select pnl_usd, extract(epoch from closed_at - opened_at) / 3600 as h from paper_copy_runs
            where wallet = $1 and status = 'closed' order by closed_at desc limit $2""", wallet, TRACK_N)
-    if len(rows) < TRACK_MIN:
+    if len(rows) < (TRACK_MIN_P3 if paper_phases.current("copy") >= 3 else TRACK_MIN):
         return True, "baru, masih dicoba"
     holds = sorted(float(r["h"] or 0) for r in rows)
     median = holds[len(holds) // 2]
@@ -129,6 +132,11 @@ class CopyPaper:
                     await self.db.execute(
                         "update paper_copy_runs set last_pnl_pct = $2, checked_at = $3 where position = $1 and status = 'open'",
                         q["address"], q["pnl_pct"], now)
+                    if paper_phases.current("copy") >= 3:
+                        r = await self.db.fetchrow(
+                            "select * from paper_copy_runs where position = $1 and status = 'open'", q["address"])
+                        if r and copy_return_pct(r["entry_pnl_pct"], q["pnl_pct"]) <= STOP_PCT:
+                            await self._close(dict(r), now, q["pnl_pct"], "stop")
                     continue
                 await self.db.execute(
                     "insert into paper_copy_seen (position, wallet, first_seen) values ($1, $2, $3) on conflict do nothing",
@@ -152,14 +160,18 @@ class CopyPaper:
                 final = await asyncio.to_thread(_final_pnl_pct, w, r["pool"], r["position"])
                 if final is None:
                     final = r["last_pnl_pct"]  # not listed as closed yet: the last mark we saw
-                result_pct = copy_return_pct(r["entry_pnl_pct"], final)
-                costs = TX_FEE_SOL * self.sol_usd() + r["size_usd"] * EXIT_SWAP_PCT / 100
-                pnl = r["size_usd"] * result_pct / 100 - costs
-                await self.db.execute(
-                    """update paper_copy_runs set status = 'closed', closed_at = $2, exit_pnl_pct = $3, result_pct = $4,
-                         costs_usd = $5, pnl_usd = $6 where id = $1""",
-                    r["id"], now, final, result_pct, costs, pnl)
-                log.info("copy %s closed %s: %+.2f USD", w[:4], r["pair"], pnl)
+                await self._close(dict(r), now, final, "follow")
+
+    async def _close(self, r: dict[str, Any], now: datetime, final: float | None, reason: str) -> None:
+        """Close a copy at the wallet's PnL % `final`: when they closed ("follow"), or our own stop ("stop")."""
+        result_pct = copy_return_pct(r["entry_pnl_pct"], final)
+        costs = TX_FEE_SOL * self.sol_usd() + r["size_usd"] * EXIT_SWAP_PCT / 100
+        pnl = r["size_usd"] * result_pct / 100 - costs
+        await self.db.execute(
+            """update paper_copy_runs set status = 'closed', closed_at = $2, exit_pnl_pct = $3, result_pct = $4,
+                 costs_usd = $5, pnl_usd = $6, exit_reason = $7 where id = $1""",
+            r["id"], now, final, result_pct, costs, pnl, reason)
+        log.info("copy %s closed %s (%s): %+.2f USD", r["wallet"][:4], r["pair"], reason, pnl)
 
 
 async def report(db, rows: dict[str, dict[str, Any]] | None = None) -> dict[str, Any]:
@@ -182,6 +194,7 @@ async def report(db, rows: dict[str, dict[str, Any]] | None = None) -> dict[str,
             "min_price": r["min_price"], "max_price": r["max_price"],
             "price": ((rows or {}).get(r["pool"]) or {}).get("price"),
             "opened_at": ms(r["opened_at"]), "closed_at": ms(r["closed_at"]), "checked_at": ms(r["checked_at"]),
+            "exit_reason": r.get("exit_reason"),
         })
     # Totals over the whole phase, not only the 300 rows listed.
     agg = await db.fetchrow(

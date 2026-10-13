@@ -100,6 +100,8 @@ class PaperConfig:
     plan_variant: str = "base"
     # Minutes out of range before closing, overriding the plan's (None = the plan's).
     out_of_range_minutes: float | None = None
+    # Check the stop-loss on every price tick of an open position's pool (from phase 2 of the profile on).
+    fast_stop: bool = False
 
 
 PAUSE_HOURS = 24  # after a drawdown pause, entries resume this much later with a fresh peak
@@ -545,6 +547,18 @@ class PaperTrader:
                 )),
             )
         log.info("paper[%s]: %d open positions, realized %.2f USD", self.cfg.profile, len(self.open), self.realized_usd)
+
+    async def on_tick(self, address: str, pool: dict[str, Any], row: dict[str, Any], now_ms: int) -> None:
+        """A new price for one pool between refreshes: only the stop-loss is checked, so a fast fall is cut near the
+        stop instead of a minute later. The rest of the exits keep their refresh cadence."""
+        if not (self.cfg.enabled and self.cfg.fast_stop and paper_phases.current(f"lp:{self.cfg.profile}") >= 2):
+            return
+        for pos in [p for p in self.open.values() if p.address == address]:
+            if not pool.get("price"):
+                continue
+            accrue(pos, self._pool_ctx(pool, row), now_ms, self.cfg.costs, self.sol_usd)
+            if pos.pnl_pct() <= -pos.exit_rules["stop_loss_pct"]:
+                await self._close(pos, "stop_loss", now_ms)
 
     async def on_refresh(self, pools: dict[str, dict[str, Any]], rows: dict[str, dict[str, Any]], now_ms: int) -> None:
         if not self.cfg.enabled:
