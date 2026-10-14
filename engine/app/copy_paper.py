@@ -138,8 +138,14 @@ class CopyPaper:
         self.variant = variant
         self.t, self.phase_key = VARIANTS[variant]
 
-    def _stops(self) -> bool:
-        return self.variant == "small" or paper_phases.current("copy") >= 3
+    def _stops(self, r: dict[str, Any] | None = None) -> bool:
+        """Whether the -15% stop applies: on in the small test and from the top test's phase 3, and only to copies
+        opened under those rules (an older copy keeps the rules it was opened with)."""
+        on = self.variant == "small" or paper_phases.current("copy") >= 3
+        if not on or r is None:
+            return on
+        since = paper_phases.since(self.phase_key)
+        return since is None or r["opened_at"] >= since
 
     async def run(self) -> None:
         stops = asyncio.create_task(self._stop_loop())
@@ -158,8 +164,6 @@ class CopyPaper:
     async def _stop_loop(self) -> None:
         while True:
             await asyncio.sleep(STOP_CHECK_S)
-            if not self._stops():
-                continue
             try:
                 await self._check_stops()
             except asyncio.CancelledError:
@@ -176,10 +180,16 @@ class CopyPaper:
             marks = {p.get("positionAddress"): portfolio._f(p.get("pnlPctChange")) for p in detail.get("positions") or []}
             now = datetime.now(timezone.utc)
             for r in open_rows:
-                if r["wallet"] != wallet or r["pool"] != pool or r["position"] not in marks:
+                if r["wallet"] != wallet or r["pool"] != pool:
+                    continue
+                if r["position"] not in marks:
+                    # Closed by the wallet. Copies of a wallet that has since left the followed list used to stay
+                    # "open" forever (282 in phase 1); they close here at the wallet's final result like any other.
+                    final = await asyncio.to_thread(_final_pnl_pct, wallet, pool, r["position"])
+                    await self._close(r, now, r["last_pnl_pct"] if final is None else final, "follow")
                     continue
                 mark = marks[r["position"]]
-                if copy_return_pct(r["entry_pnl_pct"], mark) <= STOP_PCT:
+                if self._stops(r) and copy_return_pct(r["entry_pnl_pct"], mark) <= STOP_PCT:
                     await self._close(r, now, mark, "stop")
                 else:
                     await self.db.execute(
@@ -205,7 +215,7 @@ class CopyPaper:
                     if self._stops():
                         r = await self.db.fetchrow(
                             f"select * from {self.t}_runs where position = $1 and status = 'open'", q["address"])
-                        if r and copy_return_pct(r["entry_pnl_pct"], q["pnl_pct"]) <= STOP_PCT:
+                        if r and self._stops(dict(r)) and copy_return_pct(r["entry_pnl_pct"], q["pnl_pct"]) <= STOP_PCT:
                             await self._close(dict(r), now, q["pnl_pct"], "stop")
                     continue
                 await self.db.execute(
