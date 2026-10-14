@@ -49,6 +49,12 @@ SMALL_FOLLOW = 10
 SMALL_MAX_DEPOSIT = 300.0
 SMALL_MIN_MEDIAN_PCT = 1.0
 SMALL_MIN_HOLD_H = 6.0
+# Copy LP Kecil phase 2: a position already this far down when we first see it is not copied (phase 1 joined UP,
+# SANTA and Frank at -4..-7%; Frank hit the stop twelve minutes later).
+SMALL_MAX_ENTRY_PCT = -3.0
+# Open copies are re-marked this often between full ticks, so the -15% stop fires near -15% and not two minutes later
+# (the first stops landed at -17..-18%). One Meteora call per wallet and pool with an open copy.
+STOP_CHECK_S = 30
 
 
 def copy_return_pct(entry_pct: float | None, now_pct: float | None) -> float:
@@ -136,14 +142,48 @@ class CopyPaper:
         return self.variant == "small" or paper_phases.current("copy") >= 3
 
     async def run(self) -> None:
+        stops = asyncio.create_task(self._stop_loop())
+        try:
+            while True:
+                try:
+                    await self.step()
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    log.exception("copy paper tick failed")
+                await asyncio.sleep(TICK_S)
+        finally:
+            stops.cancel()
+
+    async def _stop_loop(self) -> None:
         while True:
+            await asyncio.sleep(STOP_CHECK_S)
+            if not self._stops():
+                continue
             try:
-                await self.step()
+                await self._check_stops()
             except asyncio.CancelledError:
                 raise
-            except Exception:
-                log.exception("copy paper tick failed")
-            await asyncio.sleep(TICK_S)
+            except Exception as err:
+                log.info(f"copy[{self.variant}] stop check failed: %s", err)
+
+    async def _check_stops(self) -> None:
+        """Re-mark open copies from the wallet's own position in that pool and cut those at or under STOP_PCT."""
+        open_rows = [dict(r) for r in await self.db.fetch(f"select * from {self.t}_runs where status = 'open'")]
+        for wallet, pool in {(r["wallet"], r["pool"]) for r in open_rows}:
+            detail = await asyncio.to_thread(
+                portfolio._get, f"/positions/{pool}/pnl", {"user": wallet, "status": "open", "page_size": 50})
+            marks = {p.get("positionAddress"): portfolio._f(p.get("pnlPctChange")) for p in detail.get("positions") or []}
+            now = datetime.now(timezone.utc)
+            for r in open_rows:
+                if r["wallet"] != wallet or r["pool"] != pool or r["position"] not in marks:
+                    continue
+                mark = marks[r["position"]]
+                if copy_return_pct(r["entry_pnl_pct"], mark) <= STOP_PCT:
+                    await self._close(r, now, mark, "stop")
+                else:
+                    await self.db.execute(
+                        f"update {self.t}_runs set last_pnl_pct = $2, checked_at = $3 where id = $1", r["id"], mark, now)
 
     async def step(self) -> None:
         now = datetime.now(timezone.utc)
@@ -176,6 +216,9 @@ class CopyPaper:
                     continue
                 if (q["pnl_pct"] or 0) <= -50:
                     continue  # already down half on arrival: a broken or emptied position, not one to copy
+                if (self.variant == "small" and paper_phases.current("copy_small") >= 2
+                        and (q["pnl_pct"] or 0) < SMALL_MAX_ENTRY_PCT):
+                    continue
                 await self.db.execute(
                     f"""insert into {self.t}_runs (wallet, position, pool, pair, their_created_at, opened_at, status,
                          size_usd, entry_pnl_pct, last_pnl_pct, their_deposit_usd, min_price, max_price, checked_at)
@@ -199,7 +242,7 @@ class CopyPaper:
         pnl = r["size_usd"] * result_pct / 100 - costs
         await self.db.execute(
             f"""update {self.t}_runs set status = 'closed', closed_at = $2, exit_pnl_pct = $3, result_pct = $4,
-                 costs_usd = $5, pnl_usd = $6, exit_reason = $7 where id = $1""",
+                 costs_usd = $5, pnl_usd = $6, exit_reason = $7 where id = $1 and status = 'open'""",
             r["id"], now, final, result_pct, costs, pnl, reason)
         log.info(f"copy[{self.variant}] %s closed %s (%s): %+.2f USD", r["wallet"][:4], r["pair"], reason, pnl)
 

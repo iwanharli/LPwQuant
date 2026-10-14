@@ -37,6 +37,8 @@ PHASES: dict[str, dict[int, str]] = {
         1: "Meniru wallet LP bermodal kecil (median ≤$300 per posisi) yang untung lebar per posisi (median ≥+1%), "
            "memegang ≥6 jam, untung tanpa 3 posisi terbaik dan sepanjang masa, dan masih aktif minggu ini; 10 "
            "teratas menurut median %. $100 per posisi, tiruan ditutup di -15%.",
+        2: "Sama, tapi posisi yang sudah lebih buruk dari -3% saat terlihat tidak ditiru (fase 1 masuk UP, SANTA, "
+           "Frank di -4..-7%; Frank kena stop 12 menit kemudian).",
     },
     "panda": {
         1: "SOL satu sisi sampai −90% di bawah harga; keluar di pantulan pertama (RSI(2) + Bollinger/MACD).",
