@@ -25,7 +25,7 @@ import urllib.request
 from datetime import datetime, timezone
 from typing import Any, Callable
 
-from . import config, paper_phases, portfolio
+from . import charts, config, paper_phases, portfolio
 from .backtest import LpPosition
 from .scoring import RISKY_FLAGS
 
@@ -46,6 +46,20 @@ TARGET_HOLD_H = 12.0
 MAX_HOLD_H = 72.0
 PULLED_FRAC = 0.3
 BELOW_RANGE_COOLDOWN_H = 24
+TREND_HOURS = 24  # phase 4: enter only when the price is not lower than this many hours ago
+
+
+async def trend_ok(db, address: str) -> bool:
+    """Phase 4: the 30m close now is at or above the close TREND_HOURS ago. Without enough candles: no entry."""
+    data = await charts.load_candles(db, address, "30m", TREND_HOURS + 2)
+    candles = data.get("candles") or []
+    if len(candles) < 2:
+        return False
+    cutoff = candles[-1]["ts"] - TREND_HOURS * 3_600_000
+    past = [c for c in candles if c["ts"] <= cutoff]
+    if not past:
+        return False
+    return candles[-1]["close"] >= past[-1]["close"]
 IMPACT_PCT = 0.3
 TX_FEE_SOL = 0.0006
 BIN_ARRAY_SOL = 0.07143744
@@ -196,10 +210,15 @@ class Brontosaurus:
                  and row["address"] not in held and (row.get("base_mint") or "") not in held and row["address"] not in recent]
         picks.sort(key=lambda r: -(_f(r.get("fee_tvl_pct_24h")) or 0))
         sol = self.sol_usd()
-        for row in picks[:slots]:
+        opened = 0
+        for row in picks:
+            if opened >= slots:
+                break
             price = _f(row.get("price")) or 0.0
             if price <= 0:
                 continue
+            if paper_phases.current("bronto") >= 4 and not await trend_ok(self.db, row["address"]):
+                continue  # falling over the last day: phase 3 lost most of its money on exactly these
             try:
                 pool = await asyncio.to_thread(portfolio._get, f"/pools/{row['address']}", {})
             except Exception:
@@ -216,6 +235,7 @@ class Brontosaurus:
                 fee, _f((pool.get("cumulative_metrics") or {}).get("fees")) or 0.0, _f(row.get("tvl")) or 0.0,
                 arrays, entry_cost,
             )
+            opened += 1
             log.info("bronto opened %s (fee %.1f%%, bin step %d, %d new arrays)", row.get("name"), fee, row["bin_step"], arrays)
 
 

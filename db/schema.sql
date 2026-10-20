@@ -695,3 +695,7 @@ alter table paper_copy_runs add column if not exists exit_reason text;
 -- wallets, in its own tables so the two compare side by side.
 create table if not exists paper_copy_small_seen (like paper_copy_seen including all);
 create table if not exists paper_copy_small_runs (like paper_copy_runs including all);
+
+-- Copy LP Kecil phase 3: a copy of a wallet not proven yet on our own record (tracked, left out of the results).
+alter table paper_copy_runs add column if not exists shadow boolean not null default false;
+alter table paper_copy_small_runs add column if not exists shadow boolean not null default false;

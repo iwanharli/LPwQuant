@@ -19,6 +19,9 @@ PHASES: dict[str, dict[int, str]] = {
            "ditarik, −$2.863, harga −72..−82%).",
         3: "Sama, plus token yang baru keluar di bawah range tidak dimasuki lagi selama 24 jam. Fase 2: DOPE dua "
            "kali keluar di bawah range dalam 2 jam (-$37) lalu dibuka lagi.",
+        4: "Fase terakhir: sama, plus hanya masuk kalau harga 24 jam tidak turun (penutupan sekarang ≥ 24 jam lalu). "
+           "Fase 3: 20 dari 30 posisi jatuh di bawah range (harga -36%, -$448). Kalau setelah 30 posisi masih "
+           "minus, uji ini dihentikan.",
     },
     "lp:satu_sisi": {
         1: "SOL/USDC satu sisi di bawah harga, pool tenang (ATR 30m <=2%), fee harus 2x biaya; harga dicek tiap 60 detik.",
@@ -39,6 +42,10 @@ PHASES: dict[str, dict[int, str]] = {
            "teratas menurut median %. $100 per posisi, tiruan ditutup di -15%.",
         2: "Sama, tapi posisi yang sudah lebih buruk dari -3% saat terlihat tidak ditiru (fase 1 masuk UP, SANTA, "
            "Frank di -4..-7%; Frank kena stop 12 menit kemudian).",
+        3: "Fase terakhir: wallet hanya ditiru kalau 20 tiruan terakhir kita dari wallet itu untung bersama; wallet "
+           "yang belum terbukti tetap diikuti sebagai tiruan bayangan (tidak dihitung) sampai terbukti. Fase 2: "
+           "statistik leaderboard tidak memprediksi hasil (-$1.316 / 321, rugi di 101 token). Kalau setelah 30 "
+           "tiruan masih minus, uji ini dihentikan.",
     },
     "panda": {
         1: "SOL satu sisi sampai −90% di bawah harga; keluar di pantulan pertama (RSI(2) + Bollinger/MACD).",

@@ -33,6 +33,9 @@ log = logging.getLogger("panda")
 TICK_S = 300
 SIZE_USD = 100.0  # what the user is willing to risk per position while this is only a test
 MAX_OPEN = 6  # "diversifikasi ke >= 6 posisi"
+# Stopped 2026-10-20: two phases lost (-$124.83 over 39, then -$40.50 over 9), as the 26 Sep plan said to stop on.
+# No new positions; any still open are managed to their exit. Data stays.
+ACCEPTING = False
 # Phase 1 used -90% (the corpus' -86..-94% band): eight positions fell -55..-94% and were sold on a small bounce
 # (-$116 of the -$125). Phase 2 (plan of 26 Sep): a -40% range, cut once the price breaks under it, and the bounce
 # exit only in profit. Each position keeps the range it was opened with (range_low_pct).
@@ -392,7 +395,7 @@ class PandaPaper:
 
     async def _open_new(self, rows: dict[str, dict[str, Any]], now: datetime) -> None:
         open_rows = await self.db.fetch("select pool, mint from paper_panda_runs where status = 'open'")
-        slots = MAX_OPEN - len(open_rows)  # full slots still refresh the checklist below; they only block entries
+        slots = (MAX_OPEN - len(open_rows)) if ACCEPTING else 0  # full slots still refresh the checklist; they only block entries
         open_mints = {r["mint"] for r in open_rows}
         open_pools = {r["pool"] for r in open_rows}
         sol = self.sol_usd()

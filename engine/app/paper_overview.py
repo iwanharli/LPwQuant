@@ -126,12 +126,14 @@ async def overview(db, papers: dict[str, Any], sol_usd: float, pools: dict[str, 
     for key, label, table, note, passing, with_odd in runs_specs:
         rows = []
         for n, cond, args in _cut(key, "opened_at"):
-            fees = "fees_usd" if not table.startswith("paper_copy") else "0::float8 as fees_usd"
+            copies = table.startswith("paper_copy")
+            fees = "0::float8 as fees_usd" if copies else "fees_usd"
+            real = " and not shadow" if copies else ""  # shadow copies build a wallet's record, not the result
             runs = await db.fetch(
                 f"""select status, size_usd, pnl_usd, {fees}, opened_at,
                           extract(epoch from closed_at - opened_at) / 3600 as hold_h,
                           closed_at > now() - interval '7 days' as recent
-                   from {table} where {cond}""", *args)
+                   from {table} where {cond}{real}""", *args)
             closed = [r for r in runs if r["status"] == "closed"]
             rows.append({**_row(
                 key, label, "copy" if key.startswith("copy") else key, [(r["pnl_usd"] or 0, r["size_usd"]) for r in closed],

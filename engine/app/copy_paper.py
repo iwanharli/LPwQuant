@@ -52,6 +52,13 @@ SMALL_MIN_HOLD_H = 6.0
 # Copy LP Kecil phase 2: a position already this far down when we first see it is not copied (phase 1 joined UP,
 # SANTA and Frank at -4..-7%; Frank hit the stop twelve minutes later).
 SMALL_MAX_ENTRY_PCT = -3.0
+# Copy LP (top wallets) stopped taking new copies 2026-10-20: -$1,379 / -$1 / -$406 over three phases. Open copies
+# still close at the wallet's result.
+TOP_ACCEPTING = False
+# Copy LP Kecil phase 3 (last): a wallet is copied for real only once its last PROVE_N copies of ours made money
+# together. Until then every position it opens is still copied, as a shadow (shadow = true): tracked the same way
+# but left out of the results, so a wallet earns its place on our own record rather than the leaderboard's.
+PROVE_N = 20
 # Open copies are re-marked this often between full ticks, so the -15% stop fires near -15% and not two minutes later
 # (the first stops landed at -17..-18%). One Meteora call per wallet and pool with an open copy.
 STOP_CHECK_S = 30
@@ -114,7 +121,19 @@ async def followed(db, variant: str = "top") -> list[dict[str, Any]]:
 async def eligible(db, wallet: str, variant: str = "top") -> tuple[bool, str]:
     """Whether the top-wallet test copies this wallet (phase 2 on): its last copies held long enough and did not lose.
     The small-wallet test is chosen on those terms already, so it copies every wallet it follows."""
-    if variant == "small" or paper_phases.current("copy") < 2:
+    if variant == "small":
+        if paper_phases.current("copy_small") < 3:
+            return True, ""
+        rows = await db.fetch(
+            """select pnl_usd from paper_copy_small_runs where wallet = $1 and status = 'closed'
+               order by closed_at desc limit $2""", wallet, PROVE_N)
+        if len(rows) < PROVE_N:
+            return False, f"belum terbukti ({len(rows)}/{PROVE_N} tiruan)"
+        total = sum(r["pnl_usd"] or 0 for r in rows)
+        if total <= 0:
+            return False, f"{PROVE_N} tiruan terakhir rugi (${total:,.2f})"
+        return True, f"{PROVE_N} tiruan terakhir +${total:,.2f}"
+    if paper_phases.current("copy") < 2:
         return True, ""
     rows = await db.fetch(
         """select pnl_usd, extract(epoch from closed_at - opened_at) / 3600 as h from paper_copy_runs
@@ -222,7 +241,14 @@ class CopyPaper:
                     f"insert into {self.t}_seen (position, wallet, first_seen) values ($1, $2, $3) on conflict do nothing",
                     q["address"], w, now)
                 created = (q.get("created_at") or 0) / 1000
-                if first_look or time.time() - created > FRESH_MIN * 60 or not copy_ok:
+                shadow = False
+                if self.variant == "top" and not TOP_ACCEPTING:
+                    continue
+                if not copy_ok:
+                    if self.variant != "small" or paper_phases.current("copy_small") < 3:
+                        continue
+                    shadow = True  # not proven yet: copied to build its record, not counted
+                if first_look or time.time() - created > FRESH_MIN * 60:
                     continue
                 if (q["pnl_pct"] or 0) <= -50:
                     continue  # already down half on arrival: a broken or emptied position, not one to copy
@@ -231,10 +257,10 @@ class CopyPaper:
                     continue
                 await self.db.execute(
                     f"""insert into {self.t}_runs (wallet, position, pool, pair, their_created_at, opened_at, status,
-                         size_usd, entry_pnl_pct, last_pnl_pct, their_deposit_usd, min_price, max_price, checked_at)
-                       values ($1,$2,$3,$4,to_timestamp($5),$6,'open',$7,$8,$8,$9,$10,$11,$6)""",
+                         size_usd, entry_pnl_pct, last_pnl_pct, their_deposit_usd, min_price, max_price, checked_at, shadow)
+                       values ($1,$2,$3,$4,to_timestamp($5),$6,'open',$7,$8,$8,$9,$10,$11,$6,$12)""",
                     w, q["address"], q["pool"], q["pair"], created, now, SIZE_USD, q["pnl_pct"] or 0.0,
-                    q.get("deposit_usd"), q.get("min_price"), q.get("max_price"))
+                    q.get("deposit_usd"), q.get("min_price"), q.get("max_price"), shadow)
                 log.info(f"copy[{self.variant}] %s: %s %s (seen %.0fs after they opened)", w[:4], q["pair"], q["address"][:6], time.time() - created)
             # Copies whose position left the wallet's open list: close at the wallet's final result.
             for r in await self.db.fetch(f"select * from {self.t}_runs where wallet = $1 and status = 'open'", w):
@@ -261,7 +287,7 @@ async def report(db, rows: dict[str, dict[str, Any]] | None = None, variant: str
     t, phase_key = VARIANTS[variant]
     since = paper_phases.since(phase_key) or datetime.min.replace(tzinfo=timezone.utc)
     runs = [dict(r) for r in await db.fetch(
-        f"select * from {t}_runs where opened_at >= $1 order by opened_at desc limit 300", since)]
+        f"select * from {t}_runs where opened_at >= $1 and not shadow order by opened_at desc limit 300", since)]
     ms = lambda t: int(t.timestamp() * 1000) if t else None  # noqa: E731
     closed = [r for r in runs if r["status"] == "closed"]
     out = []
@@ -285,7 +311,7 @@ async def report(db, rows: dict[str, dict[str, Any]] | None = None, variant: str
         f"""select count(*) filter (where status = 'open') as open, count(*) filter (where status = 'closed') as closed,
                   coalesce(sum(pnl_usd) filter (where status = 'closed'), 0) as pnl,
                   count(*) filter (where status = 'closed' and pnl_usd > 0) as wins
-           from {t}_runs where opened_at >= $1""", since)
+           from {t}_runs where opened_at >= $1 and not shadow""", since)
     wallets = []
     for w in await followed(db, variant):
         ok, why = await eligible(db, w["wallet"], variant)
